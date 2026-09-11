@@ -13,6 +13,8 @@ function source(path: string): string {
 const vitestConfig = source('vitest.config.ts');
 const gitlabCi = source('.gitlab-ci.yml');
 const githubCi = source('.github/workflows/ci.yml');
+const githubDocs = source('.github/workflows/docs.yml');
+const githubDocsDeploy = source('.github/workflows/docs-deploy.yml');
 
 /** The lanes both providers run. One script per lane, invoked identically on each provider. */
 const LANES = ['typecheck', 'lint', 'guards', 'test', 'test-ui', 'build'];
@@ -40,7 +42,25 @@ function jobsInStage(yaml: string, stage: string): string[] {
   );
 }
 
+/** The lines of one job block in a GitHub Actions workflow (2-space indent), up to the next job. */
+function jobBlock(yaml: string, job: string): string[] {
+  const lines = yaml.split('\n');
+  const start = lines.indexOf(`  ${job}:`);
+  expect(start, `${job} is not a job in this workflow`).toBeGreaterThanOrEqual(0);
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((line) => /^ {2}\S/.test(line));
+  return end === -1 ? rest : rest.slice(0, end);
+}
+
 /** The job names a job waits for, in either the inline or the block list form. */
+/**
+ * Drops comment lines so an assertion cannot be satisfied by prose. A comment that names the
+ * setting it explains would otherwise make a `toContain` check pass against the wrong value.
+ */
+function withoutComments(lines: string[]): string {
+  return lines.filter((line) => !line.trim().startsWith('#')).join('\n');
+}
+
 function needsOf(yaml: string, job: string): string[] {
   const lines = blockLines(yaml, job);
   const at = lines.findIndex((line) => /^\s*needs:/.test(line));
@@ -124,5 +144,30 @@ describe('CI lane parity', () => {
     // Set equality: a seventh lane added to both providers but not here silently stops CI from
     // being reproducible locally.
     expect(invoked.sort()).toEqual([...LANES].sort());
+  });
+});
+
+describe('docs publishing', () => {
+  test('the deploy job builds with the same script as the gate', () => {
+    // Same build, two triggers: the gate runs it on every PR, the deploy runs it only on main.
+    // A published site that was not built by the exact command the gate checks is unverified.
+    for (const yaml of [githubDocs, githubDocsDeploy]) expect(yaml).toContain('scripts/ci/docs.sh');
+  });
+
+  test('deploy waits out an in-flight run; the gate cancels a stale one', () => {
+    // Cancelling a deploy mid-upload leaves the Pages environment half-transitioned, so deploy
+    // must not share the gate's cancel-in-progress behaviour.
+    expect(githubDocsDeploy).toContain('cancel-in-progress: false');
+    expect(githubDocs).toContain('cancel-in-progress: true');
+  });
+
+  test('deploy build job grants only the read scopes checkout and configure-pages need', () => {
+    const build = withoutComments(jobBlock(githubDocsDeploy, 'build'));
+
+    // Anti-vacuity: jobBlock asserts the job exists, and withoutComments keeps the prose that
+    // names these scopes from satisfying the check in place of the real setting.
+    expect(build).toContain('permissions:');
+    expect(build).toContain('contents: read');
+    expect(build).toContain('pages: read');
   });
 });

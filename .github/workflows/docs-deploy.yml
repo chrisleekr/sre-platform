@@ -1,0 +1,77 @@
+name: Docs Deploy
+
+# Split from `docs.yml` because that workflow cancels in-progress runs, which is right for a build
+# gate and wrong for a deploy: cancelling mid-upload leaves the Pages environment half-transitioned.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  # Build and deploy are separate jobs so the docs build never shares a job with the OIDC minting
+  # credential, and so re-running the deploy alone cannot upload a second `github-pages` artifact,
+  # which deploy-pages refuses with "Multiple artifacts named 'github-pages'".
+  build:
+    name: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      # A job-level block replaces the workflow-level one outright, so every scope needed here must
+      # be re-listed. `contents: read` is what actions/checkout authenticates its fetch with;
+      # `pages: read` is what configure-pages needs to read the Pages config. No `pages: write` and
+      # no `id-token`: this job runs third-party PyPI code and must not hold publish credentials.
+      contents: read
+      pages: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+
+      # Ahead of the build so a misconfigured Pages site fails before paying for a full docs build.
+      - name: Configure Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      # The same strict build the `docs.yml` gate runs. Rebuilding here rather than reusing that
+      # workflow's output keeps the deploy self-contained, with no dependency on another workflow's
+      # run or its artifact retention.
+      - name: Build documentation
+        run: bash scripts/ci/docs.sh
+
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+
+  deploy:
+    name: deploy
+    needs: build
+    # workflow_dispatch accepts any ref. The github-pages environment already restricts deployments
+    # to main, but that is a repository setting that can be removed without touching this file, so
+    # the rule is kept in code as well. The build above still runs, acting as a branch build check.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    # deploy-pages polls for up to its default 600000 ms. A 10 minute job budget would let GitHub
+    # kill the job mid-deploy and report a timeout instead of the actual failure.
+    timeout-minutes: 20
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

@@ -1,5 +1,9 @@
 site_name: SRE Intelligence Platform
 site_description: Multi-tenant observability, incident triage, and reliability platform
+# Without this, MkDocs emits no canonical link tag at all and sitemap.xml builds empty, so the
+# published site has nothing for a crawler to follow. It also mounts `mkdocs serve` under this
+# URL's path component, which is why local preview lives at /sre-platform/ rather than the root.
+site_url: https://chrisleekr.github.io/sre-platform/
 strict: true
 
 # `strict` only halts on warnings. MkDocs already defaults `nav.not_found` and `links.not_found` to
