@@ -120,7 +120,7 @@ lint, public JSDoc validation, and formatting checks. TypeScript strict, no impl
 <!-- END generated:ci-gates -->
 
 - **RLS isolation tests are required and block merge.**
-- `.github/workflows/ci.yml` and `.gitlab-ci.yml` invoke the same six lane scripts, one job each, plus `docs.sh` and the container smoke. `bun run ci:verify` runs the same lanes serially and is the only way to reproduce CI locally; no provider invokes it. release-please owns the versioned Docker Hub images and moves Docker Hub `latest`; the internal pipeline owns its own registry's `dev` and `latest` tags.
+- `.github/workflows/ci.yml` and `.gitlab-ci.yml` invoke the same six lane scripts, one job each, plus `docs.sh` and the container smoke. `bun run ci:verify` runs the same lanes serially and is the only way to reproduce CI locally; no provider invokes it. `docs.sh` also backs a GitHub Pages deploy (`.github/workflows/docs-deploy.yml`, on push to main): that is a publishing step, not a gate, so it is deliberately GitHub-only. GitLab runs `docs.sh` as a gate only and publishes no site, because the published copy is single-sourced. release-please owns the versioned Docker Hub images and moves Docker Hub `latest`; the internal pipeline owns its own registry's `dev` and `latest` tags.
 - Docs updated with the change (mkdocs); notable decisions explained in the merge request.
 
 ## Anti-patterns to refuse

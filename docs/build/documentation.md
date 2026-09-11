@@ -87,6 +87,10 @@ bun run docs:gen        # regenerate derived blocks after a source change
 bun run docs:build      # what CI runs
 ```
 
+The site declares a canonical URL with a project subdirectory, so the local preview is mounted
+there too. Open `http://127.0.0.1:8000/sre-platform/`, not the bare root, the root just redirects
+there with a 302.
+
 Screenshots are regenerated with `bun scripts/docs/screenshots/capture.ts`. It needs a Docker
 daemon and a browser from `bunx playwright install chromium`. Run it directly rather than through
 the package script, which buffers output and hides progress.
