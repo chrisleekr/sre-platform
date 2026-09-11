@@ -1,0 +1,2 @@
+ALTER TABLE "surface_bindings" ADD COLUMN "assignment_version" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "surface_deliveries" ADD COLUMN "binding_assignment_version" integer DEFAULT 0 NOT NULL;

@@ -1,0 +1,13 @@
+node_modules
+dist
+build
+coverage
+.bun-install-cache
+# Agent worktrees are throwaway repo copies, not source.
+.claude
+bun.lock
+bun.lockb
+# Markdown is hand-authored and validated by the strict MkDocs build.
+*.md
+# Drizzle-generated migrations and journal.
+packages/db/migrations

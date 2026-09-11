@@ -1,0 +1,1 @@
+CREATE INDEX "jobs_classify_fair_idx" ON "jobs" USING btree ("stream","status","tenant_id","updated_at");

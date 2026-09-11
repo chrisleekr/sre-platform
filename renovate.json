@@ -1,0 +1,85 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "security:minimumReleaseAgeNpm"],
+  "timezone": "Australia/Melbourne",
+  "schedule": ["before 9am on monday"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Testcontainers images are plain string literals in TypeScript, so no built-in manager reads them. The file list is explicit: a new file that boots a container has to be added here.",
+      "managerFilePatterns": [
+        "/^vitest\\.global-setup\\.ts$/",
+        "/^scripts/docs/screenshots/harness\\.ts$/",
+        "/^apps/triage-worker/src/evals/incident-flow\\.ts$/"
+      ],
+      "matchStrings": [
+        "new (?:GenericContainer|PostgreSqlContainer)\\(\\s*'(?<depName>[^:']+):(?<currentValue>[^']+)'"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "The manually invoked Alertmanager live test pins its three images as module constants.",
+      "managerFilePatterns": ["/^scripts/test-alertmanager-slack-live\\.mjs$/"],
+      "matchStrings": [
+        "'(?<depName>ghcr\\.io/prometheus/alertmanager):(?<currentValue>[^@']+)@(?<currentDigest>sha256:[a-f0-9]+)'",
+        "(?:postgresImage|valkeyImage) = '(?<depName>[^:']+):(?<currentValue>[^']+)'"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "BuildKit is a pipeline variable rather than an image key, so the gitlabci manager does not see it.",
+      "managerFilePatterns": ["/^\\.gitlab-ci\\.yml$/"],
+      "matchStrings": [
+        "BUILDKIT_IMAGE: (?<depName>[^:\\s]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "The manually invoked Argo CD live test pins its kind node image as a shell variable, and no built-in manager reads shell scripts.",
+      "managerFilePatterns": ["/^scripts/test-argocd-live\\.sh$/"],
+      "matchStrings": [
+        "KIND_NODE_IMAGE=(?<depName>[^:\\s]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]+)"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Bun is pinned in five places across four files and four managers. Split updates would leave the container image on one Bun and the pipeline runtime on another, so they move as one branch.",
+      "groupName": "bun runtime",
+      "matchPackageNames": ["bun", "oven-sh/bun", "oven/bun", "@types/bun"]
+    },
+    {
+      "description": "drizzle-kit generates against the ORM schema surface, so drizzle-orm and drizzle-kit have to move at the same version. ioredis rides along as the shared Valkey client.",
+      "groupName": "workspace shared dependencies",
+      "matchPackageNames": ["drizzle-orm", "drizzle-kit", "ioredis"]
+    },
+    {
+      "description": "The coverage provider is version-locked to the runner it instruments.",
+      "groupName": "vitest",
+      "matchPackageNames": ["vitest", "@vitest/coverage-v8"]
+    },
+    {
+      "description": "Client and server are published from one source tree and are only tested against each other at the same version. The sdk package is deliberately excluded: it sits on its own version line, so grouping it here would block both.",
+      "groupName": "model context protocol",
+      "matchPackageNames": ["@modelcontextprotocol/client", "@modelcontextprotocol/server"]
+    },
+    {
+      "description": "A replacement swaps one package name for a different one, so it changes dependency identity rather than version, and the npm cooldown preset deliberately exempts it. Hold it behind the dashboard so review does not read it as a routine bump.",
+      "matchUpdateTypes": ["replacement"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "Last on purpose. packageRules apply top to bottom, so this overrides the fix type that config:recommended sets for runtime dependencies. release-please reads fix as a patch release and would publish an image for every dependency bump.",
+      "matchPackageNames": ["*"],
+      "semanticCommitType": "chore"
+    }
+  ]
+}

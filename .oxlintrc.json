@@ -1,0 +1,78 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/npm/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "rules": {
+    "unicorn/no-array-sort": "off",
+    "unicorn/no-array-reverse": "off",
+    "unicorn/consistent-function-scoping": "off",
+    "unicorn/prefer-add-event-listener": "off",
+    "no-underscore-dangle": "off"
+  },
+  "overrides": [
+    {
+      "files": [
+        "apps/**/*.ts",
+        "apps/**/*.tsx",
+        "packages/**/*.ts",
+        "packages/**/*.tsx",
+        "scripts/**/*.ts",
+        "scripts/**/*.mjs",
+        "*.ts"
+      ],
+      "excludeFiles": [
+        "apps/**/__tests__/**",
+        "packages/**/__tests__/**",
+        "scripts/**/__tests__/**"
+      ],
+      "rules": {
+        "max-lines": ["error", { "max": 500 }]
+      }
+    },
+    {
+      "files": [
+        "apps/*/src/**/__tests__/**/*.ts",
+        "apps/*/src/**/__tests__/**/*.tsx",
+        "packages/*/src/**/__tests__/**/*.ts",
+        "scripts/**/__tests__/**/*.ts",
+        "scripts/**/__tests__/**/*.tsx"
+      ],
+      "rules": {
+        "max-lines": ["error", { "max": 600 }]
+      }
+    },
+    {
+      "files": ["packages/*/src/**/*.ts"],
+      "excludeFiles": ["packages/*/src/**/__tests__/**"],
+      "plugins": ["unicorn", "typescript", "oxc", "jsdoc"],
+      "rules": {
+        "jsdoc/check-property-names": "error",
+        "jsdoc/check-tag-names": [
+          "error",
+          {
+            "definedTags": ["remarks"],
+            "typed": true
+          }
+        ],
+        "jsdoc/empty-tags": "error",
+        "jsdoc/no-defaults": "error",
+        "jsdoc/require-param-description": "error",
+        "jsdoc/require-param-name": "error",
+        "jsdoc/require-property-description": "error",
+        "jsdoc/require-property-name": "error",
+        "jsdoc/require-returns-description": "error",
+        "jsdoc/require-throws-description": "error",
+        "jsdoc/require-yields-description": "error"
+      }
+    },
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx"],
+      "rules": {
+        "no-shadow": "off"
+      }
+    }
+  ],
+  "ignorePatterns": ["node_modules", "dist", "build", "coverage", ".bun-install-cache", ".claude"]
+}

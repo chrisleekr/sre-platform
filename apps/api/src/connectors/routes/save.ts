@@ -1,0 +1,479 @@
+import { connectorCapabilities, isConnectorType } from '@sre/connectors';
+import { argoCdUrlError } from '@sre/contracts';
+import { connectorConfigs, connectorCredentialKey, withTenant } from '@sre/db';
+import { and, eq, isNull, sql } from 'drizzle-orm';
+import { Hono, type Context } from 'hono';
+import { randomUUID } from 'node:crypto';
+import { type TenantAuthVariables } from '../../auth';
+
+import {
+  boundedArgoCdJson,
+  connectorInstanceId,
+  dataSourceName,
+  defaultDataSourceName,
+  gitLabSigningTokenInput,
+  isUniqueViolation,
+  lockConnectorLifecycle,
+  parseArgoCdCredentialBundle,
+  parseArgoCdCredentialInput,
+  parseArgoCdSettings,
+  parseDatadogSettings,
+  parseGitHubSettings,
+  parseGitLabSettings,
+  parseGrafanaSettings,
+  parseLegacyGitHubCredential,
+  parsePrometheusSettings,
+  requestObject,
+  type ArgoCdCredentialBundle,
+  type ArgoCdSettings,
+} from '../helpers';
+
+export type { ConnectorRoutesDeps } from '../helpers';
+
+import type { ConnectorRouteContext } from './context';
+import { persistConnectorConfiguration } from './save-persistence';
+
+export function registerConnectorSaveRoutes(
+  r: Hono<{ Variables: TenantAuthVariables }>,
+  context: ConnectorRouteContext,
+): void {
+  const {
+    deps,
+    serializeMutation,
+    mutationPending,
+    reconcileGitHubSmee,
+    reconcileGitLabSmee,
+    reconcileAlertmanagerSmee,
+    legacyConnectorId,
+  } = context;
+  const saveConnector = async (c: Context<{ Variables: TenantAuthVariables }>) => {
+    const { tenantId } = c.get('tenant');
+    const type = c.req.param('type') ?? '';
+    if (!isConnectorType(type)) return c.json({ error: 'unknown connector type' }, 400);
+    if (connectorCapabilities(type).availability !== 'ready')
+      return c.json({ error: 'connector type is not available' }, 400);
+    if (connectorCapabilities(type).configuration === 'builtin')
+      return c.json({ error: 'built-in connector types are not tenant-configurable' }, 400);
+    const routeId = c.req.param('id');
+    const creating = routeId === undefined;
+    let parsed: unknown;
+    try {
+      parsed = type === 'argocd' ? await boundedArgoCdJson(c.req.raw) : await c.req.json();
+    } catch {
+      return c.json({ error: 'invalid JSON body' }, 400);
+    }
+    const body = requestObject(parsed);
+    if (!body) return c.json({ error: 'invalid JSON body' }, 400);
+    if (
+      body.setupId !== undefined &&
+      (!creating || !['github', 'gitlab', 'prometheus'].includes(type))
+    )
+      return c.json({ error: 'setup ID is only valid when creating an event connector' }, 400);
+    const connectorId = creating
+      ? body.setupId === undefined
+        ? randomUUID()
+        : connectorInstanceId(body.setupId)
+      : connectorInstanceId(routeId);
+    if (!connectorId) return c.json({ error: 'invalid data source ID' }, 400);
+    const requestedName = body.name === undefined ? undefined : dataSourceName(body.name);
+    if (body.name !== undefined && !requestedName)
+      return c.json({ error: 'name must be 1 to 80 characters without control characters' }, 400);
+    if (creating && !requestedName) return c.json({ error: 'data source name is required' }, 400);
+    const credentialProvided = Object.prototype.hasOwnProperty.call(body, 'credential');
+    const argoCredentialsProvided = Object.prototype.hasOwnProperty.call(body, 'credentials');
+    if (credentialProvided && typeof body.credential !== 'string')
+      return c.json({ error: 'credential must be a string' }, 400);
+    const credential = typeof body.credential === 'string' ? body.credential.trim() : undefined;
+    if (
+      (type === 'gitlab' ||
+        type === 'github' ||
+        type === 'prometheus' ||
+        type === 'statuscake' ||
+        type === 'datadog' ||
+        type === 'grafana') &&
+      credentialProvided &&
+      !credential
+    )
+      return c.json({ error: 'credential must not be blank' }, 400);
+    const webhookSecretProvided = Object.prototype.hasOwnProperty.call(body, 'webhookSecret');
+    if (
+      (type === 'github' || type === 'gitlab') &&
+      webhookSecretProvided &&
+      (typeof body.webhookSecret !== 'string' || body.webhookSecret.trim().length < 16)
+    )
+      return c.json({ error: 'webhook secret must be at least 16 characters' }, 400);
+    const submittedWebhookSecret =
+      (type === 'github' || type === 'gitlab') && typeof body.webhookSecret === 'string'
+        ? body.webhookSecret.trim()
+        : undefined;
+    const eventTokenProvided = Object.prototype.hasOwnProperty.call(body, 'eventToken');
+    const submittedEventToken =
+      type === 'prometheus' && typeof body.eventToken === 'string'
+        ? body.eventToken.trim()
+        : undefined;
+    if (
+      type === 'prometheus' &&
+      eventTokenProvided &&
+      (!submittedEventToken || submittedEventToken.length < 16 || submittedEventToken.length > 4096)
+    )
+      return c.json({ error: 'Alertmanager bearer token must be 16 to 4096 characters' }, 400);
+    const webhookSigningTokenProvided = Object.prototype.hasOwnProperty.call(
+      body,
+      'webhookSigningToken',
+    );
+    const submittedWebhookSigningToken =
+      type === 'gitlab' ? gitLabSigningTokenInput(body.webhookSigningToken) : null;
+    if (type === 'gitlab' && webhookSigningTokenProvided && !submittedWebhookSigningToken)
+      return c.json(
+        { error: 'GitLab signing token must be whsec_ followed by a base64-encoded 32-byte key' },
+        400,
+      );
+    if (type === 'argocd' && credentialProvided)
+      return c.json({ error: 'ArgoCD credentials must be provided per project' }, 400);
+    const submittedArgoTokens =
+      type === 'argocd' && argoCredentialsProvided
+        ? parseArgoCdCredentialInput(body.credentials)
+        : undefined;
+    if (type === 'argocd' && argoCredentialsProvided && !submittedArgoTokens)
+      return c.json({ error: 'invalid ArgoCD project credentials' }, 400);
+    const submittedLegacy = type === 'github' ? parseLegacyGitHubCredential(credential) : null;
+    const parsedGitLabSettings = type === 'gitlab' ? parseGitLabSettings(body.settings) : null;
+    if (type === 'gitlab' && !parsedGitLabSettings)
+      return c.json({ error: 'invalid GitLab settings' }, 400);
+    const parsedArgoCdSettings = type === 'argocd' ? parseArgoCdSettings(body.settings) : null;
+    if (type === 'argocd' && !parsedArgoCdSettings)
+      return c.json(
+        {
+          error: argoCdUrlError(requestObject(body.settings)?.baseUrl) ?? 'invalid ArgoCD settings',
+        },
+        400,
+      );
+    if (
+      type === 'argocd' &&
+      parsedArgoCdSettings?.baseUrl.startsWith('http:') &&
+      body.insecureHttpAcknowledged !== true
+    )
+      return c.json({ error: 'HTTP transport requires explicit acknowledgement' }, 400);
+    if (
+      type === 'argocd' &&
+      parsedArgoCdSettings?.insecureSkipTLSVerify === true &&
+      body.insecureTlsAcknowledged !== true
+    )
+      return c.json({ error: 'insecure TLS requires explicit acknowledgement' }, 400);
+    const parsedPrometheusSettings =
+      type === 'prometheus' ? parsePrometheusSettings(body.settings) : null;
+    if (type === 'prometheus' && !parsedPrometheusSettings)
+      return c.json({ error: 'invalid Prometheus settings' }, 400);
+    if (
+      type === 'prometheus' &&
+      parsedPrometheusSettings?.baseUrl.startsWith('http://') &&
+      body.insecureHttpAcknowledged !== true
+    )
+      return c.json({ error: 'HTTP transport requires explicit acknowledgement' }, 400);
+    if (
+      type === 'prometheus' &&
+      parsedPrometheusSettings?.insecureSkipTLSVerify === true &&
+      body.insecureTlsAcknowledged !== true
+    )
+      return c.json({ error: 'insecure TLS requires explicit acknowledgement' }, 400);
+    const parsedDatadogSettings = type === 'datadog' ? parseDatadogSettings(body.settings) : null;
+    if (type === 'datadog' && !parsedDatadogSettings)
+      return c.json({ error: 'invalid Datadog settings' }, 400);
+    const parsedGrafanaSettings = type === 'grafana' ? parseGrafanaSettings(body.settings) : null;
+    if (type === 'grafana' && !parsedGrafanaSettings)
+      return c.json({ error: 'invalid Grafana settings' }, 400);
+    if (
+      type === 'grafana' &&
+      parsedGrafanaSettings?.baseUrl.startsWith('http://') &&
+      body.insecureHttpAcknowledged !== true
+    )
+      return c.json({ error: 'HTTP transport requires explicit acknowledgement' }, 400);
+    if (
+      type === 'grafana' &&
+      parsedGrafanaSettings?.insecureSkipTLSVerify === true &&
+      body.insecureTlsAcknowledged !== true
+    )
+      return c.json({ error: 'insecure TLS requires explicit acknowledgement' }, 400);
+
+    if (type === 'argocd') {
+      if (mutationPending(tenantId, connectorId))
+        return c.json({ error: 'an ArgoCD connector operation is already in progress' }, 409);
+      return serializeMutation(tenantId, connectorId, async () => {
+        try {
+          const validationError = await withTenant(deps.db, tenantId, async (tx) => {
+            await lockConnectorLifecycle(tx, tenantId, connectorId);
+            const rows = await tx
+              .select({ name: connectorConfigs.name, settings: connectorConfigs.settings })
+              .from(connectorConfigs)
+              .where(
+                and(
+                  eq(connectorConfigs.id, connectorId),
+                  eq(connectorConfigs.type, type),
+                  isNull(connectorConfigs.deletedAt),
+                ),
+              )
+              .limit(1);
+            if (!creating && !rows[0]) return 'data source not found';
+            const savedSettings = parseArgoCdSettings(rows[0]?.settings);
+            const rawSettings = requestObject(body.settings)!;
+            let settings =
+              parsedArgoCdSettings!.baseUrl.startsWith('https:') &&
+              !Object.prototype.hasOwnProperty.call(rawSettings, 'caCert') &&
+              savedSettings?.caCert
+                ? { ...parsedArgoCdSettings!, caCert: savedSettings.caCert }
+                : parsedArgoCdSettings!;
+            const requestedAccessRole = settings.accessRole;
+            const savedAccessRole = savedSettings?.accessRole;
+            if (creating) {
+              if (!requestedAccessRole || requestedAccessRole === 'sre-platform')
+                return 'new ArgoCD data sources require a unique access role';
+              await lockConnectorLifecycle(
+                tx,
+                tenantId,
+                `argocd-access-role:${requestedAccessRole}`,
+              );
+              const duplicate = await tx
+                .select({ id: connectorConfigs.id })
+                .from(connectorConfigs)
+                .where(
+                  and(
+                    eq(connectorConfigs.type, 'argocd'),
+                    isNull(connectorConfigs.deletedAt),
+                    sql`${connectorConfigs.settings}->>'accessRole' = ${requestedAccessRole}`,
+                  ),
+                )
+                .limit(1);
+              if (duplicate[0]) return 'this ArgoCD access role is already used by another source';
+            } else if (savedAccessRole) {
+              if (requestedAccessRole && requestedAccessRole !== savedAccessRole)
+                return 'the ArgoCD access role cannot be changed; reconnect the data source instead';
+              settings = { ...settings, accessRole: savedAccessRole };
+            } else {
+              if (requestedAccessRole && requestedAccessRole !== 'sre-platform')
+                return 'a legacy ArgoCD access role cannot be changed; reconnect the data source instead';
+              const { accessRole: _legacyAccessRole, ...legacySettings } = settings;
+              settings = legacySettings as ArgoCdSettings;
+            }
+            const savedCredential = await deps.secrets.get(
+              tenantId,
+              connectorCredentialKey(connectorId),
+              tx,
+            );
+            const savedBundle = parseArgoCdCredentialBundle(savedCredential);
+            const savedTokens = new Map(
+              savedBundle?.tokens.map((entry) => [entry.project, entry.token]) ?? [],
+            );
+            const submittedTokens = new Map(
+              submittedArgoTokens?.map((entry) => [entry.project, entry.token]) ?? [],
+            );
+            const selectedProjects = new Set(settings.projects.map((binding) => binding.project));
+            if ([...submittedTokens.keys()].some((project) => !selectedProjects.has(project)))
+              return 'a credential was provided for an unselected ArgoCD project';
+            const serverChanged = !savedSettings || savedSettings.baseUrl !== settings.baseUrl;
+            const tokens: ArgoCdCredentialBundle['tokens'] = [];
+            for (const binding of settings.projects) {
+              const token =
+                submittedTokens.get(binding.project) ??
+                (!serverChanged ? savedTokens.get(binding.project) : undefined);
+              if (!token) return `credential is required for ArgoCD project ${binding.project}`;
+              tokens.push({ project: binding.project, token });
+            }
+            const credentialBundle = JSON.stringify({ version: 1, tokens });
+            if (creating) {
+              await tx.insert(connectorConfigs).values({
+                id: connectorId,
+                tenantId,
+                name: requestedName!,
+                type,
+                settings,
+                enabled: false,
+              });
+            } else {
+              await tx
+                .update(connectorConfigs)
+                .set({
+                  name: requestedName ?? rows[0]!.name,
+                  settings,
+                  enabled: false,
+                  lifecycleVersion: sql`${connectorConfigs.lifecycleVersion} + 1`,
+                  verificationAttemptedAt: null,
+                  verificationSucceededAt: null,
+                  verificationFailureCategory: null,
+                  verificationDurationMs: null,
+                  pollAttemptedAt: null,
+                  pollSucceededAt: null,
+                  pollSnapshotCount: 0,
+                  pollErrorCount: 0,
+                  pollFailureCategory: null,
+                  pollDurationMs: null,
+                  pollCursor: null,
+                  updatedAt: sql`now()`,
+                })
+                .where(eq(connectorConfigs.id, connectorId));
+            }
+            await deps.secrets.put(
+              tenantId,
+              connectorCredentialKey(connectorId),
+              credentialBundle,
+              tx,
+            );
+            return null;
+          });
+          if (validationError)
+            return c.json(
+              { error: validationError },
+              validationError === 'data source not found'
+                ? 404
+                : validationError.includes('already used')
+                  ? 409
+                  : 400,
+            );
+          await deps.cache?.delete?.(tenantId, type).catch(() => {});
+        } catch (error) {
+          if (isUniqueViolation(error))
+            return c.json({ error: 'a data source with this name already exists' }, 409);
+          return c.json({ error: 'connector save failed' }, 503);
+        }
+        return c.json({ ok: true, connectorId, name: requestedName ?? undefined });
+      });
+    }
+
+    return serializeMutation(tenantId, connectorId, async () => {
+      const enabled =
+        type === 'gitlab' ||
+        type === 'github' ||
+        type === 'prometheus' ||
+        type === 'statuscake' ||
+        type === 'datadog' ||
+        type === 'grafana'
+          ? false
+          : typeof body.enabled === 'boolean'
+            ? body.enabled
+            : true;
+      try {
+        const validationError = await withTenant(deps.db, tenantId, (tx) =>
+          persistConnectorConfiguration({
+            tx,
+            deps,
+            tenantId,
+            connectorId,
+            type,
+            creating,
+            requestedName: requestedName ?? undefined,
+            enabled,
+            body,
+            credential,
+            submittedWebhookSecret,
+            submittedEventToken,
+            submittedWebhookSigningToken,
+            submittedLegacy,
+            parsedGitLabSettings,
+            parsedPrometheusSettings,
+            parsedDatadogSettings,
+            parsedGrafanaSettings,
+          }),
+        );
+        if (validationError)
+          return c.json(
+            { error: validationError },
+            validationError === 'data source not found'
+              ? 404
+              : validationError.includes('already used')
+                ? 409
+                : 400,
+          );
+      } catch (error) {
+        if (isUniqueViolation(error))
+          return c.json({ error: 'a data source with this name already exists' }, 409);
+        return c.json({ error: 'connector save failed' }, 503);
+      }
+      if (type === 'github' || type === 'gitlab' || type === 'prometheus') {
+        const rows = await withTenant(deps.db, tenantId, (tx) =>
+          tx
+            .select({
+              id: connectorConfigs.id,
+              name: connectorConfigs.name,
+              webhookKey: connectorConfigs.webhookKey,
+              settings: connectorConfigs.settings,
+            })
+            .from(connectorConfigs)
+            .where(
+              and(
+                eq(connectorConfigs.id, connectorId),
+                eq(connectorConfigs.type, type),
+                isNull(connectorConfigs.deletedAt),
+              ),
+            )
+            .limit(1),
+        );
+        const connector = rows[0];
+        const relayStatus =
+          type === 'github' && connector
+            ? await reconcileGitHubSmee(
+                tenantId,
+                connector.id,
+                parseGitHubSettings(connector.settings) ?? {},
+                await deps.secrets.get(tenantId, connectorCredentialKey(connector.id)),
+                connector.webhookKey ?? connector.id,
+              )
+            : type === 'gitlab' && connector
+              ? await reconcileGitLabSmee(
+                  tenantId,
+                  connector.id,
+                  parseGitLabSettings(connector.settings) ?? {},
+                  await deps.secrets.get(tenantId, connectorCredentialKey(connector.id)),
+                  connector.webhookKey ?? connector.id,
+                )
+              : type === 'prometheus' && connector
+                ? await reconcileAlertmanagerSmee(
+                    tenantId,
+                    connector.id,
+                    { eventTransport: 'none' },
+                    null,
+                    connector.webhookKey ?? connector.id,
+                  )
+                : undefined;
+        return c.json({
+          ok: true,
+          connectorId,
+          name: connector?.name ?? requestedName,
+          ...(connector
+            ? {
+                webhookPath: `/webhooks/${type === 'prometheus' ? 'alertmanager' : type}/${connector.webhookKey ?? connector.id}`,
+              }
+            : {}),
+          ...(relayStatus ? { relayStatus } : {}),
+        });
+      }
+      return c.json({ ok: true, connectorId, name: requestedName ?? undefined });
+    });
+  };
+
+  r.post('/:type', saveConnector);
+  r.put('/:type/:id', saveConnector);
+  r.put('/:type', async (c) => {
+    const { tenantId } = c.get('tenant');
+    const type = c.req.param('type');
+    if (!isConnectorType(type)) return c.json({ error: 'unknown connector type' }, 400);
+    const connectorId = await legacyConnectorId(tenantId, type);
+    if (connectorId === 'ambiguous')
+      return c.json({ error: 'data source ID is required when multiple connections exist' }, 409);
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'invalid JSON body' }, 400);
+    }
+    const parsed = requestObject(body);
+    if (!parsed) return c.json({ error: 'invalid JSON body' }, 400);
+    return r.request(connectorId ? `/${type}/${connectorId}` : `/${type}`, {
+      method: connectorId ? 'PUT' : 'POST',
+      headers: c.req.raw.headers,
+      body: JSON.stringify(
+        connectorId || parsed.name !== undefined
+          ? parsed
+          : { ...parsed, name: defaultDataSourceName(type) },
+      ),
+    });
+  });
+}

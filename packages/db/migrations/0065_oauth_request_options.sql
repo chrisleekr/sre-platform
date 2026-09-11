@@ -1,0 +1,2 @@
+ALTER TABLE "identity_providers" ADD COLUMN "authorization_scopes" text[] DEFAULT '{}'::text[] NOT NULL;--> statement-breakpoint
+ALTER TABLE "identity_providers" ADD COLUMN "authorization_audience" text;

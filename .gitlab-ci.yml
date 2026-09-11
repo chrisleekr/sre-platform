@@ -1,0 +1,204 @@
+workflow:
+  auto_cancel:
+    on_new_commit: interruptible
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+variables:
+  BUN_INSTALL_CACHE_DIR: ${CI_PROJECT_DIR}/.bun-install-cache
+  # Push image subjects before provenance attestations on strict registries.
+  BUILDKIT_IMAGE: moby/buildkit:v0.32.1@sha256:c2ffdf4f39cb9d0fd0f63413d9354721cb83868a3f2f29583c3504a0c43a254b
+
+default:
+  image: oven/bun:1.4.2-alpine@sha256:d888c0ae6c86d7866ff10c5aafdd9077b36aee6455b33dd270fb93c0dd5cef6f
+  interruptible: true
+  before_script:
+    - apk add --no-cache bash
+    - bash scripts/ci/bootstrap.sh
+  # Every lane bootstraps from this cache, so every lane reads it and exactly one writes it.
+  # Parallel writers of one key overwrite each other's upload for no gain. A job that declares its
+  # own cache replaces this list rather than adding to it, so those jobs repeat the entry.
+  cache:
+    - key:
+        files:
+          - bun.lock
+        prefix: bun
+      paths:
+        - .bun-install-cache/
+      policy: pull
+
+stages:
+  - test
+  - release
+
+typecheck:
+  stage: test
+  cache:
+    - key:
+        files:
+          - bun.lock
+        prefix: bun
+      paths:
+        - .bun-install-cache/
+      policy: pull
+    # Turbo caches only the lanes that run Turbo tasks. The key is per job, so the two never collide.
+    - key: turbo-${CI_JOB_NAME}-${CI_COMMIT_REF_SLUG}
+      paths:
+        - .turbo/
+      policy: pull-push
+  script:
+    - bash scripts/ci/typecheck.sh
+
+lint:
+  stage: test
+  cache:
+    - key:
+        files:
+          - bun.lock
+        prefix: bun
+      paths:
+        - .bun-install-cache/
+      policy: pull-push
+  script:
+    - bash scripts/ci/lint.sh
+
+guards:
+  stage: test
+  script:
+    - bash scripts/ci/guards.sh
+
+test:
+  stage: test
+  services:
+    - name: docker:27-dind@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce
+      alias: docker
+  variables:
+    FF_NETWORK_PER_BUILD: 'true'
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ''
+    TESTCONTAINERS_HOST_OVERRIDE: docker
+    TESTCONTAINERS_RYUK_DISABLED: 'true'
+  # The oven/bun image symlinks node to bun; the test gate pins Vitest to real Node. Only the major is pinned:
+  # the test gate enforces the >= 22.12 floor; .tool-versions records the version for local tooling.
+  before_script:
+    - apk add --no-cache bash 'nodejs~22'
+    - bash scripts/ci/bootstrap.sh
+  script:
+    - bash scripts/ci/test.sh
+
+test-ui:
+  stage: test
+  # Real Node as above, but no dind service and no Docker variable: this lane starts no container.
+  before_script:
+    - apk add --no-cache bash 'nodejs~22'
+    - bash scripts/ci/bootstrap.sh
+  script:
+    - bash scripts/ci/test-ui.sh
+
+build:
+  stage: test
+  cache:
+    - key:
+        files:
+          - bun.lock
+        prefix: bun
+      paths:
+        - .bun-install-cache/
+      policy: pull
+    - key: turbo-${CI_JOB_NAME}-${CI_COMMIT_REF_SLUG}
+      paths:
+        - .turbo/
+      policy: pull-push
+  script:
+    - bash scripts/ci/build.sh
+
+docs:
+  stage: test
+  image: ghcr.io/astral-sh/uv:0.12.7-python3.12-alpine@sha256:e2156509b8592cb4a74d73ba068fd45c95ec571333effc819f3ac25101147fb1
+  before_script:
+    - apk add --no-cache bash
+  variables:
+    UV_CACHE_DIR: ${CI_PROJECT_DIR}/.uv-cache
+  cache:
+    key:
+      files:
+        - uv.lock
+      prefix: uv-docs
+    paths:
+      - .uv-cache/
+    policy: pull-push
+  script:
+    - bash scripts/ci/docs.sh
+
+container:
+  stage: test
+  image: docker:27-cli@sha256:851f91d241214e7c6db86513b270d58776379aacc5eb9c4a87e5b47115e3065c
+  services:
+    - name: docker:27-dind@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce
+      alias: docker
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ''
+  # A merge request publishes the rolling dev tag; the default branch leaves latest to publish-image
+  # in the release stage.
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      variables:
+        DEV_TAG: dev
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  before_script:
+    - sh scripts/ci/docker-wait.sh
+    - echo "$CI_REGISTRY_PASSWORD" | docker login --username "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    - docker buildx create --use --driver docker-container --driver-opt "image=$BUILDKIT_IMAGE"
+  script:
+    - GIT_SHA="$CI_COMMIT_SHORT_SHA" sh scripts/ci/docker-build.sh --image sre-platform --tag ci
+    - sh scripts/ci/docker-smoke.sh sre-platform:ci
+    # amd64 only: a dev tag has no arm64 consumer, and the second build is a cache-warm export.
+    # Gate on the pipeline source, not on DEV_TAG being unset: project and group CI/CD variables
+    # outrank rules:variables, so a project variable named DEV_TAG would publish dev from the
+    # default branch. The dev build writes its own cache ref so it cannot seed a latest build.
+    - |
+      if [ "$CI_PIPELINE_SOURCE" = 'merge_request_event' ]; then
+        GIT_SHA="$CI_COMMIT_SHORT_SHA" sh scripts/ci/docker-build.sh \
+          --image "$CI_REGISTRY_IMAGE" \
+          --tag "${DEV_TAG:?dev tag missing on a merge request}" \
+          --platforms linux/amd64 \
+          --cache-ref "$CI_REGISTRY_IMAGE:buildcache-dev" \
+          --push
+      fi
+
+publish-image:
+  stage: release
+  image: docker:27-cli@sha256:851f91d241214e7c6db86513b270d58776379aacc5eb9c4a87e5b47115e3065c
+  services:
+    - name: docker:27-dind@sha256:aa3df78ecf320f5fafdce71c659f1629e96e9de0968305fe1de670e0ca9176ce
+      alias: docker
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ''
+  interruptible: false
+  # A present needs list overrides stage ordering, so a job left out of it is not waited for and
+  # this job would publish past a gate that never ran. Name every job in the test stage.
+  needs:
+    - typecheck
+    - lint
+    - guards
+    - test
+    - test-ui
+    - build
+    - docs
+    - container
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  before_script:
+    - sh scripts/ci/docker-wait.sh
+    - echo "$CI_REGISTRY_PASSWORD" | docker login --username "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    - docker buildx create --use --driver docker-container --driver-opt "image=$BUILDKIT_IMAGE"
+  script:
+    - >-
+      GIT_SHA="$CI_COMMIT_SHORT_SHA" sh scripts/ci/docker-build.sh
+      --image "$CI_REGISTRY_IMAGE"
+      --tag latest
+      --platforms linux/amd64,linux/arm64
+      --push

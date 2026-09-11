@@ -1,0 +1,2 @@
+CREATE INDEX "github_events_timeline_idx" ON "github_events" USING btree ("tenant_id","occurred_at" DESC NULLS LAST,"id" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX "gitlab_events_timeline_idx" ON "gitlab_events" USING btree ("tenant_id","occurred_at" DESC NULLS LAST,"id" DESC NULLS LAST);

@@ -1,0 +1,3 @@
+ALTER TABLE "signal_dispositions" ADD COLUMN "proposed_title" text;--> statement-breakpoint
+ALTER TABLE "signal_dispositions" ADD COLUMN "correlated_signal_id" uuid;--> statement-breakpoint
+ALTER TABLE "signal_dispositions" ADD CONSTRAINT "signal_dispositions_correlated_signal_fk" FOREIGN KEY ("tenant_id","correlated_signal_id") REFERENCES "public"."incident_signals"("tenant_id","id") ON DELETE no action ON UPDATE no action;

@@ -1,0 +1,2 @@
+ALTER TABLE "signal_dispositions" ADD COLUMN "source_event_at" timestamp (3) with time zone DEFAULT now() NOT NULL;--> statement-breakpoint
+ALTER TABLE "signal_dispositions" ADD COLUMN "source_event_version" text;

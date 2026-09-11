@@ -1,0 +1,2 @@
+ALTER TABLE "incidents" DROP CONSTRAINT "incidents_tenant_id_fingerprint_unique";--> statement-breakpoint
+CREATE UNIQUE INDEX "incidents_active_fingerprint_uq" ON "incidents" USING btree ("tenant_id","fingerprint") WHERE status in ('open', 'investigating', 'degraded');

@@ -1,0 +1,1 @@
+ALTER TABLE "surface_inbound_events" ADD COLUMN "terminal_disposition_event_at" timestamp (3) with time zone;

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta id="theme-color" name="theme-color" content="#f3f6f8" />
+    <title>SRE Intelligence Platform</title>
+    <script>
+      try {
+        const stored = window.localStorage.getItem('sre-platform-theme');
+        const preference = stored === 'light' || stored === 'dark' ? stored : 'system';
+        const resolved =
+          preference === 'system'
+            ? window.matchMedia('(prefers-color-scheme: dark)').matches
+              ? 'dark'
+              : 'light'
+            : preference;
+        document.documentElement.dataset.theme = resolved;
+        document.documentElement.dataset.themePreference = preference;
+        document.documentElement.style.colorScheme = resolved;
+        document.querySelector('#theme-color').content =
+          resolved === 'dark' ? '#091116' : '#f3f6f8';
+      } catch {
+        document.documentElement.dataset.theme = 'light';
+        document.documentElement.dataset.themePreference = 'system';
+        document.documentElement.style.colorScheme = 'light';
+        document.querySelector('#theme-color').content = '#f3f6f8';
+      }
+    </script>
+    <script src="/runtime-config.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

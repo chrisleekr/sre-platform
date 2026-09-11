@@ -1,0 +1,2 @@
+ALTER TABLE "jobs" ADD CONSTRAINT "jobs_status_vocabulary" CHECK (status IN ('queued','processing','done','dead'));--> statement-breakpoint
+ALTER TABLE "incidents" ADD CONSTRAINT "incidents_status_vocabulary" CHECK (status in ('open', 'investigating', 'degraded', 'resolved', 'closed'));

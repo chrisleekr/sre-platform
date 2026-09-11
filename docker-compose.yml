@@ -1,0 +1,38 @@
+# Local development stack. Self-contained, no cloud.
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: sre
+      POSTGRES_PASSWORD: sre
+      POSTGRES_DB: sre_platform
+    ports: ['45432:5432']
+    volumes: ['pgdata:/var/lib/postgresql/data']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U sre -d sre_platform']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  valkey:
+    image: valkey/valkey:8
+    command: ['valkey-server', '--appendonly', 'yes']
+    ports: ['46379:6379']
+    volumes: ['valkeydata:/data']
+    healthcheck:
+      test: ['CMD', 'valkey-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Local embeddings server. bge-large-en-v1.5 -> 1024 dims.
+  embeddings:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-latest
+    command: ['--model-id', 'BAAI/bge-large-en-v1.5']
+    ports: ['4080:80']
+    volumes: ['hfcache:/data']
+
+volumes:
+  pgdata:
+  valkeydata:
+  hfcache:

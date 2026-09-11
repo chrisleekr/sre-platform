@@ -1,0 +1,51 @@
+import type { Dispatch, SetStateAction } from 'react';
+import type { ArgoCdSettings, ArgoCdTestResult } from '../../lib/connectors';
+import type { ProjectDraft } from './support';
+
+export interface ArgoCdWizardViewModel {
+  mode: 'connect' | 'edit';
+  initialSettings?: Partial<ArgoCdSettings>;
+  step: number;
+  setStep: Dispatch<SetStateAction<number>>;
+  dataSourceName: string;
+  setDataSourceName: Dispatch<SetStateAction<string>>;
+  accessRole: string;
+  accessMode: 'existing' | 'create';
+  accessRoleLocked: boolean;
+  chooseAccessMode: (value: 'existing' | 'create') => void;
+  setExistingAccessRole: (value: string) => void;
+  baseUrl: string;
+  baseUrlError: string | null;
+  usesHttp: boolean;
+  httpAcknowledged: boolean;
+  setHttpAcknowledged: Dispatch<SetStateAction<boolean>>;
+  setBaseUrl: Dispatch<SetStateAction<string>>;
+  trust: 'system' | 'ca' | 'insecure';
+  setTrust: Dispatch<SetStateAction<'system' | 'ca' | 'insecure'>>;
+  caCert: string;
+  setCaCert: Dispatch<SetStateAction<string>>;
+  insecureAcknowledged: boolean;
+  setInsecureAcknowledged: Dispatch<SetStateAction<boolean>>;
+  applicationsInAnyNamespace: boolean;
+  setApplicationsInAnyNamespace: Dispatch<SetStateAction<boolean>>;
+  projects: ProjectDraft[];
+  setProjects: Dispatch<SetStateAction<ProjectDraft[]>>;
+  labelSelector: string;
+  setLabelSelector: Dispatch<SetStateAction<string>>;
+  busyProject: number | null;
+  busy: boolean;
+  submitted: boolean;
+  error: string;
+  result: ArgoCdTestResult | null;
+  normalizedProjects: Array<{
+    project: string;
+    applications: Array<{ name: string; namespace?: string }>;
+  }>;
+  serverChanged: boolean;
+  continueFromServer: () => void;
+  continueFromProjects: () => void;
+  generateAccess: (index: number) => void;
+  continueFromCredentials: () => void;
+  saveAndVerify: () => void;
+  onClose: () => void;
+}

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "jobs_relation_reassessment_coalesce_idx" ON "jobs" USING btree ("tenant_id",(payload->>'incidentId')) WHERE type = 'relation.reassess' AND status IN ('queued','processing');

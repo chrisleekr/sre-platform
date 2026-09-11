@@ -1,0 +1,2 @@
+ALTER TABLE "incidents" ADD COLUMN "archived_at" timestamp (3) with time zone;--> statement-breakpoint
+CREATE INDEX "incidents_tenant_archived_created_id_idx" ON "incidents" USING btree ("tenant_id","archived_at","created_at" DESC NULLS LAST,"id" DESC NULLS LAST);

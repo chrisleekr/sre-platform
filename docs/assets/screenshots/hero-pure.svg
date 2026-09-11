@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1200" height="520" viewBox="0 0 1200 520"
+     role="img" aria-labelledby="title desc">
+  <title id="title">SRE Platform. Investigate faster. Resolve sooner.</title>
+  <desc id="desc">Turn incident context into evidence-backed next steps. A conceptual incident trace moves from fragmented observations at an alert to a clear path toward the next step. No measured timing is depicted.</desc>
+
+  <rect width="1200" height="520" fill="#091116"/>
+
+  <g id="message" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <text x="64" y="66" fill="#edf4f7" font-size="32" font-weight="650">SRE Platform</text>
+    <g font-size="88" font-weight="750" letter-spacing="-3">
+      <text x="60" y="174" fill="#edf4f7">Investigate faster.</text>
+      <text x="60" y="269" fill="#64c8da">Resolve sooner.</text>
+    </g>
+    <text x="64" y="329" fill="#c3d0d7" font-size="32">Turn incident context into evidence-backed next steps.</text>
+  </g>
+
+  <g id="incident-trace" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke="#5e7480" stroke-width="3">
+      <path d="M76 417 H141 M155 417 H183 L205 390 H248 M264 390 H310 L333 417 H380"/>
+      <path d="M145 446 H204 M220 446 H280 L303 432 H353 M370 432 H412 L447 417 H510"/>
+      <path d="M294 375 H344 M360 375 H390 L423 398 H463 M479 398 H510 L542 417 H588"/>
+    </g>
+    <path d="M380 417 H1098" stroke="#64c8da" stroke-width="5"/>
+    <circle cx="76" cy="417" r="8" fill="#091116" stroke="#c3d0d7" stroke-width="3"/>
+    <circle cx="588" cy="417" r="6" fill="#64c8da" stroke="#091116" stroke-width="3"/>
+    <circle cx="1108" cy="417" r="10" fill="#f2b661"/>
+  </g>
+
+  <g id="trace-labels" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+     font-size="28" font-weight="650" letter-spacing="1">
+    <text x="64" y="483" fill="#c3d0d7">ALERT</text>
+    <text x="1120" y="483" text-anchor="end" fill="#f2b661">NEXT STEP</text>
+  </g>
+</svg>

@@ -1,0 +1,2 @@
+ALTER TABLE "incidents" ADD COLUMN "recovery_run_id" uuid;--> statement-breakpoint
+ALTER TABLE "incidents" ADD CONSTRAINT "incidents_recovery_run_fk" FOREIGN KEY ("tenant_id","id","recovery_run_id") REFERENCES "public"."investigation_runs"("tenant_id","incident_id","id") ON DELETE no action ON UPDATE no action;

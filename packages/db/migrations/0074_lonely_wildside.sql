@@ -1,0 +1,2 @@
+ALTER TABLE "gitlab_events" ADD COLUMN "observation_key" text;--> statement-breakpoint
+CREATE INDEX "gitlab_events_observation_idx" ON "gitlab_events" USING btree ("tenant_id","connector_id","observation_key","received_at","id");

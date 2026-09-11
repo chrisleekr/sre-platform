@@ -1,0 +1,2 @@
+ALTER TABLE "incidents" ADD COLUMN "purpose" text DEFAULT 'incident' NOT NULL;--> statement-breakpoint
+ALTER TABLE "incidents" ADD CONSTRAINT "incidents_purpose_vocabulary" CHECK (purpose in ('incident', 'health_check'));

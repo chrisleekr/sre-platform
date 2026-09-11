@@ -1,0 +1,1 @@
+ALTER TABLE "tenant_identity_bindings" ADD COLUMN "sort_order" integer DEFAULT 0 NOT NULL;

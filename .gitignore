@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+# docs/build is a documentation section, not build output. The rule above is unanchored.
+!docs/build/
+coverage/
+site/
+.vitest/
+.turbo/
+.bun-install-cache/
+.venv/
+*.local
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log

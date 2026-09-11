@@ -1,0 +1,17 @@
+{
+  "name": "@sre/queue",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "dependencies": {
+    "@sre/connectors": "workspace:*",
+    "@sre/contracts": "workspace:*",
+    "@sre/db": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "ioredis": "^5.11.1"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

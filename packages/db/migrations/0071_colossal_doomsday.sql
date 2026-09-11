@@ -1,0 +1,2 @@
+ALTER TABLE "browser_sessions" ADD COLUMN "selected_tenant_id" uuid;--> statement-breakpoint
+ALTER TABLE "browser_sessions" ADD CONSTRAINT "browser_sessions_selected_tenant_id_tenants_id_fk" FOREIGN KEY ("selected_tenant_id") REFERENCES "public"."tenants"("id") ON DELETE cascade ON UPDATE no action;

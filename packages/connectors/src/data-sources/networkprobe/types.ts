@@ -1,0 +1,41 @@
+import type { HostLookup } from '../../ssrf';
+
+export interface PeerCertLike {
+  subject?: { CN?: string } & Record<string, unknown>;
+  issuer?: Record<string, unknown>;
+  valid_from?: string;
+  valid_to?: string;
+  subjectaltname?: string;
+  serialNumber?: string;
+  fingerprint256?: string;
+}
+
+export interface RawTlsResult {
+  authorized: boolean;
+  authorizationError: string | null;
+  protocol: string | null;
+  cipher: string | null;
+  cert: PeerCertLike;
+}
+
+/** Injectable socket boundary for hermetic resolver, TCP, TLS, and HTTP tests. */
+export interface ProbeSocketDeps {
+  lookup: HostLookup;
+  resolveCname: (host: string) => Promise<string[]>;
+  tcpConnect: (ip: string, port: number, timeoutMs: number) => Promise<number>;
+  tlsConnect: (
+    ip: string,
+    servername: string,
+    port: number,
+    timeoutMs: number,
+  ) => Promise<RawTlsResult>;
+  httpHead: (
+    ip: string,
+    hostHeader: string,
+    servername: string,
+    port: number,
+    scheme: 'http' | 'https',
+    path: string,
+    timeoutMs: number,
+  ) => Promise<{ status: number; headers: Record<string, string> }>;
+}

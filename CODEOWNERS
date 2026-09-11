@@ -1,0 +1,3 @@
+# Default owner for everything. Read by GitLab (root CODEOWNERS) and GitHub.
+# GitHub mirror: if the GitHub username differs, add a .github/CODEOWNERS override.
+* @chrislee

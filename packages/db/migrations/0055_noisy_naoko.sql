@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "tenant_invitations_pending_email_uq" ON "tenant_invitations" USING btree ("tenant_id",lower("email")) WHERE "tenant_invitations"."status" = 'pending';

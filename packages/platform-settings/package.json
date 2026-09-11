@@ -1,0 +1,17 @@
+{
+  "name": "@sre/platform-settings",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "dependencies": {
+    "@sre/contracts": "workspace:*",
+    "@sre/db": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "ioredis": "^5.11.1",
+    "zod": "^4.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

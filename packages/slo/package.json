@@ -1,0 +1,20 @@
+{
+  "name": "@sre/slo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./test-support": "./src/test-support.ts"
+  },
+  "dependencies": {
+    "@sre/db": "workspace:*"
+  },
+  "devDependencies": {
+    "drizzle-orm": "^0.45.2"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

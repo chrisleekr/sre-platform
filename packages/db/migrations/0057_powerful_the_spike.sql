@@ -1,0 +1,2 @@
+ALTER TABLE "workspace_foundings" DROP CONSTRAINT "workspace_foundings_slug_unique";--> statement-breakpoint
+CREATE UNIQUE INDEX "workspace_foundings_reserving_slug_uq" ON "workspace_foundings" USING btree ("slug") WHERE "workspace_foundings"."status" not in ('rejected','expired');

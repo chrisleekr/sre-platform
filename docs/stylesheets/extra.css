@@ -1,0 +1,46 @@
+/* Reading width. The default content column is narrow enough that any three-column
+   table squeezes its prose into one or two words per line. */
+.md-grid {
+  max-width: 68rem;
+}
+
+/* Tables fill the column instead of shrinking to their content, and the scroll
+   container never squeezes a column below what its text needs. */
+.md-typeset__table {
+  display: block;
+  width: 100%;
+}
+
+.md-typeset__table > table {
+  display: table;
+  width: 100%;
+  table-layout: auto;
+}
+
+.md-typeset table:not([class]) {
+  min-width: 100%;
+  font-size: 0.72rem;
+}
+
+/* A wrapped header reads as two columns. Headers are short everywhere in this
+   guide, so keeping them on one line costs nothing and removes the ambiguity. */
+.md-typeset table:not([class]) th {
+  white-space: nowrap;
+}
+
+.md-typeset table:not([class]) td {
+  vertical-align: top;
+  text-wrap: pretty;
+}
+
+/* The first column is almost always the key being described. Give it room to
+   stay readable rather than collapsing to the width of its longest word. */
+.md-typeset table:not([class]) td:first-child {
+  min-width: 9rem;
+}
+
+/* Screenshots are UI, not illustrations. A border separates them from the page. */
+.md-typeset img[src*='/screenshots/'] {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 4px;
+}

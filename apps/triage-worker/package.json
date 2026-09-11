@@ -1,0 +1,33 @@
+{
+  "name": "@sre/triage-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "dev": "NODE_ENV=development SRE_DEV_CONNECTOR_LOOPBACK=true bun run --watch --env-file=../../.env src/index.ts",
+    "start": "bun run src/index.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.0",
+    "@anthropic-ai/sdk": "^0.93.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@sre/agent-tools": "workspace:*",
+    "@sre/alerts": "workspace:*",
+    "@sre/connectors": "workspace:*",
+    "@sre/contracts": "workspace:*",
+    "@sre/db": "workspace:*",
+    "@sre/hub": "workspace:*",
+    "@sre/platform-settings": "workspace:*",
+    "@sre/queue": "workspace:*",
+    "@sre/slo": "workspace:*",
+    "@sre/surfaces": "workspace:*",
+    "@sre/topology": "workspace:*",
+    "@toon-format/toon": "^2.3.1",
+    "drizzle-orm": "^0.45.2",
+    "ioredis": "^5.11.1",
+    "openai": "^6.10.0",
+    "zod": "^4.0.0"
+  }
+}

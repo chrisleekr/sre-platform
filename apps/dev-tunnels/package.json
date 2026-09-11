@@ -1,0 +1,11 @@
+{
+  "name": "@sre/dev-tunnels",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "dev": "bun run --env-file=../../.env src/index.ts"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "@sre/topology",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "dependencies": {
+    "@sre/db": "workspace:*",
+    "drizzle-orm": "^0.45.2"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}
