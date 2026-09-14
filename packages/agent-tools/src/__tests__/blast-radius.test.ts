@@ -34,7 +34,7 @@ let tool: ReturnType<typeof makeFetchBlastRadiusTool>;
 function makeCtx(audit: ToolContext['audit'], tenant = tenantId): ToolContext {
   return {
     tenantId: tenant,
-    incidentId: 'incident-1',
+    incidentId: randomUUID(),
     service: 'checkout',
     // Reads the topology store, not connectors; resolver is never called.
     resolveConnectors: () => Promise.resolve([]),

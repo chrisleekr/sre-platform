@@ -2,7 +2,13 @@
 // into these shapes so the rest of the platform never sees vendor specifics.
 
 import type { ZodType } from 'zod';
-import type { AffectedEntityCandidate, EntityCapability, EntityKind } from '@sre/contracts';
+import type {
+  AffectedEntityCandidate,
+  EntityCapability,
+  EntityKind,
+  TopologyReader,
+  TopologyRuntimeState,
+} from '@sre/contracts';
 
 export const CONNECTOR_TYPE_IDS = [
   'datadog',
@@ -21,6 +27,7 @@ export const CONNECTOR_TYPE_IDS = [
 export type ConnectorType = (typeof CONNECTOR_TYPE_IDS)[number];
 
 export interface ConnectorCapabilities {
+  topology?: 'inventory' | 'on_demand';
   availability: 'ready' | 'incomplete';
   configuration: 'tenant' | 'builtin';
   instances: 'multiple' | 'singleton';
@@ -49,6 +56,7 @@ export interface NormalizedSnapshot {
   metrics: Record<string, number>;
   metadata: Record<string, unknown>;
   observedAt: Date;
+  topology?: TopologyRuntimeState;
 }
 
 export interface TriageContext {
@@ -102,10 +110,15 @@ export interface SourceComparison {
 
 /**
  * Provider-neutral, read-only source capability. Repository identity always originates from
- * `resolve`; callers cannot turn this into an installation-wide arbitrary repository reader.
+ * `resolve` or exact admitted-catalog resolution; callers cannot turn this into an installation-wide
+ * arbitrary repository reader.
  */
 export interface SourceCodeReader {
   resolve(service: string): Promise<SourceRepository[]>;
+  /** Resolve an exact external repository identity inside this connector's admitted catalog. */
+  resolveRepository?(
+    reference: import('@sre/contracts').TopologyRef,
+  ): Promise<SourceRepository | null>;
   verifyRevision(repository: SourceRepository, revision: string): Promise<SourceRevision>;
   search(
     repository: SourceRepository,
@@ -217,6 +230,8 @@ export interface IDataSourceConnector {
   readonly sourceCode?: SourceCodeReader;
   /** Optional runtime provenance capability, currently supplied by Kubernetes connectors. */
   readonly runtimeArtifacts?: RuntimeArtifactReader;
+  /** Inventory discovery does not require a pre-existing catalog service. */
+  readonly topology?: TopologyReader;
   /** Optional metrics capability the scheduled error-budget evaluator reads objectives through. */
   readonly sli?: SliRatioReader;
   /** Declares which affected entities this instance can inspect and whether its saved scope covers one. */

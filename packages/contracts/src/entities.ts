@@ -1,3 +1,5 @@
+import type { TopologyRef } from './topology';
+
 export const ENTITY_KINDS = [
   'service',
   'workload',
@@ -10,6 +12,8 @@ export const ENTITY_KINDS = [
   'endpoint',
   'database',
   'host',
+  'monitor',
+  'dashboard',
 ] as const;
 
 export type EntityKind = (typeof ENTITY_KINDS)[number];
@@ -40,6 +44,10 @@ export interface SignalSource {
 
 /** One provider-derived possibility for what an observation is about. */
 export interface AffectedEntityCandidate {
+  /** Exact identity captured by a platform topology observation, not inferred from source text. */
+  topologySubjectKey?: string;
+  /** Exact resource locator captured by a trusted provider snapshot, not a name or model guess. */
+  topologyRef?: TopologyRef;
   /** Stable provider-neutral identity used by tenant-local mapping corrections. */
   key: string;
   kind: EntityKind;

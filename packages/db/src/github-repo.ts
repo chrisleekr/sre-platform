@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { withTenant, type Executor } from './rls';
 import { githubRepositories, serviceRepositories } from './schema';
@@ -188,7 +188,7 @@ export async function listGitHubRepositories(
   db: Db,
   tenantId: string,
   connectorId: string,
-  options: { query?: string; limit?: number } = {},
+  options: { query?: string; limit?: number; afterRepositoryId?: string } = {},
 ) {
   const query = options.query?.trim().toLowerCase();
   const limit = Math.min(Math.max(1, options.limit ?? 50), 100);
@@ -209,10 +209,17 @@ export async function listGitHubRepositories(
         and(
           eq(githubRepositories.connectorId, connectorId),
           isNull(githubRepositories.removedAt),
+          options.afterRepositoryId
+            ? gt(githubRepositories.repositoryId, options.afterRepositoryId)
+            : undefined,
           query ? sql`position(${query} in lower(${githubRepositories.fullName})) > 0` : undefined,
         ),
       )
-      .orderBy(githubRepositories.fullName)
+      .orderBy(
+        options.afterRepositoryId !== undefined
+          ? githubRepositories.repositoryId
+          : githubRepositories.fullName,
+      )
       .limit(limit),
   );
 }

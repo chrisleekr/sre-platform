@@ -9,6 +9,8 @@ import {
   unique,
   foreignKey,
   check,
+  jsonb,
+  index,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { tenants } from './control-plane';
@@ -45,16 +47,19 @@ export const serviceDependencies = pgTable(
     // direction to find who is affected.
     upstream: text('upstream').notNull(),
     downstream: text('downstream').notNull(),
-    // sync | async — an async edge insulates the caller from a downstream failure (tiering).
+    environment: text('environment').notNull().default(''),
+    rationale: text('rationale'),
+    confirmedByUserId: uuid('confirmed_by_user_id'),
+    lastConfirmedAt: timestamp('last_confirmed_at', { withTimezone: true }),
+    // Declared call properties describe exposure, not observed protection.
     syncType: text('sync_type').notNull().default('sync'),
-    // A circuit breaker on the edge insulates the caller from a downstream failure (tiering).
     circuitBreaker: boolean('circuit_breaker').notNull().default(false),
     protocol: text('protocol'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
-    unique('service_deps_edge_uq').on(t.tenantId, t.upstream, t.downstream),
+    unique('service_deps_edge_uq').on(t.tenantId, t.upstream, t.downstream, t.environment),
     // A service cannot depend on itself: meaningless, and a degenerate cycle that would trap the
     // blast-radius recursive CTE. Guards every writer, not just the API.
     check('service_deps_no_self_loop', sql`upstream <> downstream`),
@@ -71,6 +76,36 @@ export const serviceDependencies = pgTable(
       foreignColumns: [services.tenantId, services.name],
       name: 'service_deps_downstream_fk',
     }),
+    tenantIsolation(),
+  ],
+);
+
+/** Changes are retained so an old incident does not silently use today's declarations. */
+export const serviceDependencyHistory = pgTable(
+  'service_dependency_history',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    upstream: text('upstream').notNull(),
+    downstream: text('downstream').notNull(),
+    environment: text('environment').notNull().default(''),
+    declaration: jsonb('declaration')
+      .$type<{
+        syncType: string;
+        circuitBreaker: boolean;
+        protocol: string | null;
+        rationale: string | null;
+        confirmedByUserId: string | null;
+        lastConfirmedAt: string | null;
+      }>()
+      .notNull(),
+    validFrom: timestamp('valid_from', { withTimezone: true }).defaultNow().notNull(),
+    validUntil: timestamp('valid_until', { withTimezone: true }),
+  },
+  (t) => [
+    index('service_dependency_history_time_idx').on(t.tenantId, t.validFrom),
     tenantIsolation(),
   ],
 );

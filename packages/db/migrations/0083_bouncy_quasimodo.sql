@@ -1,0 +1,1 @@
+ALTER TABLE "topology_collections" ADD COLUMN "scan" jsonb;

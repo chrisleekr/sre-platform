@@ -1,3 +1,4 @@
+import type { TopologyReader } from '@sre/contracts';
 import type {
   ConnectorCapabilities,
   ConnectorPollEvidence,
@@ -29,6 +30,8 @@ export interface ConnectorConfig<TType extends ConnectorType = ConnectorType> {
   repositories?: {
     resolve(service: string): Promise<RepositoryCatalogEntry[]>;
     search(query: string, limit?: number): Promise<RepositoryCatalogEntry[]>;
+    /** Stable admitted-catalog inventory, starting after the previous repository identifier. */
+    page?(afterRepositoryId: string | null, limit: number): Promise<RepositoryCatalogEntry[]>;
     pollCandidates?(): Promise<
       {
         repositoryId: string;
@@ -84,6 +87,7 @@ export interface ConnectorImplementation {
   }) => Promise<TriageContext>;
   sourceCode?: SourceCodeReader;
   runtimeArtifacts?: RuntimeArtifactReader;
+  topology?: TopologyReader;
   sli?: SliRatioReader;
   entityCoverage?: EntityCoverageReader;
   tools?: () => ConnectorTool[];
@@ -160,6 +164,7 @@ export function createDataSourceConnector<TType extends ConnectorType>(
       }),
     sourceCode: implementation.sourceCode,
     runtimeArtifacts: implementation.runtimeArtifacts,
+    topology: config.credentialStatus === 'unavailable' ? undefined : implementation.topology,
     sli: implementation.sli,
     entityCoverage,
     tools: implementation.tools ?? (() => []),
