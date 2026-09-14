@@ -82,7 +82,7 @@ test('shows the exact responder handoff, owner, budget, and episode boundary', (
   expect(screen.getByText('Human decision required')).toBeDefined();
   expect(screen.getByText(/Review the high-severity incident/)).toBeDefined();
   expect(screen.getByText('payments-sre')).toBeDefined();
-  expect(screen.getByText('No automation remains.')).toBeDefined();
+  expect(screen.getByText('No active automation recorded')).toBeDefined();
   expect(screen.getByText(/New matching alerts stop joining this episode/)).toBeDefined();
   expect(screen.getByText(/Tenant · 4 \/ 10 runs/)).toBeDefined();
 });
@@ -193,7 +193,7 @@ test('labels pending and recovery state without claiming either is a trusted ass
   };
   const { rerender } = render(<IncidentDecisionBrief workspace={pending} {...props} />);
   expect(screen.getByText('No trusted assessment yet')).toBeDefined();
-  expect(screen.getByText('Investigation in progress')).toBeDefined();
+  expect(screen.getByText('Recovery not verified')).toBeDefined();
 
   const recovery = workspace();
   recovery.incident.recoveryState = 'monitoring';
@@ -201,7 +201,7 @@ test('labels pending and recovery state without claiming either is a trusted ass
   recovery.incident.assessmentUpdatedAt = '2026-09-01T00:00:00.000Z';
   rerender(<IncidentDecisionBrief workspace={recovery} {...props} />);
   expect(screen.getByText('Recovery status')).toBeDefined();
-  expect(screen.getByText('Monitoring recovery')).toBeDefined();
+  expect(screen.getByText('Recovery not verified')).toBeDefined();
 });
 
 test('labels finding promotion in the durable conversation', () => {

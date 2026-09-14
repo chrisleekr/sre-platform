@@ -41,6 +41,28 @@ function incident(overrides: Partial<Incident> = {}): Incident {
 }
 
 describe('DeploymentEvidenceTimeline', () => {
+  test('uses contextual titles in timeline and selected deployment without showing Slack addressing', () => {
+    const view = render(
+      <MemoryRouter>
+        <DeploymentEvidenceTimeline
+          deployments={[deployment]}
+          incidents={[
+            incident({
+              title: '<@U12345678>',
+              displayTitle: 'Check checkout latency',
+              titleSource: 'opening_request',
+            }),
+          ]}
+          applications={[]}
+          selected={deployment}
+          onSelect={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    expect(view.getAllByRole('link', { name: 'Check checkout latency' })).toHaveLength(2);
+    expect(view.container.textContent).not.toContain('<@U12345678>');
+    view.unmount();
+  });
   test('correlates only the same service inside the explicit 24-hour window', () => {
     const related = incident();
     const otherService = incident({ service: 'orders' });

@@ -1,44 +1,66 @@
 # Incident workspace
 
-One incident, in full. This is where you read the conclusion, argue with it, and decide what to do.
+Start with the reported impact, evidence freshness and next action. The assessment, supporting
+evidence and shared conversation stay on one page.
 
 ![The incident workspace](../assets/screenshots/incident-detail-light.png#only-light)
 ![The incident workspace](../assets/screenshots/incident-detail-dark.png#only-dark)
 
-## Three sections
+## Triage at a glance
 
 | Section | Contains |
 | --- | --- |
-| **Brief** | The current conclusion and what is blocking. Start here |
+| **Brief** | Recorded impact, leading hypothesis, contradictions, missing information and next step |
 | **Conversation** | Every message, from Slack and from here, in one thread |
-| **Evidence** | Every lookup the platform made, with its result and its timestamp |
+| **Supporting evidence** | A compact set of cited checks, or explicitly labeled recent checks |
 
 ## Human decision required
 
-The yellow box, when present, is the only thing on the page you must act on. It names the decision,
-the responsible team, and what the platform will do next **without** you, with a time.
-
-That last part matters. It tells you whether this can wait.
+The decision names the recorded next action. Service team is ownership context, not an assigned
+incident commander. Missing team or impact stays explicit. Check contradictions before acting.
 
 ## Automation policy
 
 What the platform is allowed to do on this incident: whether a provider episode boundary is
 recorded, and how much of the automatic investigation budget this incident has used.
 
-## Current response state
+## Recorded state, not assumed progress
 
-Four small panels, deliberately kept apart because they answer different questions.
+Incident lifecycle, provider notifications, recovery evidence and automation are separate facts.
+Cleared alerts do not prove user recovery. A queued or processing job describes a stored work
+record, not proof that a worker is making progress. A scheduled check can be overdue.
 
 | Panel | Answers |
 | --- | --- |
-| **Ownership** | Is a person needed, and which lifecycle version this reflects |
+| **Response status** | Whether human attention is required and the recorded lifecycle |
 | **Provider notifications** | Is the underlying alert still unresolved |
-| **SRE investigation** | How far the engine got, how many checks it ran, and what the latest run concluded |
+| **SRE investigation** | Recorded work and the separately timestamped last completed result |
 | **LLM usage** | What this one incident has cost |
+
+History, policy and accounting remain in disclosures. An interrupted live stream is shown beside
+the situation. You can keep editing a draft while disconnected, but must reconnect before sending.
+New updates offer explicit navigation without moving your reading position.
+
+## Inspect evidence
+
+Open a citation to inspect its exact check, including one outside the loaded evidence page.
+**All evidence** opens the loaded ledger. Search, source and outcome filters apply only to loaded
+records; **Load older evidence** fetches another page. **Data returned** is not proof of a diagnosis.
+
+The wide inspector shows a chart, facts or logs before raw stored input/output. Long content uses
+pages instead of nested vertical scrollers. Projection limits are disclosed; stored output is not
+the provider's complete history. **Back to evidence** retains filters. Close or Escape returns to
+the incident without discarding the draft.
+
+![Evidence inspection](../assets/screenshots/incident-detail-evidence-light.png#only-light)
+![Evidence inspection](../assets/screenshots/incident-detail-evidence-dark.png#only-dark)
+
+On tablet and mobile, the workspace stacks by available width. Situation and next action stay ahead
+of supporting evidence and conversation. The same inspector keeps Back and Close available.
 
 ## Responder brief
 
-The current assessment, in the platform's own words, with the model and the time it was written.
+The recorded assessment, with its timestamp. Its observation window may be older than the page.
 
 - **Model confidence** is a self-reported number out of 100. It falls when evidence is thin or a
   step could not run. Treat it as the platform's own hedging, not a probability.
@@ -60,9 +82,16 @@ which revision was deployed. Missing or contradictory evidence leaves the result
 Repository paths, resource names, and commands are preserved; credentials are redacted.
 
 Replies keep the requested answer or document when evidence review corrects an unsupported claim.
+The full corrected reply remains in the dashboard even when the diagnosis is inconclusive; Slack
+receives a concise summary and incident link. This does not replace the trusted assessment.
 Recovery advice is reviewed too. A later observation does not erase an earlier measurement from a
 different time window. Evidence searches match individual terms; an empty search is not proof that
 the incident has no relevant evidence.
+
+Large evidence is reviewed in up to six source-linked chunks, then synthesized only after complete
+coverage. The limit is 480,000 serialized evidence characters and seven calls sharing the original
+deadline. Budget, timeout, malformed-output and citation failures report incomplete review, not a
+detected contradiction. Unchecked procedures are withheld; durable evidence remains available.
 
 ## Capture guidance for next time
 
@@ -79,6 +108,40 @@ incident lifecycle, modify infrastructure, or commit a file to a repository.
 
 Slack receives a concise takeaway and an incident link; the complete document remains in the
 conversation. Ask a follow-up there to discuss the guide without restarting the diagnosis.
+
+An unsupported request to write a repository document may offer platform
+knowledge capture instead. Only the requesting member can confirm that saved offer with **Yes**,
+within 15 minutes. **No** cancels it; other input supersedes it. Old assistant prose is not consent.
+Explicit requests to save a platform guide still run directly, without this extra confirmation.
+
+## Repository issues
+
+Open **Issues** on an incident to read, create, edit, close or reopen GitHub and GitLab issues.
+Choose a connection and repository, then load recent issues or enter an exact issue number.
+Lists contain at most 50 recent results. Permanent deletion is not supported.
+Descriptions are limited to 20,000 characters; manage longer issues in the provider directly.
+
+Changes require an administrator to enable issue management for specific repositories in the
+connection. Prepare the fields, choose **Review changes**, inspect the saved preview, then choose
+**Publish issue** or **Save changes**. Only the requesting active workspace member can confirm it.
+Check the saved connection and destination URL, especially when instances share repository paths.
+**Discard draft** makes no external change. Previews expire after 15 minutes.
+
+You can also ask in the conversation, for example, “Create a GitLab issue in team/service with
+the diagnostic findings.” Include the connection and full repository path; include the issue
+number for an update. The platform prepares a preview, not a write. Confirm using the exact
+`Confirm issue <draft ID>` command shown in its reply, or use the Issues panel. Bare “Yes” is not
+issue authorization. Newer conversation input blocks a queued confirmation.
+
+The platform rechecks membership, connection permissions and the issue's saved snapshot before
+dispatch. A changed issue needs a new preview. This check cannot prevent another editor changing
+the issue between the read and the provider's write. GitLab also checks the live project identity
+and path before writing; a concurrent transfer after that check remains a provider-side race.
+Only requested fields are sent.
+
+Each preview allows one dispatch attempt. If the outcome is **unknown**, inspect the issue in its
+provider and refresh status before preparing another change. The platform never automatically
+retries an uncertain write or a rate-limited request. Results stay in the incident conversation.
 
 ## Lifecycle requests and health checks
 
@@ -266,37 +329,3 @@ the one trusted at publish. The judge scores that assessment's summary and top h
 the published contributing causes. After publishing you can record your own verdict, correct,
 partial or incorrect, and the model judge's verdict appears beside it once it lands. Your verdict is
 the one the Reliability workspace reports; the judge's is kept so the judge itself can be scored.
-
-An unsupported request to write a repository document may offer platform
-knowledge capture instead. Only the requesting member can confirm that saved offer with **Yes**,
-within 15 minutes. **No** cancels it; other input supersedes it. Old assistant prose is not consent.
-Explicit requests to save a platform guide still run directly, without this extra confirmation.
-
-## Repository issues
-
-Open **Issues** on an incident to read, create, edit, close or reopen GitHub and GitLab issues.
-Choose a connection and repository, then load recent issues or enter an exact issue number.
-Lists contain at most 50 recent results. Permanent deletion is not supported.
-Descriptions are limited to 20,000 characters; manage longer issues in the provider directly.
-
-Changes require an administrator to enable issue management for specific repositories in the
-connection. Prepare the fields, choose **Review changes**, inspect the saved preview, then choose
-**Publish issue** or **Save changes**. Only the requesting active workspace member can confirm it.
-Check the saved connection and destination URL, especially when instances share repository paths.
-**Discard draft** makes no external change. Previews expire after 15 minutes.
-
-You can also ask in the conversation, for example, “Create a GitLab issue in team/service with
-the diagnostic findings.” Include the connection and full repository path; include the issue
-number for an update. The platform prepares a preview, not a write. Confirm using the exact
-`Confirm issue <draft ID>` command shown in its reply, or use the Issues panel. Bare “Yes” is not
-issue authorization. Newer conversation input blocks a queued confirmation.
-
-The platform rechecks membership, connection permissions and the issue's saved snapshot before
-dispatch. A changed issue needs a new preview. This check cannot prevent another editor changing
-the issue between the read and the provider's write. GitLab also checks the live project identity
-and path before writing; a concurrent transfer after that check remains a provider-side race.
-Only requested fields are sent.
-
-Each preview allows one dispatch attempt. If the outcome is **unknown**, inspect the issue in its
-provider and refresh status before preparing another change. The platform never automatically
-retries an uncertain write or a rate-limited request. Results stay in the incident conversation.

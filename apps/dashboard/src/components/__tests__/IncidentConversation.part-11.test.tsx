@@ -319,11 +319,9 @@ describe('incident response workspace', () => {
     const view = renderIncident();
 
     expect(await screen.findByText('All signals clear')).toBeDefined();
-    expect(screen.getByText('Signals cleared; recovery verification is running.')).toBeDefined();
+    expect(screen.getByText('Provider notifications cleared.')).toBeDefined();
     expect(
-      screen.getByText(
-        /checking current evidence before deciding whether human attention is required/i,
-      ),
+      screen.getByText(/cleared provider notifications do not establish user recovery/i),
     ).toBeDefined();
     view.unmount();
   });

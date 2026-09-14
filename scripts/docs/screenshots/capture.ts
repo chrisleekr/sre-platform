@@ -1,16 +1,7 @@
 #!/usr/bin/env bun
 /**
- * Regenerates every dashboard screenshot in the user guide.
- *
- * Run: `bun run docs:screenshots`
- *
- * The whole stack is disposable. Postgres and Valkey are started as throwaway containers with
- * random host ports, exactly as the test suite does, and the API and dashboard are launched with
- * those URLs passed explicitly in the child environment. An explicitly set variable beats a `.env`
- * entry in Bun, so a developer's `DATABASE_URL` cannot be reached from here even by accident, and
- * the assertion below refuses to continue if a container URL ever matched one.
- *
- * Requires a running Docker daemon and Playwright's Chromium (`bunx playwright install chromium`).
+ * Regenerate dashboard screenshots, optionally selecting one guide.
+ * Disposable containers and explicit child URLs isolate the developer database.
  */
 import { chromium, type Browser, type BrowserContext, type Locator, type Page } from 'playwright';
 import { Redis } from 'ioredis';
@@ -32,7 +23,9 @@ import { Queue, makeSnapshotCache } from '../../../packages/queue/src/index';
 import { eq } from 'drizzle-orm';
 import { seedDemoData } from './demo-data';
 import { captureFullPage } from './full-page';
-import { SCREENSHOT_MATRIX, SHOTS, WIZARDS, type Shot, type Wizard } from './shots';
+import { prepareTopologyCapture } from './topology-capture';
+import * as incidentCapture from './incident-capture';
+import { screenshotPlan, WIZARDS, type Shot, type Wizard } from './shots';
 import {
   ROOT,
   freePort,
@@ -45,18 +38,17 @@ import {
 
 const OUT = join(ROOT, 'docs', 'assets', 'screenshots');
 const STAGE = join(ROOT, 'docs', 'assets', '.screenshots-staging');
+const capturePlan = screenshotPlan(process.argv.slice(2));
+const TOPOLOGY_ONLY = capturePlan.only === 'topology';
+const INCIDENT_ONLY = capturePlan.only === 'incident';
 
 const LOGIN_EMAIL = 'dev@example.test';
 const LOGIN_PASSWORD = 'documentation-demo-password';
 /** Matches `local-session.ts`; the capture restores a session instead of typing into the form. */
 const SESSION_KEY = 'sre.localSession';
 const THEME_KEY = 'sre-platform-theme';
-/** Fixed anchor for the demo data, so a re-run reproduces the same relative times. */
 const NOW = new Date();
-
-// Every wait in this file is explicit. Playwright's implicit 30s action default is the one that is
-// not, and on a loaded machine it is the first thing to fire, as a click that never finds a button
-// that simply had not rendered yet.
+// Allow loaded development machines time to render before actions time out.
 const ACTION_TIMEOUT_MS = 90_000;
 
 interface Session {
@@ -73,8 +65,7 @@ async function signIn(apiBase: string, api: Child): Promise<Session> {
     body: JSON.stringify({ email: LOGIN_EMAIL, password: LOGIN_PASSWORD }),
   });
   if (!response.ok) {
-    // A bare status says nothing about why. The API's own log is the only place the cause is
-    // written, so surface it here rather than sending the operator back to a dead container.
+    // Include the disposable API's log so sign-in failures are diagnosable.
     const body = await response.text().catch(() => '');
     throw new Error(
       `local sign-in failed: ${response.status} ${body.slice(0, 500)}\n\n${api.label} output:\n${api.output().trim()}`,
@@ -91,7 +82,7 @@ async function capture(
   shots: Shot[],
   sizeName: string,
 ): Promise<void> {
-  const page = await context.newPage();
+  const page = await incidentCapture.createPage(context);
   for (const shot of shots) {
     const path = shot.path.replace(':incident', incidentId);
     if (shot.sessionStorage) {
@@ -107,16 +98,19 @@ async function capture(
         .getByRole('heading', { name: shot.expectedHeading, exact: true })
         .waitFor({ state: 'visible', timeout: 20_000 });
     }
-    // Let the pending fetches settle and the topology force layout come to rest. A fixed settle,
-    // rather than network idleness, because the incident workspace holds an open WebSocket.
-    await page.waitForTimeout(shot.file === 'topology' ? 2_500 : 600);
+    if (shot.topology) {
+      await prepareTopologyCapture(page, shot.topology);
+    } else if (shot.file.startsWith('incident-detail')) {
+      await incidentCapture.prepareIncidentCapture(page);
+    } else await page.waitForTimeout(600);
     if (shot.click && (!shot.clickSizes || shot.clickSizes.includes(sizeName))) {
       await page.getByRole('button', { name: shot.click }).click();
       await page.waitForTimeout(1_200);
     }
     const sizeSuffix = sizeName === 'desktop' ? '' : `-${sizeName}`;
     const file = join(STAGE, `${shot.file}${sizeSuffix}-${theme}.png`);
-    await captureFullPage(page, file);
+    if (shot.incidentInspector) await incidentCapture.captureIncidentInspector(page, file);
+    else await captureFullPage(page, file);
     log(`  ${theme}  ${shot.file}`);
   }
   await page.close();
@@ -248,10 +242,9 @@ async function captureAll(
   session: Session,
   incidentId: string,
 ): Promise<void> {
-  const signedIn = SHOTS.filter((shot) => !shot.anonymous);
-  const signedOut = SHOTS.filter((shot) => shot.anonymous);
-
-  for (const size of SCREENSHOT_MATRIX) {
+  for (const size of capturePlan.matrix) {
+    const signedIn = size.shots.filter((shot) => !shot.anonymous);
+    const signedOut = size.shots.filter((shot) => shot.anonymous);
     for (const theme of size.themes) {
       // A signed-out context for the sign-in screen: with a session in storage the router sends
       // /login straight to the dashboard, and the shot would silently duplicate the overview.
@@ -306,7 +299,7 @@ async function captureAll(
       context.setDefaultTimeout(ACTION_TIMEOUT_MS);
       await capture(context, dashboardBase, incidentId, theme, signedIn, size.name);
 
-      if (size.name === 'desktop') {
+      if (size.name === 'desktop' && !TOPOLOGY_ONLY && !INCIDENT_ONLY) {
         const wizardPage = await context.newPage();
         for (const wizard of WIZARDS) await captureWizard(wizardPage, dashboardBase, theme, wizard);
         await wizardPage.close();
@@ -331,7 +324,7 @@ async function main(): Promise<void> {
     const apiBase = `http://127.0.0.1:${apiPort}`;
     const dashboardBase = `http://127.0.0.1:${dashboardPort}`;
 
-    // One key for the API and the seed: a credential written here has to decrypt over there.
+    // The seed and API must share the credential encryption key.
     const masterKey = randomBytes(32).toString('base64');
     const apiEnv: Record<string, string> = {
       NODE_ENV: 'development',
@@ -473,6 +466,12 @@ async function main(): Promise<void> {
     mkdirSync(STAGE, { recursive: true });
     browser = await chromium.launch();
     await captureAll(browser, dashboardBase, session, lead.id);
+    if (TOPOLOGY_ONLY || INCIDENT_ONLY) {
+      // Publish only the requested images after the entire four-viewport/theme matrix succeeds.
+      for (const file of readdirSync(STAGE)) renameSync(join(STAGE, file), join(OUT, file));
+      log(`updated ${INCIDENT_ONLY ? 'incident' : 'topology'} screenshots only`);
+      return;
+    }
     // The README hero is hand-authored and must survive screenshot regeneration.
     const hero = join(OUT, 'hero-pure.svg');
     if (existsSync(hero)) copyFileSync(hero, join(STAGE, 'hero-pure.svg'));
@@ -495,6 +494,5 @@ async function main(): Promise<void> {
 
 await main();
 
-// Testcontainers keeps its reaper socket open after resources are released. This one-shot script
-// must exit instead of waiting for that handle.
+// Testcontainers keeps its reaper socket open after resources are released.
 process.exit(0);

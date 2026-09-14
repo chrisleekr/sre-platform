@@ -1,4 +1,5 @@
 import type { Incident, IncidentSignal } from './types';
+import { meaningfulIncidentTitle } from '@sre/contracts';
 
 /**
  * Returns the best available human-readable incident title.
@@ -7,10 +8,11 @@ import type { Incident, IncidentSignal } from './types';
  * @param signals - Normalized provider signals attached to the incident.
  */
 export function incidentDisplayTitle(
-  incident: Pick<Incident, 'title' | 'service'>,
+  incident: Pick<Incident, 'title' | 'service' | 'displayTitle' | 'titleSource'>,
   signals: ReadonlyArray<Pick<IncidentSignal, 'alertName'>> = [],
 ): string {
-  const title = incident.title?.trim();
+  if (incident.displayTitle) return incident.displayTitle;
+  const title = meaningfulIncidentTitle(incident.title);
   if (title) return title;
 
   for (const signal of signals) {
@@ -18,5 +20,5 @@ export function incidentDisplayTitle(
     if (alertName) return alertName;
   }
 
-  return incident.service;
+  return 'Opening context unavailable';
 }
