@@ -1,4 +1,4 @@
-import { describe, expect, it, test } from 'vitest';
+import { describe, expect, it, test, vi } from 'vitest';
 import {
   cfg,
   jsonRes,
@@ -161,6 +161,21 @@ describe('group-scoped GitLab connector', () => {
         : [],
     recentEvents: async () => [],
   };
+
+  test('normalizes standalone wildcard enumeration while retaining the bounded catalog call', async () => {
+    const search = vi.fn(async () => catalog.resolve());
+    const connector = makeGitLabConnector(
+      { ...cfg({ settings: { groupId: 7 } }), repositories: { ...catalog, search } },
+      fakeToolFetch(() => jsonRes(200, [])),
+      publicLookup,
+    );
+    const result = await toolByName(connector, 'search_projects').run({ query: ' * ', limit: 500 });
+    expect(search).toHaveBeenCalledWith('', 50);
+    expect(result).toMatchObject([{ repositoryId: '42' }]);
+    await expect(
+      toolByName(connector, 'list_pipelines').run({ project: 'outside/project' }),
+    ).rejects.toThrow(/outside/);
+  });
 
   test('verifies recursive catalog access and representative incident reads', async () => {
     const fetchImpl = (async (input: Parameters<typeof fetch>[0]) => {

@@ -3,6 +3,8 @@ import { createDataSourceConnector, defineConnector, type ConnectorConfig } from
 import { dataSourceEntityCoverage } from '../../entity-coverage';
 import type { ConnectorTool, IDataSourceConnector, ProbeResult, TriageContext } from '../../types';
 import { obj, str } from '../../values';
+import { statuscakeTopology } from './topology';
+import { topologyFetch } from '../../topology-transport';
 
 /** Injectable so the REST calls are unit-testable without the network. */
 type FetchLike = typeof fetch;
@@ -19,6 +21,7 @@ const TRIAGE_DOWN_CAP = 25; // down tests returned in the first-pass seed
 const STATUSCAKE_CONNECTOR = {
   type: 'statuscake',
   capabilities: {
+    topology: 'inventory',
     availability: 'ready',
     configuration: 'tenant',
     instances: 'multiple',
@@ -96,7 +99,8 @@ async function sget(
   query?: Record<string, QueryValue | undefined>,
 ): Promise<unknown> {
   const res = await fetchImpl(buildGetUrl(path, query), sInit(token));
-  if (!res.ok) throw new Error(`statuscake api ${res.status}`);
+  if (!res.ok)
+    throw Object.assign(new Error(`statuscake api ${res.status}`), { status: res.status });
   return res.json();
 }
 
@@ -313,6 +317,10 @@ export function makeStatusCakeConnector(
   fetchImpl: FetchLike = fetch,
 ): IDataSourceConnector {
   return createDataSourceConnector(config, STATUSCAKE_CONNECTOR, {
+    topology: statuscakeTopology(config, () => {
+      const transport = topologyFetch(fetchImpl);
+      return async (path, query) => sget(transport, await connect(config), path, query);
+    }),
     entityCoverage: dataSourceEntityCoverage(
       config.id,
       ['availability'],

@@ -37,6 +37,7 @@ import {
   summarizeApp,
 } from './projection';
 import { makeArgoCdTools } from './tools';
+import { argoTopology } from './topology';
 import {
   readApplications,
   verifyDedicatedAccount,
@@ -50,6 +51,7 @@ export function makeSingleArgoCdConnector(
 ): IDataSourceConnector {
   let lastPollEvidence: ReturnType<NonNullable<IDataSourceConnector['pollEvidence']>>;
   const connector = createDataSourceConnector(config, ARGOCD_CONNECTOR_METADATA, {
+    topology: argoTopology(config, fetchImpl, lookup),
     entityCoverage: argoCdEntityCoverage(config.id, () => configuredScopes(config.settings)),
     async snapshot(): Promise<NormalizedSnapshot[]> {
       const startedAt = Date.now();

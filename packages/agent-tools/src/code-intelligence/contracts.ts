@@ -6,6 +6,7 @@ import type {
 } from '@sre/connectors';
 import { getIncidentSummary, type Db, type DeploymentBoundary } from '@sre/db';
 import * as z from 'zod';
+import type { TopologySourceEvidence } from '@sre/contracts';
 
 export const MAX_REPOSITORIES = 3;
 export const MAX_PROVIDER_CALLS = 10;
@@ -42,11 +43,13 @@ export interface CodeRevisionEvidence {
   repository: SourceRepository;
   revision: string | null;
   role: RepositoryRole;
-  basis: 'runtime_annotation' | 'deployment_event' | 'default_head';
+  basis: 'runtime_annotation' | 'deployment_event' | 'default_head' | 'topology_declaration';
   strength: CodeEvidenceStrength;
   providerUrl: string | null;
   deployedAt: string | null;
   uncertainties: string[];
+  topologyEvidenceRefs?: string[];
+  topologyObservedAt?: string[];
 }
 
 export interface CodeLocationEvidence {
@@ -72,6 +75,7 @@ export interface InvestigateCodeResult {
     | 'missing_mapping'
     | 'ambiguous'
     | 'missing_revision'
+    | 'source_changed'
     | 'no_code_anchor'
     | 'no_match';
   artifacts: RuntimeArtifact[];
@@ -95,6 +99,7 @@ export interface SearchAnchor {
 export interface RepositoryTarget {
   reader: SourceCodeReader;
   repository: SourceRepository;
+  topology?: TopologySourceEvidence['repositories'][number];
 }
 
 export interface ResolvedRevision {
@@ -105,6 +110,11 @@ export interface ResolvedRevision {
 export interface CodeContextReader {
   incident(tenantId: string, incidentId: string): ReturnType<typeof getIncidentSummary>;
   onset?(tenantId: string, incidentId: string): Promise<Date | null>;
+  sources?(
+    tenantId: string,
+    incidentId: string,
+    legacyService?: string,
+  ): Promise<TopologySourceEvidence | null>;
   evidenceIds?(tenantId: string, incidentId: string, proposed: string[]): Promise<string[]>;
   deploymentBoundary(
     tenantId: string,

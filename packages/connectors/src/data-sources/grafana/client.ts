@@ -174,7 +174,7 @@ export async function gget(
   query?: Record<string, QueryValue | undefined>,
 ): Promise<unknown> {
   const res = await fetchImpl(buildGetUrl(client.base, path, query), gInit(client));
-  if (!res.ok) throw new Error(`grafana api ${res.status}`);
+  if (!res.ok) throw Object.assign(new Error(`grafana api ${res.status}`), { status: res.status });
   return res.json();
 }
 

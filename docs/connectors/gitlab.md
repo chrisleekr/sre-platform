@@ -1,15 +1,14 @@
 # GitLab
 
-Reads one top-level group, on gitlab.com or your own instance. It syncs every project in that group
-and its subgroups, then narrows to the few projects relevant to an incident.
-
-Connect it at the group level. An older project-level shape still works and offers fewer tools,
-which is why the tool table below is listed once per shape.
-
 ## What it adds to an investigation
 
 Deploy correlation is the second question every investigation asks, right after blast radius. This
 connector is what answers it.
+
+Investigation tools resolve an exact project ID or full path before partial catalog matches. An
+empty search or standalone `*` lists a bounded sample, up to 50 projects per tool call. Results and
+subsequent reads stay within the connection's synchronized catalog; removed projects are excluded.
+An empty result means no catalog match, not that GitLab lacks pipeline or job history.
 
 ## How it is wired
 

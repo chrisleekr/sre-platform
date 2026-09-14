@@ -31,7 +31,7 @@ export interface SavePersistenceInput {
   submittedLegacy: LegacyGitHubCredential | null;
   parsedGitLabSettings: GitLabSettings | null;
   parsedPrometheusSettings: PrometheusSettings | null;
-  parsedDatadogSettings: { site: string } | null;
+  parsedDatadogSettings: { site: string; collectApm?: boolean; collectLogs?: boolean } | null;
   parsedGrafanaSettings: GrafanaSettings | null;
 }
 

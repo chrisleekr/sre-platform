@@ -15,17 +15,7 @@ import {
   makePlatformSecretStore,
 } from '@sre/db';
 import { makeSlackFileFetcher, type FileFetchLike } from '@sre/surfaces';
-import {
-  makeDbAuditSink,
-  makeDbConnectorProvider,
-  makeSearchRunbooksTool,
-  makeFetchBlastRadiusTool,
-  makeFetchRecentDeploysTool,
-  makeInvestigateCodeTool,
-  makeResolveEntityContextTool,
-  makeSearchIncidentEvidenceTool,
-  makeFetchSloStatusTool,
-} from '@sre/agent-tools';
+import { makeDbAuditSink, makeDbConnectorProvider } from '@sre/agent-tools';
 import { defaultRegistry, developmentRegistryOptions } from '@sre/connectors';
 import {
   Queue,
@@ -67,6 +57,8 @@ import { makeSubjectSyncResolver } from './subject-sync';
 import { makeSubjectSyncRecovery } from './subject-sync-recovery';
 import { runSignalMaintenance } from './signal-maintenance';
 import { makeSignalEvaluationHandler } from './signal-evaluation';
+import { makeTopologyDiscoveryRuntime } from './topology-discovery';
+import { makePlatformTools } from './platform-tools';
 
 const adminDb = makeDb(adminUrl());
 // A dedicated pool prevents routing-fence transactions from starving their callbacks.
@@ -167,15 +159,7 @@ const connectorProvider = makeDbConnectorProvider({ db: appDb.db, registry, secr
 // url + dim come from the env config, validated against EMBED_DIM inside makeEmbedder.
 const embedder = makeEmbedder();
 const auditSink = makeDbAuditSink({ db: appDb.db });
-const tools = [
-  makeSearchRunbooksTool({ embedder, db: appDb.db }),
-  makeFetchBlastRadiusTool({ db: appDb.db }),
-  makeFetchRecentDeploysTool({ db: appDb.db }),
-  makeInvestigateCodeTool({ db: appDb.db }),
-  makeResolveEntityContextTool({ db: appDb.db }),
-  makeSearchIncidentEvidenceTool({ db: appDb.db }),
-  makeFetchSloStatusTool({ db: appDb.db }),
-];
+const tools = makePlatformTools({ db: appDb.db, embedder, cache });
 
 // Proactive runbook seeder: seeds top-K past-incident runbooks into the incident-open
 // brief above the configured similarity floor. K is a fixed constant (seed at most 3); the floor is
@@ -317,6 +301,13 @@ const scheduler = new PollScheduler({
   connectorProvider,
   listTenants: () => listTenants(adminDb.db),
 });
+const topology = makeTopologyDiscoveryRuntime({
+  db: appDb.db,
+  redis,
+  dispatch: pollQueue,
+  connectorProvider,
+  listTenants: () => listTenants(adminDb.db),
+});
 
 // Scheduled error-budget evaluation: a read model that persists burn events and opens nothing.
 const slo = makeSloRuntime({ adminDb, appDb, redis, settingsRedis, connectorProvider, onStuck });
@@ -330,6 +321,7 @@ await Promise.all([
   slo.queue.ensureGroup(),
 ]);
 scheduler.start();
+topology.scheduler.start(300_000);
 slo.scheduler.start();
 console.log(
   JSON.stringify({
@@ -373,7 +365,9 @@ const SIGNAL_MAINTENANCE_MS = 5 * 60_000;
 // with this same pollHandler and needs no rework. Smarter cadence/backoff lands later.
 for (;;) {
   const triaged = await worker.tick();
-  const polled = await pollQueue.process('poll-worker', pollHandler);
+  const polled = await pollQueue.process('poll-worker', (job) =>
+    job.type === 'topology.discover' ? topology.handler(job) : pollHandler(job),
+  );
   const classified = await classifyQueue.process('classify-worker', classifyStreamHandler);
   const generated = await runbookQueue.process('runbook-worker', generationStreamHandler);
   // Bounded per turn so a slow metrics backend cannot starve triage on this replica. No reconcile

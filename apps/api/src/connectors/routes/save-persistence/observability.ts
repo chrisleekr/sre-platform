@@ -101,7 +101,16 @@ export const saveDatadog: ProviderSaveHandler = async (input, current, initial) 
     return 'a new credential is required when the Datadog site changes';
   return {
     ...initial,
-    settings: parsedDatadogSettings!,
+    settings: {
+      ...parsedDatadogSettings!,
+      ...(parsedDatadogSettings?.collectLogs === undefined &&
+      savedSettings?.collectLogs !== undefined
+        ? { collectLogs: savedSettings.collectLogs }
+        : {}),
+      ...(parsedDatadogSettings?.collectApm === undefined && savedSettings?.collectApm !== undefined
+        ? { collectApm: savedSettings.collectApm }
+        : {}),
+    },
     ...(parsedCredential ? { credentialToSave: parsedCredential } : {}),
   };
 };

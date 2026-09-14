@@ -11,7 +11,7 @@ import {
 } from '@sre/db';
 import type { Job, JobContext } from '@sre/queue';
 import { renderSloBrief, sloStatusForService } from '@sre/slo';
-import { computeBlastRadius, renderBlastRadius } from '@sre/topology';
+import { computeIncidentBlastRadius, renderBlastRadius } from '@sre/topology';
 import { renderIncidentRelationContext } from '../relation-context';
 import type { WorkerDisposition } from './disposition';
 import type { WorkerEvidence } from './evidence';
@@ -70,7 +70,12 @@ export class TriageHandler {
           (async () => {
             try {
               return renderBlastRadius(
-                await computeBlastRadius(deps.appDb, job.tenantId, incident.service),
+                await computeIncidentBlastRadius(
+                  deps.appDb,
+                  job.tenantId,
+                  incidentId,
+                  incident.service,
+                ),
               );
             } catch {
               return `Blast radius for "${incident.service}": unavailable (topology query failed).`;

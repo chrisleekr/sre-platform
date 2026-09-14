@@ -7,6 +7,7 @@ import {
   type DeploymentBoundary,
 } from '@sre/db';
 import { createHash } from 'node:crypto';
+import { readIncidentTopologySources } from '@sre/topology';
 import {
   EXCERPT_CONTEXT_LINES,
   MAX_EXCERPT_CHARS,
@@ -33,6 +34,8 @@ export function codeContextReader(deps: InvestigateCodeDeps): CodeContextReader 
   if (deps.context) return deps.context;
   return {
     incident: (tenantId, incidentId) => getIncidentSummary(deps.db, tenantId, incidentId),
+    sources: (tenantId, incidentId, legacyService) =>
+      readIncidentTopologySources(deps.db, tenantId, incidentId, legacyService),
     onset: (tenantId, incidentId) => incidentSignalOnset(deps.db, tenantId, incidentId),
     evidenceIds: (tenantId, incidentId, proposed) =>
       filterIncidentEvidenceIds(deps.db, tenantId, incidentId, proposed),
@@ -256,6 +259,32 @@ export async function resolveRevision(
   boundary: DeploymentBoundary,
   consume: () => void,
 ): Promise<ResolvedRevision | null> {
+  if (target.topology) {
+    const revision = target.topology.revision;
+    if (!revision || !/^[0-9a-f]{40,64}$/i.test(revision)) return null;
+    consume();
+    const verified = await target.reader.verifyRevision(target.repository, revision);
+    if (verified.revision.toLowerCase() !== revision.toLowerCase()) return null;
+    return {
+      evidence: {
+        repository: target.repository,
+        revision: verified.revision,
+        role: target.repository.role,
+        basis: 'topology_declaration',
+        strength: 'declared',
+        providerUrl: verified.providerUrl,
+        deployedAt: null,
+        uncertainties: [
+          'current topology source declaration, not verified image provenance or proof of the revision at incident onset',
+        ],
+        topologyEvidenceRefs: target.topology.evidenceKeys,
+        topologyObservedAt: [
+          ...new Set(target.topology.sources.map((source) => source.observedAt)),
+        ],
+      },
+      previousRevision: null,
+    };
+  }
   const artifact = artifacts.find(
     (candidate) =>
       candidate.sourceUrl &&
@@ -350,8 +379,27 @@ export async function codeLocation(
   consume: () => void,
   remaining: () => number,
 ): Promise<CodeLocationEvidence> {
+  if (target.topology) {
+    const prefix = target.repository.pathPrefix;
+    if (
+      path.startsWith('/') ||
+      path.includes('\\') ||
+      path.split('/').some((part) => !part || part === '.' || part === '..') ||
+      (prefix && path !== prefix && !path.startsWith(`${prefix}/`))
+    )
+      throw new Error('Source path is outside the topology component');
+  }
   consume();
   const file = await target.reader.read(target.repository, revision.evidence.revision!, path);
+  if (
+    file.path !== path ||
+    file.revision.toLowerCase() !== revision.evidence.revision!.toLowerCase()
+  ) {
+    revision.evidence.uncertainties.push(
+      'Source response did not match the requested path and revision; its content was discarded.',
+    );
+    throw new Error('Source response does not match the requested path and revision');
+  }
   const discoveredLine = discovery ? sourceLine(file.text, discovery.query) : null;
   if (discovery && discoveredLine === null)
     throw new Error('discovered source anchor is absent at the incident revision');

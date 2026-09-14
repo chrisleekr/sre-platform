@@ -219,6 +219,7 @@ describe('GitLab connector lifecycle acceptance', () => {
           investigation: 'tools',
           polling: 'snapshots',
           events: 'authenticated',
+          topology: 'inventory',
         },
         settings: {
           baseUrl: 'https://gitlab.example.com',
