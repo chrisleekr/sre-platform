@@ -1,5 +1,7 @@
 export * from './audit';
 export * from './blast-radius';
+export * from './topology-runtime';
+export * from './topology-endpoint';
 export * from './code-intelligence';
 export * from './connector-provider';
 export * from './connector-tools';

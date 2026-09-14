@@ -1,11 +1,13 @@
 import type { AffectedEntityCandidate, EntityCapabilityGap } from '@sre/contracts';
-import { resolveIncidentEntityContext, type Db } from '@sre/db';
+import type { Db } from '@sre/db';
+import { resolveIncidentTopologyContext } from '@sre/topology';
 import type { IDataSourceConnector } from '@sre/connectors';
 import * as z from 'zod';
 import type { ToolContext, ToolDefinition } from './types';
+import { topologyReferences } from './topology-references';
 
 function modelEntityContext(
-  context: NonNullable<Awaited<ReturnType<typeof resolveIncidentEntityContext>>>,
+  context: NonNullable<Awaited<ReturnType<typeof resolveIncidentTopologyContext>>>,
   capabilityGaps: EntityCapabilityGap[],
 ) {
   const references = new Map<string, string>();
@@ -29,6 +31,13 @@ function modelEntityContext(
       return { entityRef: entityRef(candidateKey), ...details };
     }),
     services: context.services,
+    topology: {
+      ...context.topology,
+      resolutions: context.topology.resolutions.map(({ candidateKey, ...resolution }) => ({
+        entityRef: entityRef(candidateKey),
+        ...resolution,
+      })),
+    },
     capabilityGaps: capabilityGaps.map((gap) => {
       const { entityKey, ...details } = gap;
       return { entityRef: entityRef(entityKey), ...details };
@@ -127,14 +136,14 @@ export function makeResolveEntityContextTool(deps: {
       'Resolve signal sources and affected entity candidates to catalog ownership, dependencies, repositories, deployments, and runbooks. Returns typed configuration gaps when no connector covers a required read.',
     inputSchema: z.object({}).strict(),
     async handler(ctx: ToolContext) {
-      const context = await resolveIncidentEntityContext(deps.db, ctx.tenantId, ctx.incidentId);
+      const context = await resolveIncidentTopologyContext(deps.db, ctx.tenantId, ctx.incidentId);
       if (!context) throw new Error('incident entity context unavailable');
       const connectors = await ctx.resolveConnectors();
       const candidates = context.observations.flatMap((observation) => observation.candidates);
       const capabilityGaps = await entityCapabilityGaps(candidates, connectors);
       return {
         available: true,
-        data: modelEntityContext(context, capabilityGaps),
+        data: topologyReferences(modelEntityContext(context, capabilityGaps)),
       };
     },
   };

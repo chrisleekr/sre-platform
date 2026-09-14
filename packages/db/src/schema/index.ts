@@ -33,3 +33,6 @@ export * from './surface-inbound-events';
 export * from './surface-working-posts';
 export * from './surfaces';
 export * from './topology';
+export * from './service-runtime-bindings';
+export * from './incident-service-assignments';
+export * from './topology-discovery';

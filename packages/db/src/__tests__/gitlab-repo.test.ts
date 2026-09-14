@@ -36,6 +36,31 @@ const project = (groupId: string, projectId: string, fullPath: string) => ({
   lastActivityAt: new Date('2026-08-24T00:00:00Z'),
 });
 
+test('paged inventory reaches beyond the first hundred without crossing tenant or connector scope', async () => {
+  const source = randomUUID();
+  const entries = Array.from({ length: 105 }, (_, i) =>
+    project('group', String(i).padStart(4, '0'), `team/repo-${105 - i}`),
+  );
+  await syncGitLabProjects(app.db, tenantA, source, 'group', entries);
+  await syncGitLabProjects(app.db, tenantB, source, 'group', [
+    project('group', '9999', 'foreign/repo'),
+  ]);
+  const first = await listGitLabProjects(app.db, tenantA, source, {
+    afterRepositoryId: '',
+    limit: 100,
+  });
+  const second = await listGitLabProjects(app.db, tenantA, source, {
+    afterRepositoryId: first.at(-1)!.repositoryId,
+    limit: 100,
+  });
+  expect(first).toHaveLength(100);
+  expect(second).toHaveLength(5);
+  expect(second.map((r) => r.repositoryId)).toEqual(['0100', '0101', '0102', '0103', '0104']);
+  expect(
+    await listGitLabProjects(app.db, tenantA, randomUUID(), { afterRepositoryId: '' }),
+  ).toEqual([]);
+});
+
 beforeAll(async () => {
   admin = makeDb(ADMIN_URL);
   app = makeDb(APP_URL);
@@ -59,6 +84,45 @@ afterAll(async () => {
 });
 
 describe('GitLab group project catalog', () => {
+  test('ranks exact scoped project IDs and paths ahead of capped substring matches', async () => {
+    const source = randomUUID();
+    await syncGitLabProjects(app.db, tenantA, source, 'group', [
+      project('group', '71', 'z/platform'),
+      project('group', '72', 'a/z/platform-copy'),
+      project('group', '73', 'a/71-extra'),
+    ]);
+    await syncGitLabProjects(app.db, tenantB, source, 'group', [
+      project('group', '71', 'foreign/platform'),
+    ]);
+    await syncGitLabProjects(app.db, tenantA, randomUUID(), 'group', [
+      project('group', '71', 'other/platform'),
+    ]);
+
+    expect(
+      await listGitLabProjects(app.db, tenantA, source, { query: '71', limit: 1 }),
+    ).toMatchObject([{ repositoryId: '71', fullName: 'z/platform' }]);
+    expect(
+      await listGitLabProjects(app.db, tenantA, source, { query: 'z/platform', limit: 1 }),
+    ).toMatchObject([{ repositoryId: '71', fullName: 'z/platform' }]);
+  });
+
+  test('standalone wildcard lists the same bounded authorized inventory as an empty query', async () => {
+    const source = randomUUID();
+    await syncGitLabProjects(app.db, tenantA, source, 'group', [
+      project('group', '71', 'team/current'),
+      project('group', '72', 'team/removed'),
+    ]);
+    await syncGitLabProjects(app.db, tenantA, source, 'group', [
+      project('group', '71', 'team/current'),
+    ]);
+    const listed = await listGitLabProjects(app.db, tenantA, source, { query: '', limit: 1 });
+    expect(listed).toHaveLength(1);
+    expect(await listGitLabProjects(app.db, tenantA, source, { query: ' * ', limit: 1 })).toEqual(
+      listed,
+    );
+    expect(await listGitLabProjects(app.db, tenantA, source, { query: '72' })).toEqual([]);
+    expect(await listGitLabProjects(app.db, tenantB, source, { query: '*' })).toEqual([]);
+  });
   test('reconciles the recursive group inventory without exposing another tenant', async () => {
     await syncGitLabProjects(app.db, tenantA, sourceA, '7', [
       project('7', '41', 'platform/checkout'),

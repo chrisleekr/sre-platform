@@ -37,6 +37,31 @@ const repository = (installationId: string, repositoryId: string, fullName: stri
   pushedAt: new Date('2026-08-23T00:00:00Z'),
 });
 
+test('paged inventory reaches beyond the first hundred using stable identifiers inside tenant and connector scope', async () => {
+  const source = randomUUID();
+  const entries = Array.from({ length: 105 }, (_, i) =>
+    repository('installation', String(i).padStart(4, '0'), `team/repo-${105 - i}`),
+  );
+  await syncGitHubRepositories(app.db, tenantA, source, 'installation', entries);
+  await syncGitHubRepositories(app.db, tenantB, source, 'installation', [
+    repository('installation', '9999', 'foreign/repo'),
+  ]);
+  const first = await listGitHubRepositories(app.db, tenantA, source, {
+    afterRepositoryId: '',
+    limit: 100,
+  });
+  const second = await listGitHubRepositories(app.db, tenantA, source, {
+    afterRepositoryId: first.at(-1)!.repositoryId,
+    limit: 100,
+  });
+  expect(first).toHaveLength(100);
+  expect(second).toHaveLength(5);
+  expect(second.map((r) => r.repositoryId)).toEqual(['0100', '0101', '0102', '0103', '0104']);
+  expect(
+    await listGitHubRepositories(app.db, tenantA, randomUUID(), { afterRepositoryId: '' }),
+  ).toEqual([]);
+});
+
 beforeAll(async () => {
   admin = makeDb(ADMIN_URL);
   app = makeDb(APP_URL);

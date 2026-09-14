@@ -8,9 +8,9 @@ import { makeResolveEntityContextTool } from '../entity-context';
 
 const mocks = vi.hoisted(() => ({ resolveIncidentEntityContext: vi.fn() }));
 
-vi.mock('@sre/db', async (importOriginal) => ({
+vi.mock('@sre/topology', async (importOriginal) => ({
   ...((await importOriginal()) as Record<string, unknown>),
-  resolveIncidentEntityContext: mocks.resolveIncidentEntityContext,
+  resolveIncidentTopologyContext: mocks.resolveIncidentEntityContext,
 }));
 
 beforeEach(() => mocks.resolveIncidentEntityContext.mockReset());
@@ -63,6 +63,7 @@ test('runs entity resolution through connector coverage and keeps safe entity co
       },
     ],
     services: [],
+    topology: { subjects: [], resolutions: [], relations: [] },
   };
   mocks.resolveIncidentEntityContext.mockResolvedValue(context);
   const resolveConnectors = vi.fn(async () => [
