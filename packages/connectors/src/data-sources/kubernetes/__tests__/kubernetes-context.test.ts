@@ -383,6 +383,17 @@ describe('makeKubernetesConnector fetchTriageContext', () => {
     expect(calls.some((k) => k.url.includes('/namespaces/payments/'))).toBe(false);
   });
 
+  test('trims trailing slashes from apiUrl so every request path has one separator', async () => {
+    const { impl, calls } = fakeFetch();
+    const c = makeKubernetesConnector(
+      cfg({ settings: { apiUrl: 'https://k8s.example.com:6443///' } }),
+      impl,
+    );
+    await c.fetchTriageContext({ service: 'payments', windowMinutes: 30 });
+    expect(calls.length).toBe(3);
+    expect(calls.every((k) => k.url.startsWith('https://k8s.example.com:6443/api/v1/'))).toBe(true);
+  });
+
   test('throws on a non-2xx pods response', async () => {
     const { impl } = fakeFetch({ status: { pods: 500 } });
     const c = makeKubernetesConnector(cfg(), impl);

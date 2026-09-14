@@ -9,6 +9,7 @@ import {
   jobs,
   makeDb,
   services,
+  serviceRuntimeBindings,
   surfaceBindings,
   tenants,
   type DbHandle,
@@ -54,6 +55,7 @@ export function createFixture() {
       await admin.db.delete(investigationSubjects).where(sql`tenant_id = ${tenantId}`);
       await admin.db.delete(surfaceBindings).where(sql`tenant_id = ${tenantId}`);
       await admin.db.delete(incidents).where(sql`tenant_id = ${tenantId}`);
+      await admin.db.delete(serviceRuntimeBindings).where(sql`tenant_id = ${tenantId}`);
       await admin.db.delete(services).where(sql`tenant_id = ${tenantId}`);
       await admin.db.delete(connectorConfigs).where(sql`tenant_id = ${tenantId}`);
       await admin.db.delete(tenants).where(sql`id = ${tenantId}`);

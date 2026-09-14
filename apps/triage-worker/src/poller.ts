@@ -241,6 +241,8 @@ export async function runOncePerWindow(
 }
 
 export interface PollSchedulerDeps {
+  /** Discovery uses the same durable scheduling path, with its own cadence and window lock. */
+  jobType?: 'poll' | 'topology.discover';
   guard: WindowGuard;
   dispatch: PollDispatcher;
   connectorProvider: ConnectorProvider;
@@ -280,10 +282,15 @@ export class PollScheduler {
     for (const { id: tenantId } of tenants) {
       const connectors = await this.deps.connectorProvider(tenantId)();
       for (const connector of connectors) {
-        if (connector.capabilities?.polling === 'none') continue;
+        if (
+          this.deps.jobType === 'topology.discover'
+            ? !connector.topology
+            : connector.capabilities?.polling === 'none'
+        )
+          continue;
         await this.deps.dispatch.enqueue({
           tenantId,
-          type: 'poll',
+          type: this.deps.jobType ?? 'poll',
           payload: { connectorId: connector.id },
         });
         enqueued++;

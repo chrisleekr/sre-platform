@@ -11,6 +11,7 @@ import {
   type ProjectConnector,
 } from './projects';
 import { makeSingleArgoCdConnector } from './single-connector';
+import { shouldReadTopologyCollection } from '../../topology-scan';
 
 /**
  * Creates an Argo CD adapter for project-scoped read-only investigation.
@@ -29,6 +30,40 @@ export function makeArgoCdConnector(
 
   let lastPollEvidence: ReturnType<NonNullable<IDataSourceConnector['pollEvidence']>>;
   return createDataSourceConnector(config, ARGOCD_CONNECTOR_METADATA, {
+    topology: {
+      async discover(options) {
+        const observedAt = new Date().toISOString();
+        const children = await loadProjectConnectors(config, fetchImpl, lookup);
+        const collections = await Promise.all(
+          children.map(async (child) => {
+            const key = `${child.project}/applications`;
+            if (!shouldReadTopologyCollection(options, key)) return [];
+            try {
+              const scan = options?.scans?.[key];
+              const result = await child.connector.topology!.discover({
+                collections: ['applications'],
+                ...(scan ? { scans: { applications: scan } } : {}),
+              });
+              return result.collections.map((collection) => ({
+                ...collection,
+                key: `${child.project}/${collection.key}`,
+              }));
+            } catch {
+              return [
+                {
+                  key: `${child.project}/applications`,
+                  completeness: 'unavailable' as const,
+                  issue: 'unreachable' as const,
+                  entities: [],
+                  relations: [],
+                },
+              ];
+            }
+          }),
+        );
+        return { observedAt, collections: collections.flat() };
+      },
+    },
     entityCoverage: argoCdEntityCoverage(config.id, () =>
       configuredProjects(config.settings).flatMap((binding) =>
         binding.applications.map((application) => ({

@@ -39,6 +39,7 @@ export async function readApplications(
   config: ConnectorConfig,
   fetchImpl: FetchLike,
   client: ArgoClient,
+  limit = MAX_APPLICATIONS,
 ): Promise<unknown[]> {
   const body = await checkedJsonGet(
     fetchImpl,
@@ -50,7 +51,7 @@ export async function readApplications(
   const items = rawItems === null ? [] : rawItems;
   if (!Array.isArray(items))
     throw new ArgoApiError('argocd Applications response is malformed', 'provider_unavailable');
-  if (items.length > MAX_APPLICATIONS)
+  if (items.length > limit)
     throw new ArgoApiError('argocd application count exceeds bound', 'backlog');
   const scopes = configuredScopes(config.settings);
   return items.filter((application) =>

@@ -109,6 +109,16 @@ export function makeDbConnectorProvider(deps: DbConnectorProviderDeps) {
                   type === 'github'
                     ? listGitHubRepositories(deps.db, tenantId, row.id, { query, limit })
                     : listGitLabProjects(deps.db, tenantId, row.id, { query, limit }),
+                page: (afterRepositoryId: string | null, limit: number) =>
+                  type === 'github'
+                    ? listGitHubRepositories(deps.db, tenantId, row.id, {
+                        afterRepositoryId: afterRepositoryId ?? '',
+                        limit,
+                      })
+                    : listGitLabProjects(deps.db, tenantId, row.id, {
+                        afterRepositoryId: afterRepositoryId ?? '',
+                        limit,
+                      }),
                 recentEvents: (repositories: string[], since: Date, limit?: number) =>
                   type === 'github'
                     ? recentGitHubEvents(deps.db, tenantId, row.id, repositories, since, limit)

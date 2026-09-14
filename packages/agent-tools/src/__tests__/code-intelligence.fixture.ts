@@ -199,6 +199,7 @@ export function createFixture() {
       source,
       context,
       audit,
+      toolContext,
       run: (input: Record<string, unknown>) =>
         runTool(makeInvestigateCodeTool({ context }), toolContext, input),
     };

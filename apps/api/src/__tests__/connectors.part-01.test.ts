@@ -45,6 +45,39 @@ describe('connector config CRUD', () => {
     expect(body.connectors).toHaveLength(0);
   });
 
+  test('APM opt-out and log consent survive older-client updates without rotating keys', async () => {
+    const headers = __fixture.bearer(await __fixture.sign(__fixture.orgA, ['admin']));
+    for (const settings of [
+      { site: 'datadoghq.eu', collectApm: false, collectLogs: true },
+      { site: 'datadoghq.eu' },
+    ]) {
+      const saved = await __fixture.api.request('/connectors/datadog', {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ settings }),
+      });
+      expect(saved.status).toBe(200);
+      const listed = await __fixture.api.request('/connectors', { headers });
+      const body = (await listed.json()) as { connectors: { settings: unknown }[] };
+      expect(body.connectors[0]!.settings).toMatchObject({ collectApm: false, collectLogs: true });
+      expect(await __fixture.activeCredential('datadog')).toBe(
+        JSON.stringify({ apiKey: 'dd-api-key', appKey: 'dd-app-key' }),
+      );
+    }
+    const invalid = await __fixture.api.request('/connectors/datadog', {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ settings: { site: 'datadoghq.eu', collectApm: 'false' } }),
+    });
+    expect(invalid.status).toBe(400);
+    const invalidLogs = await __fixture.api.request('/connectors/datadog', {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ settings: { site: 'datadoghq.eu', collectLogs: 'true' } }),
+    });
+    expect(invalidLogs.status).toBe(400);
+  });
+
   test('unknown connector type is rejected', async () => {
     const res = await __fixture.api.request('/connectors/nope', {
       method: 'PUT',

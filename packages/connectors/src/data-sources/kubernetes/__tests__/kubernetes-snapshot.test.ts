@@ -3,6 +3,57 @@ import { entityCandidateKey, type AffectedEntityCandidate } from '@sre/contracts
 import { cfg, fakeFetch, makeKubernetesConnector } from './test-helpers';
 
 describe('makeKubernetesConnector snapshot', () => {
+  test('includes pods from later pages and records complete collection', async () => {
+    const urls: string[] = [];
+    const impl = (async (url: string | URL | Request) => {
+      const value = String(url);
+      urls.push(value);
+      const later = value.includes('continue=next%2Fpage');
+      return Response.json(
+        value.includes('/pods')
+          ? {
+              metadata: later ? {} : { continue: 'next/page' },
+              items: [
+                {
+                  metadata: { name: later ? 'failed' : 'ready', namespace: 'checkout' },
+                  status: { phase: later ? 'Failed' : 'Running' },
+                },
+              ],
+            }
+          : { items: [] },
+      );
+    }) as typeof fetch;
+    const snapshots = await makeKubernetesConnector(cfg(), impl).snapshot();
+    expect(snapshots.filter((item) => item.metadata.kind === 'pod')).toHaveLength(2);
+    expect(snapshots.find((item) => item.entityId === 'checkout/failed')?.metadata.phase).toBe(
+      'Failed',
+    );
+    expect(urls.some((url) => url.includes('continue=next%2Fpage'))).toBe(true);
+    expect(
+      snapshots.find((item) => item.entityId === 'collection/pods')?.metadata.completeness,
+    ).toBe('complete');
+  });
+
+  test('marks the bounded page cap as partial instead of claiming complete inventory', async () => {
+    const { impl, calls } = fakeFetch({ pods: { metadata: { continue: 'more' }, items: [] } });
+    const snapshots = await makeKubernetesConnector(cfg(), impl).snapshot();
+    expect(calls.filter((call) => call.url.includes('/pods'))).toHaveLength(5);
+    expect(
+      snapshots.find((item) => item.entityId === 'collection/pods')?.metadata.completeness,
+    ).toBe('partial');
+  });
+
+  test('records a successful empty collection explicitly', async () => {
+    const { impl } = fakeFetch({ pods: { items: [] }, nodes: { items: [] } });
+    const snapshots = await makeKubernetesConnector(cfg(), impl).snapshot();
+    expect(snapshots).toEqual([
+      expect.objectContaining({
+        entityId: 'collection/pods',
+        metadata: expect.objectContaining({ completeness: 'complete' }),
+      }),
+    ]);
+  });
+
   test('declares the saved cluster and namespace as its entity coverage boundary', () => {
     const { impl } = fakeFetch();
     const connector = makeKubernetesConnector(

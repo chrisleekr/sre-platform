@@ -2,6 +2,7 @@ import type { ConnectorConfig } from '../../registry';
 import { assertSafeHttpsUrl, dnsLookup, type HostLookup } from '../../ssrf';
 import type { NormalizedSnapshot, RuntimeArtifact } from '../../types';
 import { obj, str } from '../../values';
+import { normalizeInfrastructureObservation } from '../../subject-observations';
 
 type FetchLike = typeof fetch;
 
@@ -284,7 +285,11 @@ async function validateApiBase(
   // that resolves into always-dangerous space, notably the 169.254.169.254 metadata endpoint, is
   // invisible to the literal-host check above and would receive the bearer token.
   await assertSafeHttpsUrl(apiUrl, lookup, { allowPrivate: true });
-  return apiUrl.replace(/\/+$/, '');
+  // Trim trailing slashes by index. `/\/+$/` backtracks quadratically on a tenant-supplied URL
+  // ending in a long slash run, and the connector setting is not length-bounded.
+  let end = apiUrl.length;
+  while (end > 0 && apiUrl[end - 1] === '/') end -= 1;
+  return apiUrl.slice(0, end);
 }
 
 /**
@@ -355,8 +360,22 @@ export function podSnapshot(
 ): NormalizedSnapshot {
   const pod = mapPod(raw);
   const namespace = str(obj(obj(raw).metadata).namespace) ?? configuredNamespace;
+  const uid = str(obj(obj(raw).metadata).uid);
   const name = pod.name ?? 'unknown';
-  return {
+  const rawLabels = obj(obj(obj(raw).metadata).labels);
+  const labels = Object.fromEntries(
+    [
+      'app.kubernetes.io/name',
+      'app.kubernetes.io/instance',
+      'app.kubernetes.io/component',
+      'app',
+    ].flatMap((key) =>
+      typeof rawLabels[key] === 'string' && rawLabels[key].length <= 63
+        ? [[key, rawLabels[key]]]
+        : [],
+    ),
+  );
+  const snapshot: NormalizedSnapshot = {
     tenantId,
     source: 'kubernetes',
     // Pod names are unique only within a namespace. The normalized id must remain unique when a
@@ -367,9 +386,17 @@ export function podSnapshot(
       ready: pod.ready ? 1 : 0,
       oomKilled: pod.oomKilled ? 1 : 0,
     },
-    metadata: { kind: 'pod', namespace, phase: pod.phase, containers: pod.containers },
+    metadata: { kind: 'pod', namespace, phase: pod.phase, containers: pod.containers, labels },
     observedAt,
   };
+  if (uid && namespace) {
+    const { state } = normalizeInfrastructureObservation(snapshot, observedAt);
+    snapshot.topology = {
+      ref: { authority: 'kubernetes-object', kind: 'Pod', id: JSON.stringify([namespace, uid]) },
+      state: state === 'resolved' ? 'healthy' : state === 'firing' ? 'attention' : 'unknown',
+    };
+  }
+  return snapshot;
 }
 
 /** One node's polled health as a NormalizedSnapshot. */

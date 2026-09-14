@@ -14,7 +14,7 @@ describe('get_job_logs — redirect handling', () => {
   function logsRoutes(location: string | undefined, blob: Reply) {
     return withMint((url) => {
       if (url.endsWith('/logs')) return location ? { status: 302, location } : { status: 302 };
-      if (url.startsWith('https://blob.example.com')) return blob;
+      if (url.startsWith('https://blob.example.com/')) return blob;
       return { status: 404 };
     });
   }
@@ -33,7 +33,7 @@ describe('get_job_logs — redirect handling', () => {
     const logsCall = calls.find((c) => c.url.endsWith('/logs'))!;
     expect(logsCall.redirect).toBe('manual');
     expect(logsCall.authorization).toBe('Bearer ghs_tok');
-    const blobCall = calls.find((c) => c.url.startsWith('https://blob.example.com'))!;
+    const blobCall = calls.find((c) => c.url.startsWith('https://blob.example.com/'))!;
     expect(blobCall.authorization).toBeUndefined(); // token must NOT leak off-host
   });
 

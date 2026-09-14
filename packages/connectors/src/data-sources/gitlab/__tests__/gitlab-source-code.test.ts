@@ -34,6 +34,32 @@ describe('GitLab source-code capability', () => {
     recentEvents: async () => [],
   };
 
+  test('exposes exact admitted repository resolution through the lazy connector reader', async () => {
+    const connector = makeGitLabConnector(
+      cfg({
+        settings: { baseUrl: 'https://gitlab.example.com', groupId: 7 },
+        repositories: catalog,
+      }),
+      (async () => {
+        throw new Error('No provider request needed');
+      }) as unknown as typeof fetch,
+      publicLookup,
+    );
+    const repo = await connector.sourceCode!.resolveRepository!({
+      authority: 'repository:gitlab.example.com',
+      kind: 'repository',
+      id: 'platform/services/checkout',
+    });
+    expect(repo?.repositoryId).toBe('42');
+    expect(
+      await connector.sourceCode!.resolveRepository!({
+        authority: 'repository:other.example',
+        kind: 'repository',
+        id: 'platform/services/checkout',
+      }),
+    ).toBeNull();
+  });
+
   test('reads bounded UTF-8 source from the raw exact-revision endpoint', async () => {
     const source = 'export const checkout = true;\n';
     const calls: string[] = [];

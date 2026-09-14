@@ -61,10 +61,10 @@ export const SUBJECT_KEYS: Record<ObservationSubject['kind'], readonly string[]>
   infrastructure_resource: ['kind', 'dataSourceId', 'entityId'],
   deployment: ['kind', 'deploymentId'],
   connector_verification: ['kind', 'connectorId'],
-  topology_service: ['kind', 'service'],
+  topology_service: ['kind', 'service', 'subjectKey'],
 };
 
-export const MAX_DECLARATION_BODY_BYTES = 2 * 1024;
+export const MAX_DECLARATION_BODY_BYTES = 16 * 1024;
 export const MAX_MANUAL_DECLARATION_BODY_BYTES = 32 * 1024;
 export const MAX_ACTIVE_LOOKUP_BODY_BYTES = 384 * 1024;
 export const MAX_FEEDBACK_BODY_BYTES = 8 * 1024;
@@ -168,7 +168,21 @@ export function parseObservationSubject(value: unknown): ObservationSubject | nu
     return connectorId ? { kind, connectorId } : null;
   }
   const service = boundedIdentifier('service');
-  return service ? { kind: 'topology_service', service } : null;
+  const key = record.subjectKey;
+  if (
+    key !== undefined &&
+    (typeof key !== 'string' ||
+      !key.length ||
+      key.length > 8192 ||
+      Array.from(key).some((character) => {
+        const code = character.charCodeAt(0);
+        return code < 0x20 || code === 0x7f;
+      }))
+  )
+    return null;
+  return service
+    ? { kind: 'topology_service', service, ...(typeof key === 'string' ? { subjectKey: key } : {}) }
+    : null;
 }
 
 const LIFECYCLE_STATUSES = new Set<IncidentStatus>(['open', 'mitigated', 'resolved', 'closed']);

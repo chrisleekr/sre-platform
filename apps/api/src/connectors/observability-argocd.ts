@@ -30,10 +30,20 @@ export const DATADOG_SITES = new Set([
   'us2.ddog-gov.com',
 ]);
 
-export function parseDatadogSettings(input: unknown): { site: string } | null {
+export function parseDatadogSettings(
+  input: unknown,
+): { site: string; collectApm?: boolean; collectLogs?: boolean } | null {
   const raw = requestObject(input);
   const site = typeof raw?.site === 'string' ? raw.site.trim() : '';
-  return DATADOG_SITES.has(site) ? { site } : null;
+  if (raw?.collectApm !== undefined && typeof raw.collectApm !== 'boolean') return null;
+  if (raw?.collectLogs !== undefined && typeof raw.collectLogs !== 'boolean') return null;
+  return DATADOG_SITES.has(site)
+    ? {
+        site,
+        ...(typeof raw?.collectApm === 'boolean' ? { collectApm: raw.collectApm } : {}),
+        ...(typeof raw?.collectLogs === 'boolean' ? { collectLogs: raw.collectLogs } : {}),
+      }
+    : null;
 }
 
 export function parseDatadogCredential(input: string): string | null {
