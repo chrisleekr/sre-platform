@@ -1,11 +1,11 @@
 import type { CredentialGetter } from '../../lib/request-credentials';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { config } from '../../config';
 import { authenticatedFetch } from '../../lib/authenticatedFetch';
 import { checkResponse, RequestError, requestErrorMessage } from '../../lib/request-error';
 import { useIncidentApproval } from '../../lib/useIncidentApproval';
-import { assessmentLabel } from '../../lib/incidentState';
+import { assessmentLabel, incidentEvidencePreview } from '../../lib/incidentState';
 import type { PostmortemTrigger } from '@sre/contracts';
 import { postmortemPath, productPath } from '../../lib/routes';
 import { formatAbsoluteTime } from '../../lib/time';
@@ -20,6 +20,7 @@ import { type LifecycleStatus } from './signals';
 import { deriveIncidentState } from './state';
 import { IncidentLiveView } from './view';
 import type { IncidentLiveViewModel } from './view-model';
+import { useEvidenceInspector } from './use-evidence-inspector';
 
 export function LiveIncidentConversation({
   workspace,
@@ -81,11 +82,19 @@ export function LiveIncidentConversation({
     incident.id,
   );
   const [copyLinkState, setCopyLinkState] = useState<'idle' | 'copied' | 'failed'>('idle');
-  const [selectedEvidenceId, setSelectedEvidenceId] = useState<string | null>(null);
-  const [manualEvidenceSelection, setManualEvidenceSelection] = useState<{
-    incidentId: string;
-    evidenceId: string;
-  } | null>(null);
+  const inspector = useEvidenceInspector(incident.id, evidenceState.loadDetail);
+  const [newMessageCount, setNewMessageCount] = useState(0);
+  const [conversationReviewNeeded, setConversationReviewNeeded] = useState(false);
+  const connectionWasOpen = useRef(false);
+  const connectionInterrupted = useRef(false);
+  const seenMessages = useRef(new Set(stream.messages.map((message) => message.id)));
+  useEffect(() => {
+    if (stream.status === 'open') {
+      if (connectionInterrupted.current) setConversationReviewNeeded(true);
+      connectionWasOpen.current = true;
+      connectionInterrupted.current = false;
+    } else if (connectionWasOpen.current) connectionInterrupted.current = true;
+  }, [stream.status]);
   const {
     activeSignalCount,
     activeSignals,
@@ -98,8 +107,13 @@ export function LiveIncidentConversation({
     recoveryIsCurrent,
     signals,
   } = deriveIncidentState(workspace);
-  const canPost =
-    !mergedTargetId && stream.status === 'open' && stream.postState?.state !== 'saving';
+  const canEditDraft =
+    !mergedTargetId &&
+    !incident.archivedAt &&
+    !['unauthorized', 'forbidden', 'incident_not_found', 'incident_archived'].includes(
+      stream.errorCode ?? '',
+    );
+  const canPost = canEditDraft && stream.status === 'open' && stream.postState?.state !== 'saving';
   const createdAt = formatAbsoluteTime(incident.createdAt);
   const selectedSignal = signalCorrectionTarget
     ? (activeSignals.find((signal) => signal.id === signalCorrectionTarget.id) ?? null)
@@ -107,27 +121,12 @@ export function LiveIncidentConversation({
   const signalCorrectionStale =
     signalCorrectionTarget !== null &&
     (selectedSignal === null || selectedSignal.version !== signalCorrectionTarget.expectedVersion);
-  const openEvidence = useCallback(
-    (evidenceId: string) => {
-      setSelectedEvidenceId(evidenceId);
-      setManualEvidenceSelection({ incidentId: incident.id, evidenceId });
-      evidenceState.loadDetail(evidenceId);
-      requestAnimationFrame(() => {
-        document.getElementById(`evidence-${evidenceId}`)?.scrollIntoView?.({ block: 'start' });
-      });
-    },
-    [evidenceState.loadDetail, incident.id],
-  );
-
   useEffect(() => {
-    if (manualEvidenceSelection?.incidentId === incident.id) return;
-    const first = recoveryIsCurrent
-      ? (incident.recoveryEvidenceIds?.[0] ?? evidenceState.evidence[0]?.id)
-      : (incident.assessmentEvidenceIds?.[0] ?? evidenceState.evidence[0]?.id);
-    if (first && first !== selectedEvidenceId) {
-      setSelectedEvidenceId(first);
-      evidenceState.loadDetail(first);
-    }
+    incidentEvidencePreview(
+      incident,
+      recoveryIsCurrent,
+      evidenceState.evidence.map((item) => item.id),
+    ).ids.forEach((id) => evidenceState.loadDetail(id));
   }, [
     evidenceState.evidence,
     evidenceState.loadDetail,
@@ -136,9 +135,7 @@ export function LiveIncidentConversation({
     incident.recoveryEvidenceIds,
     incident.recoveryState,
     incident.recoveryUpdatedAt,
-    manualEvidenceSelection,
     recoveryIsCurrent,
-    selectedEvidenceId,
   ]);
 
   async function copyIncidentLink() {
@@ -153,6 +150,13 @@ export function LiveIncidentConversation({
   const newest = stream.messages.at(-1);
   useEffect(() => {
     if (!newest) return;
+    const unseen = stream.messages.filter((message) => !seenMessages.current.has(message.id));
+    unseen.forEach((message) => seenMessages.current.add(message.id));
+    setNewMessageCount(
+      (count) =>
+        count +
+        unseen.filter((message) => message.kind !== 'tool_step' && message.replay === false).length,
+    );
     history.refresh();
     if (
       newest.kind === 'tool_step' ||
@@ -435,12 +439,19 @@ export function LiveIncidentConversation({
     confirmingRepositoryId,
     repositoryConfirmError,
     copyLinkState,
-    selectedEvidenceId,
     createdAt,
     canPost,
+    canEditDraft,
+    ...inspector,
+    newMessageCount,
+    conversationReviewNeeded,
+    showNewMessages: () => {
+      setNewMessageCount(0);
+      setConversationReviewNeeded(false);
+      document.getElementById('conversation-latest')?.scrollIntoView({ block: 'end' });
+    },
     sentDelivery,
     hasSlackBinding,
-    openEvidence,
     copyIncidentLink,
     submit,
     transitionLifecycle,

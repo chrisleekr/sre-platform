@@ -24,7 +24,7 @@ export function deriveIncidentState(workspace: IncidentWorkspaceData) {
           ? 'Needs human attention; mitigation in place'
           : 'Needs human attention'
         : incident.status === 'open'
-          ? 'SRE Platform handling'
+          ? 'Incident open'
           : incident.status === 'mitigated'
             ? 'Mitigation in place'
             : incident.status === 'resolved'

@@ -70,6 +70,30 @@ function sentPost(ws: FakeWebSocket, index = 0): { content: string; clientMessag
 }
 
 describe('useWsStream', () => {
+  test('preserves replay metadata while accepting older unmarked message frames', async () => {
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+    globalThis.fetch = vi.fn(async () => Response.json({ ticket: 'tkt' }));
+    const { result, unmount } = renderHook(() => useWsStream('inc-1', opts));
+    await waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+    const socket = FakeWebSocket.instances[0]!;
+    act(() => {
+      socket.open();
+      socket.emit({ ...frame, replay: true });
+      socket.emit({ ...frame, id: 'm2', replay: false });
+      socket.emit({ ...frame, id: 'm3' });
+    });
+    expect(result.current.messages.map((message) => message.replay)).toEqual([
+      true,
+      false,
+      undefined,
+    ]);
+    expect(result.current.messages.map((message) => message.content)).toEqual([
+      'investigating',
+      'investigating',
+      'investigating',
+    ]);
+    unmount();
+  });
   test('mints a ticket, connects, receives (deduped), and sends', async () => {
     globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
     globalThis.fetch = vi.fn(

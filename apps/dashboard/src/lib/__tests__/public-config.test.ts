@@ -54,7 +54,7 @@ test('memoizes successful same-origin and split-origin URLs independently', asyn
     const url = String(input);
     return Response.json(
       configBody(
-        url.startsWith('https://api.example.invalid')
+        url.startsWith('https://api.example.invalid/')
           ? 'https://split-staff.example.invalid'
           : 'https://same-staff.example.invalid',
       ),

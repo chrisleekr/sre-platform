@@ -213,7 +213,7 @@ describe('incident response workspace', () => {
     expect(screen.getByText(/could not connect/i)).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: /reconnect/i }));
     expect(wsState.retry).toHaveBeenCalledTimes(1);
-    expect((screen.getByLabelText('Ask the SRE') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText('Ask the SRE') as HTMLInputElement).disabled).toBe(false);
     unmount();
   });
 
@@ -240,11 +240,11 @@ describe('incident response workspace', () => {
     unmount();
   });
 
-  test('enables replies only for an open socket and a non-resolved incident', async () => {
+  test('keeps a draft editable while delivery waits for an open socket', async () => {
     globalThis.fetch = vi.fn(async () => response(detail()));
     const view = renderIncident();
     expect(await screen.findByText('checkout')).toBeDefined();
-    expect((screen.getByLabelText('Ask the SRE') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText('Ask the SRE') as HTMLInputElement).disabled).toBe(false);
     expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true);
 
     wsState = { ...wsState, status: 'open' };
@@ -363,9 +363,7 @@ describe('incident response workspace', () => {
 
     const { unmount } = renderIncident();
 
-    expect(
-      await screen.findByText('Saved to the incident. Investigation is continuing.'),
-    ).toBeDefined();
+    expect(await screen.findByText('Saved to the incident.')).toBeDefined();
     expect(screen.queryByText(/Waiting for Slack/)).toBeNull();
     unmount();
   });

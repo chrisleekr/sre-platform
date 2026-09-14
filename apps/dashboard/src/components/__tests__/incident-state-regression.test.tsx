@@ -40,6 +40,8 @@ function view(
   return {
     incident,
     workspace,
+    evidenceState: { evidence: [], details: {} },
+    showAllEvidence: vi.fn(),
     assessment: assessmentLabel(incident),
     signals: [],
     navigate: vi.fn(),
@@ -65,6 +67,39 @@ function view(
 }
 
 describe('truthful incident response state', () => {
+  test.each([
+    [['Payments'], 'Payments'],
+    [[], 'Not established'],
+  ] as const)('service-team context is independent of human attention', (teams, expected) => {
+    const model = view();
+    model.workspace.serviceTeams = [...teams];
+    model.workspace.attention = null;
+    render(
+      <MemoryRouter>
+        <IncidentOverview view={model} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('Service team').parentElement?.textContent).toBe(
+      `Service team ${expected}`,
+    );
+  });
+
+  test('older workspace responses retain the attention-owner service-team fallback', () => {
+    const model = view();
+    model.workspace.attention = {
+      decision: 'Review evidence',
+      owner: 'Legacy team',
+      nextAutomation: null,
+    };
+    render(
+      <MemoryRouter>
+        <IncidentOverview view={model} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('Service team').parentElement?.textContent).toBe(
+      'Service team Legacy team',
+    );
+  });
   test.each([
     ['inconclusive', 'Inconclusive'],
     ['blocked_missing_capability', 'Blocked by missing capability'],
@@ -115,7 +150,7 @@ describe('truthful incident response state', () => {
         />
       </MemoryRouter>,
     );
-    expect(screen.getByText('Investigation in progress')).toBeTruthy();
+    expect(screen.getByText('Investigation recorded as processing')).toBeTruthy();
     expect(
       screen.getByText('Responder follow-up queued. New input has not yet been incorporated.'),
     ).toBeTruthy();
@@ -186,7 +221,7 @@ describe('truthful incident response state', () => {
       </MemoryRouter>,
     );
     expect(screen.queryByText('Assessment ready')).toBeNull();
-    expect(screen.getByText(/investigat.*(?:progress|running)|gathering evidence/i)).toBeTruthy();
+    expect(screen.getByText('Investigation recorded as processing')).toBeTruthy();
     expect(screen.getAllByText('The migration failed its checksum check.').length).toBeGreaterThan(
       0,
     );

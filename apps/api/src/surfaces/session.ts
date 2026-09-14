@@ -237,7 +237,7 @@ export async function openIncidentSession(
     const adapter: SurfaceAdapter = {
       surface: 'dashboard',
       project(msg) {
-        sink.send(JSON.stringify(msg));
+        sink.send(JSON.stringify({ ...msg, replay: false }));
       },
       async ingest({ content, author, clientMessageId }) {
         if (credentialClosed)
@@ -346,7 +346,7 @@ export async function openIncidentSession(
 
     // Subscribe before replaying history so nothing is lost in the gap; dedup by id.
     const seen = new Set<string>();
-    const deliverVisible = (msg: HubMessage) => {
+    const deliverVisible = (msg: HubMessage, replay = false) => {
       if (msg.kind === 'archive') {
         closeSession('forbidden');
         return;
@@ -354,7 +354,7 @@ export async function openIncidentSession(
       if (sessionClosed) return;
       if (seen.has(msg.id)) return;
       seen.add(msg.id);
-      void adapter.project(msg);
+      sink.send(JSON.stringify({ ...msg, replay }));
     };
     // Pub/Sub is only a wake-up hint. Every live projection revalidates the durable incident row, in
     // message order, so a missed archive publication cannot expose later conversation rows.
@@ -423,7 +423,7 @@ export async function openIncidentSession(
       closeSession('forbidden');
       return null;
     }
-    for (const msg of history) deliverVisible(msg);
+    for (const msg of history) deliverVisible(msg, true);
     finishReplay();
 
     // The deadline can land inside any await above. A session already closed must never be returned as

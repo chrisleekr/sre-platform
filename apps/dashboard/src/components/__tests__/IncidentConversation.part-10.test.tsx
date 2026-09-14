@@ -10,6 +10,8 @@ import type { HubMessage } from '../../lib/types';
 import type { WsRefusalCode } from '../../lib/useWsStream';
 
 import { IncidentConversation } from '../IncidentConversation';
+import { installDialogMethods } from '../../test/dialog';
+let dialogMethods: ReturnType<typeof installDialogMethods>;
 
 const getCredentials = vi.hoisted(() =>
   vi.fn(async () => ({ kind: 'bearer' as const, token: 'jwt' })),
@@ -72,6 +74,7 @@ let wsState: {
 };
 
 beforeEach(() => {
+  dialogMethods = installDialogMethods();
   wsState = {
     messages: [],
     status: 'connecting',
@@ -112,6 +115,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  dialogMethods.restore();
+  window.history.replaceState(null, '', '/');
   globalThis.fetch = originalFetch;
   useWsStream.mockClear();
   useAttachments.mockClear();
@@ -328,7 +333,8 @@ describe('incident response workspace', () => {
     loadDetail.mockClear();
     fireEvent.click(screen.getAllByRole('link', { name: `Open evidence ${supportId}` })[0]!);
     expect(loadDetail).toHaveBeenCalledWith(supportId);
-    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('dialog')).toBeDefined();
+    expect(scrollIntoView).not.toHaveBeenCalled();
     unmount();
     delete (Element.prototype as Partial<Element>).scrollIntoView;
   });

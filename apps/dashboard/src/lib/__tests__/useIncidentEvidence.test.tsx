@@ -121,7 +121,11 @@ describe('useIncidentEvidence', () => {
   });
 
   test('a refresh merges the newest page without dropping loaded older evidence', async () => {
-    const older = { ...evidence, id: '33333333-3333-4333-8333-333333333333' };
+    const older = {
+      ...evidence,
+      id: '33333333-3333-4333-8333-333333333333',
+      recordedAt: '2026-08-20T23:59:59.000Z',
+    };
     let newestPageCalls = 0;
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input);
@@ -149,7 +153,7 @@ describe('useIncidentEvidence', () => {
     act(() => result.current.refresh());
     await waitFor(() => expect(result.current.evidence[0]?.outcome).toBe('no_data'));
     expect(result.current.evidence.map((item) => item.id)).toEqual([evidenceId, older.id]);
-    expect(result.current.nextCursor).toBeNull();
+    expect(result.current.nextCursor).toBe('shifted-page');
     unmount();
   });
 });

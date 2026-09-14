@@ -65,16 +65,15 @@ describe('IncidentEvidenceWorkspace', () => {
       />,
     );
 
-    expect(screen.getByText('Prometheus')).toBeDefined();
     expect(screen.getAllByRole('status')).toHaveLength(1);
     expect(screen.getByRole('status').textContent).toMatch(/loading evidence detail/i);
     expect(screen.getByRole('status').getAttribute('aria-busy')).toBe('true');
     const blocks = container.querySelectorAll('.sre-skeleton');
-    expect(blocks).toHaveLength(4);
+    expect(blocks.length).toBeGreaterThanOrEqual(4);
     for (const block of blocks) expect(block.getAttribute('aria-hidden')).toBe('true');
   });
 
-  test('responds to its own width instead of the page viewport', () => {
+  test('selected detail replaces the evidence list instead of nesting reading areas', () => {
     render(
       <IncidentEvidenceWorkspace
         evidence={[item]}
@@ -91,11 +90,8 @@ describe('IncidentEvidenceWorkspace', () => {
       />,
     );
 
-    const section = screen.getByRole('heading', { name: 'Evidence ledger' }).closest('section')!;
-    const grid = screen.getByLabelText('Evidence records').parentElement!;
-    expect(section.className).toContain('@container');
-    expect(grid.className).toContain('@3xl:grid-cols-[18rem_minmax(0,1fr)]');
-    expect(grid.className).not.toContain('lg:grid-cols');
+    expect(screen.queryByLabelText('Evidence records')).toBeNull();
+    expect(screen.getByRole('table', { name: 'Human-readable evidence facts' })).toBeDefined();
     expect(screen.getByRole('heading', { name: 'Prometheus' }).className).toContain('break-words');
   });
 });

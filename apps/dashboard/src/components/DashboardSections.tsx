@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import type { ConnectorSummary } from '../lib/connectors';
 import type { InfraHealth } from '../lib/infrastructure';
 import { incidentPath } from '../lib/routes';
+import { incidentDisplayTitle } from '../lib/incidentTitle';
 import { formatAbsoluteTime, relativeTime } from '../lib/time';
 import type { Deployment, Incident, InfraSnapshot } from '../lib/types';
 import { SignalSpine, type SignalFacet } from './SignalSpine';
@@ -171,7 +172,7 @@ export function IncidentQueue({ incidents }: { incidents: Incident[] }) {
                   </time>
                 </div>
                 <h3 className="mt-2 break-words text-sm font-semibold text-ink">
-                  {incident.title ?? incident.service}
+                  {incidentDisplayTitle(incident)}
                 </h3>
                 <p className="mt-1 font-instrument text-xs text-ink-muted">
                   {incident.service} · {incident.alertSource}
@@ -278,7 +279,7 @@ export function CorrelatedChanges({
                 to={incidentPath(incident.id)}
                 className="text-xs font-semibold text-info hover:text-info"
               >
-                {incident.title ?? incident.service} →
+                {incidentDisplayTitle(incident)} →
               </Link>
             ))}
           </div>

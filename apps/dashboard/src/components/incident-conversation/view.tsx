@@ -8,9 +8,9 @@ export function IncidentLiveView({ view }: { view: IncidentLiveViewModel }) {
     <section className="@container min-h-full min-w-0 overflow-x-hidden pb-28">
       <header className="mb-5 min-w-0 border-b border-line pb-5">
         <IncidentOverview view={view} />
-        <IncidentControls view={view} />
       </header>
       <IncidentBody view={view} />
+      <IncidentControls view={view} />
     </section>
   );
 }

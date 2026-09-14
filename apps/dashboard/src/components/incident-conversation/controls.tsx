@@ -1,6 +1,5 @@
 import { POSTMORTEM_TRIGGERS, type PostmortemTrigger } from '@sre/contracts';
 import { Link } from 'react-router-dom';
-import { formatAbsoluteTime } from '../../lib/time';
 import { incidentPath, postmortemPath } from '../../lib/routes';
 import { lifecycleActions, signalHeadline } from './signals';
 import type { IncidentLiveViewModel } from './view-model';
@@ -69,26 +68,14 @@ export function IncidentControls({ view }: { view: IncidentLiveViewModel }) {
               ? (incident.pendingApprovalCount ?? 0) > 0
                 ? 'Recovery verified; an approval is still pending.'
                 : 'Recovery verified; lifecycle transition is pending.'
-              : incident.recoveryState === 'verifying'
-                ? 'Signals cleared; recovery verification is running.'
-                : incident.recoveryState === 'monitoring'
-                  ? `SRE Platform is monitoring recovery${incident.recoveryAttempt && incident.recoveryMaxChecks ? ` after check ${incident.recoveryAttempt} of ${incident.recoveryMaxChecks}` : ''}.`
-                  : incident.recoveryState === 'not_verified'
-                    ? 'Signals cleared, but recovery is not verified.'
-                    : 'Signals cleared; recovery verification is queued.'}
+              : 'Provider notifications cleared.'}
           </p>
           <p className="mt-1">
             {incident.recoveryState === 'verified'
               ? (incident.pendingApprovalCount ?? 0) > 0
                 ? 'Decide the pending change before SRE Platform completes the automatic resolution.'
                 : 'SRE Platform should resolve this recovered occurrence automatically. Preventative follow-up remains in the brief but does not keep the incident active.'
-              : incident.recoveryState === 'verifying'
-                ? 'SRE Platform is checking current evidence before deciding whether human attention is required.'
-                : incident.recoveryState === 'monitoring'
-                  ? `${incident.recoveryNextCheckAt ? `Next automated check: ${formatAbsoluteTime(incident.recoveryNextCheckAt)}. ` : ''}${incident.recoveryScheduleReason ?? 'The investigator selected another bounded recovery check.'} No human action is required yet.`
-                  : incident.recoveryState === 'not_verified'
-                    ? 'Continue diagnosis and follow the next diagnostic step before resolving.'
-                    : 'The verification worker will check current evidence before proposing resolution.'}
+              : 'Cleared provider notifications do not establish user recovery. Review current evidence before resolving.'}
           </p>
         </div>
       )}
@@ -204,6 +191,7 @@ export function IncidentControls({ view }: { view: IncidentLiveViewModel }) {
       )}
 
       <details
+        id="incident-lifecycle-controls"
         open={incident.purpose === 'health_check'}
         className="mt-4 rounded-lg border border-line bg-surface"
       >

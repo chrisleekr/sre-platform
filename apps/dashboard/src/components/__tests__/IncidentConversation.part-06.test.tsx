@@ -273,23 +273,21 @@ describe('incident response workspace', () => {
     view.unmount();
   });
 
-  test('keeps the response state and conversation ahead of supporting evidence', async () => {
+  test('keeps the triage preview and conversation together with context in a disclosure', async () => {
     globalThis.fetch = vi.fn(async () => response(detail()));
 
     renderIncident();
 
     const responseState = await screen.findByRole('heading', { name: 'Current response state' });
     const conversation = screen.getByRole('heading', { name: 'Incident conversation' });
-    const evidence = screen.getByRole('heading', { name: 'Evidence ledger' });
+    const evidence = screen.getByRole('heading', { name: 'Supporting evidence' });
 
     expect(responseState).toBeDefined();
     expect(
-      conversation.compareDocumentPosition(evidence) & Node.DOCUMENT_POSITION_FOLLOWING,
+      evidence.compareDocumentPosition(conversation) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(
-      screen.getByRole('complementary', { name: 'Incident evidence and context' }),
-    ).toBeDefined();
-    expect(evidence.closest('section')?.className).toContain('@container');
+    expect(screen.getByText('Supporting context, relationships and signals')).toBeDefined();
+    expect(screen.getByRole('button', { name: /All evidence/ })).toBeDefined();
   });
 
   test('shows captured/current platform provenance, source link, and recurrence without legacy noise', async () => {

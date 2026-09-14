@@ -15,18 +15,60 @@ export interface Shot {
   anonymous?: boolean;
   /** Button to press before the shot, by visible text. */
   click?: string;
+  /** Capture only the visible inspector, without expanding the inert background page. */
+  incidentInspector?: boolean;
   /** Viewport names where the optional button is rendered. Defaults to every viewport. */
   clickSizes?: string[];
   /** Heading that proves the requested state rendered before capture. */
   expectedHeading?: string;
   /** Non-sensitive tab state needed to reach a resumable public step. */
   sessionStorage?: Record<string, string>;
+  /** Topology mode and optional relationship inspector to capture after data and layout resolve. */
+  topology?: {
+    mode: 'Runtime traffic' | 'Service dependencies' | 'Resource context';
+    inspector?: boolean;
+  };
 }
 
 export const SCREENSHOT_MATRIX = [
   { name: 'desktop', viewport: { width: 1440, height: 960 }, themes: ['light', 'dark'] },
   { name: 'mobile', viewport: { width: 390, height: 844 }, themes: ['light', 'dark'] },
 ] as const;
+
+/** Select a bounded documentation capture without replacing unrelated screenshots. */
+export function screenshotPlan(args: string[]) {
+  if (args.length > 1 || args.some((arg) => !['--only=topology', '--only=incident'].includes(arg)))
+    throw new Error('Usage: bun run docs:screenshots [--only=topology|--only=incident]');
+  const only = args[0]?.slice('--only='.length) ?? null;
+  const shots =
+    only === 'topology'
+      ? SHOTS.filter((shot) => shot.topology)
+      : only === 'incident'
+        ? SHOTS.filter((shot) => shot.file.startsWith('incident-detail'))
+        : SHOTS;
+  return {
+    only,
+    shots,
+    matrix: [
+      ...SCREENSHOT_MATRIX,
+      ...(only !== 'topology'
+        ? [
+            {
+              name: 'tablet',
+              viewport: { width: 820, height: 1180 },
+              themes: ['light', 'dark'] as const,
+            },
+          ]
+        : []),
+    ].map((size) => ({
+      ...size,
+      shots:
+        size.name === 'tablet'
+          ? shots.filter((shot) => shot.file.startsWith('incident-detail'))
+          : shots,
+    })),
+  };
+}
 
 export const SHOTS: Shot[] = [
   { file: 'landing', path: '/', waitFor: 'main', anonymous: true },
@@ -66,15 +108,39 @@ export const SHOTS: Shot[] = [
   { file: 'overview', path: '/w', waitFor: 'main' },
   { file: 'incidents', path: '/w/incidents', waitFor: 'main' },
   { file: 'incident-detail', path: '/w/incidents/:incident', waitFor: 'main' },
+  {
+    file: 'incident-detail-evidence',
+    path: '/w/incidents/:incident',
+    waitFor: 'main',
+    click: 'All evidence',
+    incidentInspector: true,
+  },
   { file: 'infrastructure', path: '/w/infrastructure', waitFor: 'main' },
   { file: 'deployments', path: '/w/deployments', waitFor: 'main' },
   { file: 'changes', path: '/w/changes', waitFor: 'main' },
   {
     file: 'topology',
-    path: '/w/topology',
-    waitFor: 'main',
-    click: 'Fit services',
-    clickSizes: ['desktop'],
+    path: '/w/topology?view=map',
+    waitFor: '[aria-label="Discovered topology map"]',
+    topology: { mode: 'Runtime traffic' },
+  },
+  {
+    file: 'topology-dependencies',
+    path: '/w/topology?view=map',
+    waitFor: '[aria-label="Discovered topology map"]',
+    topology: { mode: 'Service dependencies' },
+  },
+  {
+    file: 'topology-resources',
+    path: '/w/topology?view=map',
+    waitFor: '[aria-label="Discovered topology map"]',
+    topology: { mode: 'Resource context' },
+  },
+  {
+    file: 'topology-evidence',
+    path: '/w/topology?view=map',
+    waitFor: '[aria-label="Discovered topology map"]',
+    topology: { mode: 'Runtime traffic', inspector: true },
   },
   { file: 'connectors', path: '/w/connectors', waitFor: 'main' },
   { file: 'inbound', path: '/w/surfaces', waitFor: 'main' },

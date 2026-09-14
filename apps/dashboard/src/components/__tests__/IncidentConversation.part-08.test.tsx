@@ -270,7 +270,7 @@ describe('incident response workspace', () => {
     ).toBeGreaterThan(0);
     expect(
       screen.getAllByRole('link', { name: `Open evidence ${contradictId}`, hidden: true }),
-    ).toHaveLength(3);
+    ).toHaveLength(4);
     expect(screen.getByText('Whether the last deploy changed pool settings')).toBeDefined();
     expect(screen.getByText('Partial evidence')).toBeDefined();
     expect(screen.getByText('deployment as of')).toBeDefined();

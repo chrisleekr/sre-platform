@@ -31,10 +31,15 @@ describe('dashboard screenshot route inventory', () => {
     expect(routes.get('admin-workspaces')?.path).toBe('/admin/workspaces');
     expect(routes.get('account-menu')).toMatchObject({ path: '/w', click: 'Account menu' });
     expect(routes.get('topology')).toMatchObject({
-      path: '/w/topology',
-      click: 'Fit services',
-      clickSizes: ['desktop'],
+      path: '/w/topology?view=map',
+      topology: { mode: 'Runtime traffic' },
     });
+    expect(SHOTS.filter((shot) => shot.topology).map((shot) => shot.topology)).toEqual([
+      { mode: 'Runtime traffic' },
+      { mode: 'Service dependencies' },
+      { mode: 'Resource context' },
+      { mode: 'Runtime traffic', inspector: true },
+    ]);
     expect(
       [...routes.values()]
         .filter((shot) => !shot.anonymous && !shot.path.startsWith('/get-started'))

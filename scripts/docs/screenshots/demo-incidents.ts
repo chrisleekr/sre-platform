@@ -11,10 +11,12 @@ import {
   incidentMessages,
   incidents,
   investigationRuns,
+  jobs,
   withTenant,
 } from '../../../packages/db/src/index';
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { DemoSeedDeps } from './demo-environment';
+import { demoIncidentEvidence } from './demo-evidence';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -144,6 +146,14 @@ export async function seedLeadIncident(deps: DemoSeedDeps): Promise<string> {
   });
 
   const runId = crypto.randomUUID();
+  const evidence = demoIncidentEvidence(openedAt);
+  const evidenceIds = evidence.slice(0, 4).map((item) => item.id);
+  await deps.adminDb
+    .update(jobs)
+    .set({ status: 'done' })
+    .where(
+      and(eq(jobs.tenantId, deps.tenantId), sql`${jobs.payload}->>'incidentId' = ${incidentId}`),
+    );
   await withTenant(deps.appDb, deps.tenantId, async (tx) => {
     await tx.insert(investigationRuns).values({
       id: runId,
@@ -169,21 +179,9 @@ export async function seedLeadIncident(deps: DemoSeedDeps): Promise<string> {
     });
 
     await tx.insert(agentToolCalls).values(
-      [
-        { tool: 'topology_blast_radius', latencyMs: 61, input: { service: 'checkout-api' } },
-        { tool: 'deploy_recent', latencyMs: 128, input: { service: 'checkout-api', window: '2h' } },
-        { tool: 'logs_search', latencyMs: 940, input: { service: 'checkout-api', level: 'error' } },
-        {
-          tool: 'source_read_file',
-          latencyMs: 302,
-          input: { path: 'worker/pool.rb', ref: '9c14aa2' },
-        },
-        { tool: 'metrics_golden_signals', latencyMs: 417, input: { service: 'checkout-api' } },
-        { tool: 'infra_pods', latencyMs: 233, input: { namespace: 'checkout' } },
-      ].map((call, index) => ({
+      evidence.map((call, index) => ({
         tenantId: deps.tenantId,
         incidentId,
-        outcome: 'ok',
         createdAt: new Date(openedAt.getTime() + (90 + index * 20) * 1000),
         ...call,
       })),
@@ -195,6 +193,7 @@ export async function seedLeadIncident(deps: DemoSeedDeps): Promise<string> {
         engineProvider: 'anthropic',
         engineModel: 'claude-opus-4-8',
         trustedAssessmentRunId: runId,
+        assessmentEvidenceIds: evidenceIds,
         confidence: 78,
         rcaSummary:
           'The 14:02 checkout-api release raised worker concurrency from 8 to 32 without raising the ' +
@@ -215,6 +214,8 @@ export async function seedLeadIncident(deps: DemoSeedDeps): Promise<string> {
               'The release 26 minutes ago changed pool concurrency 8 to 32. Latency rose within 90 seconds ' +
               'of the rollout and pool-wait time tracks it exactly.',
             state: 'leading',
+            supportingEvidenceIds: evidenceIds.slice(0, 2),
+            contradictingEvidenceIds: [],
           },
           {
             hypothesis: 'Memory limit too low for the new concurrency, causing the OOM kill',
@@ -223,6 +224,8 @@ export async function seedLeadIncident(deps: DemoSeedDeps): Promise<string> {
               'One pod was OOMKilled and is in CrashLoopBackOff. This may be a consequence of the same ' +
               'change rather than an independent cause.',
             state: 'plausible',
+            supportingEvidenceIds: [evidenceIds[3]!],
+            contradictingEvidenceIds: [],
           },
           {
             hypothesis: 'Downstream payments-gateway slowdown',
@@ -230,6 +233,8 @@ export async function seedLeadIncident(deps: DemoSeedDeps): Promise<string> {
             evidence:
               'payments-gateway p99 is unchanged at 120ms and its error rate is flat. Contradicted.',
             state: 'disproven',
+            supportingEvidenceIds: [],
+            contradictingEvidenceIds: [evidenceIds[2]!],
           },
         ],
         unknowns: [
@@ -273,7 +278,7 @@ export async function seedLeadIncident(deps: DemoSeedDeps): Promise<string> {
         outcome: 'conclusive',
         promotion: 'trusted_assessment',
         promotionReason: 'conclusive_assessment',
-        evidenceIds: [],
+        evidenceIds,
         currentState: 'p99 latency 2.4s against a 0.8s baseline.',
         impact: 'Checkout is degraded for all customers.',
         nextStep: 'Roll back checkout-api to 61d0b9c.',

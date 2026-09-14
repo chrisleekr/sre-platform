@@ -59,3 +59,8 @@ export interface WsAcceptedFrame {
   clientMessageId: string;
   messageId: string;
 }
+
+/** Optional delivery metadata. Missing metadata from older servers is not proof of a live arrival. */
+export interface WsMessageDelivery {
+  replay?: boolean;
+}
