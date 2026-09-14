@@ -1,5 +1,29 @@
 # GitLab
 
+## Optional issue management
+
+Issue reads use the existing read-access token. To allow confirmed changes:
+
+1. Create a dedicated GitLab project or group access token with **api** scope and a role permitted
+   to edit the target issues. Limit its repository access and expiry.
+2. In the connection wizard, enable **Allow confirmed issue changes**.
+3. Enter allowed full project paths, one per line, and paste the token into **Issue-write access token**.
+4. Save and verify the connection. Do not replace the read-only discovery token.
+
+The write token is encrypted and never shown again. Leave its field blank to keep it. Disabling
+issue management removes the stored token; changing the GitLab target requires a new token.
+GitLab assignees use numeric user IDs. See
+[repository issues](../dashboard/incident-workspace.md#repository-issues) for the confirmation flow.
+
+Descriptions cannot contain slash-leading lines, including GitLab quick actions. These can trigger
+extra provider changes, so remove or escape them and review a new preview.
+
+Reads one top-level group, on gitlab.com or your own instance. It syncs every project in that group
+and its subgroups, then narrows to the few projects relevant to an incident.
+
+Connect it at the group level. An older project-level shape still works and offers fewer tools,
+which is why the tool table below is listed once per shape.
+
 ## What it adds to an investigation
 
 Deploy correlation is the second question every investigation asks, right after blast radius. This

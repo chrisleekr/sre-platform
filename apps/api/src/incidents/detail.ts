@@ -1,9 +1,9 @@
-import { resolveIncidentTopologyContext as resolveIncidentEntityContext } from '@sre/topology';
 import {
   IncidentFeedbackRateLimitError,
   connectorConfigs,
   enforceIncidentFeedbackAdmissionTx,
   getIncidentDetail,
+  presentIncidentTitles,
   getIncidentEvidenceProgress,
   getIncidentSummary,
   getInvestigationSubject,
@@ -26,6 +26,7 @@ import {
   upsertServiceRepositories,
   withTenant,
 } from '@sre/db';
+import { resolveIncidentTopologyContext as resolveIncidentEntityContext } from '@sre/topology';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { entityCapabilityGaps, scrubSecrets } from '@sre/agent-tools';
 import { Hono } from 'hono';
@@ -67,9 +68,9 @@ export function registerIncidentDetailRoutes(
       listIncidentRelations(deps.db, tenantId, id),
     ]);
     if (!incident) return c.json({ error: 'incident not found' }, 404);
+    const [presented] = await presentIncidentTitles(deps.db, tenantId, [incident]);
     return c.json({
-      ...incident,
-      title: publicIncidentTitle(incident.title),
+      ...presented,
       relations: publicIncidentRelations(relations),
     });
   });
@@ -239,11 +240,9 @@ export function registerIncidentDetailRoutes(
       ...signal,
       alertName: signal.alertName ? scrubSecrets(signal.alertName) : signal.alertName,
     }));
+    const [presented] = await presentIncidentTitles(deps.db, tenantId, [incident]);
     return c.json({
-      ...safeAssessment({
-        ...incident,
-        title: publicIncidentTitle(incident.title),
-      })!,
+      ...safeAssessment(presented!)!,
       viewerUserId: userId ?? null,
       progress,
       signals: publicSignals,
@@ -276,8 +275,8 @@ export function registerIncidentDetailRoutes(
         : null,
       feedback,
       feedbackEligibleFindingRunIds: findingRows.map((row) => row.runId).sort(),
-      serviceTeams: owners,
       attention: operatorState.attention,
+      serviceTeams: owners,
       automation: {
         nextAction: operatorState.automation,
         currentBudget,

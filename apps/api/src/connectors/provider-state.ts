@@ -1,4 +1,5 @@
 import { gitLabSmeeUrl, gitLabWebhookSecret, gitLabWebhookSigningToken } from '@sre/connectors';
+import { issueManagementSchema } from '@sre/connectors';
 import { connectorConfigs, connectorCredentialKey, type SecretStore, type Tx } from '@sre/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { ArgoCdSettings, GitLabSettings } from './contracts';
@@ -72,6 +73,15 @@ export function parseGitLabBaseUrl(input: unknown): string | null {
 export function parseGitLabSettings(input: unknown): GitLabSettings | null {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
   const raw = input as Record<string, unknown>;
+  if (
+    raw.issueManagement !== undefined &&
+    !issueManagementSchema.safeParse(raw.issueManagement).success
+  )
+    return null;
+  const issues =
+    raw.issueManagement === undefined
+      ? {}
+      : { issueManagement: issueManagementSchema.parse(raw.issueManagement) };
   const baseUrl = parseGitLabBaseUrl(input);
   if (!baseUrl) return null;
   const groupId = raw.groupId;
@@ -106,6 +116,7 @@ export function parseGitLabSettings(input: unknown): GitLabSettings | null {
     if (raw.groupName !== undefined && !groupName) return null;
     return {
       baseUrl,
+      ...issues,
       groupId: typeof groupId === 'string' ? groupId.trim() : groupId,
       groupPath,
       ...(groupName ? { groupName } : {}),
@@ -127,6 +138,7 @@ export function parseGitLabSettings(input: unknown): GitLabSettings | null {
   return {
     baseUrl,
     projectId: typeof projectId === 'string' ? projectId.trim() : projectId,
+    ...issues,
     ...(service ? { service } : {}),
   };
 }

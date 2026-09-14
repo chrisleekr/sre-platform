@@ -157,7 +157,7 @@ afterEach(() => {
 });
 
 describe('ConnectorsPanel', () => {
-  test('connects an existing dedicated GitHub App installation-wide and returns focus at 360px', async () => {
+  test('connects a dedicated GitHub App with explicit issue-write scope and returns focus at 360px', async () => {
     h.discoverGitHubInstallations.mockResolvedValue([
       {
         id: 101,
@@ -169,7 +169,9 @@ describe('ConnectorsPanel', () => {
           pull_requests: 'read',
           actions: 'read',
           deployments: 'read',
+          issues: 'write',
         },
+        writePermissions: ['issues'],
         appSlug: 'sre-triage',
       },
     ]);
@@ -183,6 +185,8 @@ describe('ConnectorsPanel', () => {
       reachable: true,
       authorized: true,
       checks: {
+        readOnlyApp: false,
+        allowedPermissions: true,
         canEnumerateRepositories: true,
         hasRepositories: true,
         canReadRepository: true,
@@ -227,6 +231,12 @@ describe('ConnectorsPanel', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Review repository coverage' }));
     expect(within(dialog).getByText(/No repository selection is required/i)).toBeDefined();
     expect(within(dialog).getByText(/Catalog every granted repository/i)).toBeDefined();
+    fireEvent.click(
+      within(dialog).getByRole('checkbox', { name: 'Allow confirmed issue changes' }),
+    );
+    fireEvent.change(within(dialog).getByLabelText('Repositories allowed for issue changes'), {
+      target: { value: 'acme/app' },
+    });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Review connection' }));
     expect(
       within(dialog).getByText(/saves the connection disabled until those checks pass/i),
@@ -239,6 +249,7 @@ describe('ConnectorsPanel', () => {
       ),
     ).toBeDefined();
     expect(within(dialog).getByText('312 repositories synchronized')).toBeDefined();
+    expect(within(dialog).getByText('✓ App permissions match the configured policy')).toBeDefined();
     expect(h.discoverGitHubInstallations).toHaveBeenCalledWith(
       expect.any(String),
       expect.any(Function),
@@ -249,6 +260,7 @@ describe('ConnectorsPanel', () => {
       name: 'GitHub',
       settings: {
         appId: 'Iv1.browser',
+        issueManagement: { enabled: true, repositories: ['acme/app'] },
         installationId: '101',
         accountLogin: 'acme',
         repositorySelection: 'selected',
@@ -257,6 +269,7 @@ describe('ConnectorsPanel', () => {
           pull_requests: 'read',
           actions: 'read',
           deployments: 'read',
+          issues: 'write',
         },
         appSlug: 'sre-triage',
         eventTransport: 'smee',

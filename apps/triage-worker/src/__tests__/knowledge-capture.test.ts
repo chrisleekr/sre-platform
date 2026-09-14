@@ -9,6 +9,8 @@ import {
   memberships,
   knowledgeChunks,
   EMBED_DIM,
+  knowledgeCaptureProposals,
+  withTenant,
   type Embedder,
 } from '@sre/db';
 import { makeSearchRunbooksTool } from '@sre/agent-tools';
@@ -17,6 +19,7 @@ import { makeFakeEngine, makeFakeGenerator } from '../engine/fake';
 import { createFixture } from './worker.fixture';
 import { makeRunbookHandler } from '../runbook-consumer';
 import type { StructuredGenerator } from '../engine/types';
+import { seedMembership } from '@sre/db/test-support';
 
 const fixture = createFixture();
 const testEmbedder: Embedder = {
@@ -32,7 +35,7 @@ const diagnosticDraft = {
   diagnosticGuide: '1. Resolve the node.\n2. Attribute load.',
 };
 
-async function setup(linked = true) {
+async function setup(linked = true, offerAlternative = false) {
   const incident = await createIncident(fixture.app.db, fixture.tenantId, {
     fingerprint: randomUUID(),
     service: 'node',
@@ -42,7 +45,9 @@ async function setup(linked = true) {
   const message = await fixture.hub.append(fixture.tenantId, incident.id, {
     author: 'human',
     kind: 'text',
-    content: 'Create a runbook for this next time.',
+    content: offerAlternative
+      ? 'Commit a guide to the repository from these recommendations.'
+      : 'Create a runbook for this next time.',
     authorUserId: linked ? fixture.actorUserId : undefined,
     originSurface: 'slack',
   });
@@ -67,8 +72,13 @@ async function setup(linked = true) {
     { ...makeFakeEngine(), resume },
     {
       runbookQueue: queue,
-      generator: makeFakeGenerator(() => ({
-        kind: 'capture_knowledge',
+      generator: makeFakeGenerator((prompt) => ({
+        kind: offerAlternative
+          ? JSON.parse(prompt).currentResponderMessage ===
+            'Commit a guide to the repository from these recommendations.'
+            ? 'offer_capture_knowledge'
+            : 'investigate'
+          : 'capture_knowledge',
         target: 'current',
         to: null,
         reason: 'Explicit request to save guidance.',
@@ -77,6 +87,200 @@ async function setup(linked = true) {
   );
   return { incident, job: job! as Job, message, queue, worker, resume };
 }
+
+test('offers a platform-only alternative and captures it once when its requester confirms', async () => {
+  const { incident, job, worker, resume, queue } = await setup(true, true);
+  await worker.handle(job, { signal: new AbortController().signal });
+  const beforeConfirmation = await fixture.hub.history(fixture.tenantId, incident.id);
+  expect(
+    await fixture.admin.db
+      .select()
+      .from(jobs)
+      .where(sql`type='runbook.generate' AND payload->>'incidentId'=${incident.id}`),
+  ).toHaveLength(0);
+  const yes = await fixture.hub.append(fixture.tenantId, incident.id, {
+    author: 'human',
+    authorUserId: fixture.actorUserId,
+    kind: 'text',
+    content: 'Yes',
+    originSurface: 'slack',
+  });
+  const confirmation = {
+    ...job,
+    id: randomUUID(),
+    payload: { incidentId: incident.id, humanMessageId: yes.id },
+  };
+  await worker.handle(confirmation, { signal: new AbortController().signal });
+  await worker.handle(confirmation, { signal: new AbortController().signal });
+
+  const generated = await fixture.admin.db
+    .select()
+    .from(jobs)
+    .where(sql`type='runbook.generate' AND payload->>'incidentId'=${incident.id}`);
+  expect(generated).toHaveLength(1);
+  expect(generated[0]!.payload).toMatchObject({ requestedBy: fixture.actorUserId });
+  expect(beforeConfirmation.some((message) => message.content.includes('15 minutes'))).toBe(true);
+  expect(resume).not.toHaveBeenCalled();
+  const history = await fixture.hub.history(fixture.tenantId, incident.id);
+  expect(
+    history.filter((message) => message.originMessageId?.startsWith('knowledge-request:')),
+  ).toHaveLength(1);
+  try {
+    expect(
+      await queue.process(
+        'confirmed-guide',
+        makeRunbookHandler({
+          appDb: fixture.app.db,
+          hub: fixture.hub,
+          embedder: testEmbedder,
+          generator: makeFakeGenerator(() => diagnosticDraft),
+        }),
+      ),
+    ).toBe(1);
+    expect(await fixture.hub.history(fixture.tenantId, incident.id)).toContainEqual(
+      expect.objectContaining({
+        kind: 'reply',
+        summary: expect.stringContaining('Diagnostic guide saved'),
+        content: expect.stringContaining('1. Resolve the node.'),
+      }),
+    );
+  } finally {
+    await fixture.admin.db
+      .delete(knowledgeChunks)
+      .where(eq(knowledgeChunks.tenantId, fixture.tenantId));
+  }
+});
+
+test('a bare confirmation cannot create capture authority from arbitrary earlier assistant prose', async () => {
+  const { incident, job, message, worker } = await setup();
+  await fixture.admin.db
+    .update(incidentMessages)
+    .set({ content: 'Yes' })
+    .where(eq(incidentMessages.id, message.id));
+  await fixture.hub.append(fixture.tenantId, incident.id, {
+    author: 'agent',
+    kind: 'reply',
+    content: 'Say Yes and I will save a guide for you.',
+  });
+  await worker.handle(job, { signal: new AbortController().signal });
+
+  expect(
+    await fixture.admin.db
+      .select()
+      .from(jobs)
+      .where(sql`type='runbook.generate' AND payload->>'incidentId'=${incident.id}`),
+  ).toHaveLength(0);
+});
+
+test.each([
+  'expired',
+  'cancelled',
+  'superseded',
+  'wrong actor',
+  'other incident',
+  'unlinked',
+] as const)('does not capture a %s offer confirmation', async (scenario) => {
+  const { incident, job, worker } = await setup(true, true);
+  await worker.handle(job, { signal: new AbortController().signal });
+  const [offer] = await withTenant(fixture.app.db, fixture.tenantId, (tx) =>
+    tx
+      .select()
+      .from(knowledgeCaptureProposals)
+      .where(eq(knowledgeCaptureProposals.incidentId, incident.id)),
+  );
+  expect(offer).toMatchObject({ requestedBy: fixture.actorUserId, status: 'pending' });
+  expect(
+    await withTenant(fixture.app.db, randomUUID(), (tx) =>
+      tx
+        .select()
+        .from(knowledgeCaptureProposals)
+        .where(eq(knowledgeCaptureProposals.id, offer!.id)),
+    ),
+  ).toEqual([]);
+  if (scenario === 'expired')
+    await fixture.admin.db
+      .update(knowledgeCaptureProposals)
+      .set({ expiresAt: new Date('2020-01-01T00:00:00Z') })
+      .where(eq(knowledgeCaptureProposals.id, offer!.id));
+  if (scenario === 'cancelled' || scenario === 'superseded') {
+    const input = await fixture.hub.append(fixture.tenantId, incident.id, {
+      author: 'human',
+      authorUserId: fixture.actorUserId,
+      kind: 'text',
+      content: scenario === 'cancelled' ? 'No' : 'What was observed at 10:56?',
+    });
+    await worker.handle(
+      { ...job, id: randomUUID(), payload: { incidentId: incident.id, humanMessageId: input.id } },
+      { signal: new AbortController().signal },
+    );
+  }
+  const actor =
+    scenario === 'wrong actor'
+      ? await seedMembership(
+          fixture.admin.db,
+          { issuer: 'test', subject: randomUUID(), email: `${randomUUID()}@example.com` },
+          fixture.tenantId,
+        )
+      : scenario === 'unlinked'
+        ? undefined
+        : fixture.actorUserId;
+  const target =
+    scenario === 'other incident'
+      ? (
+          await createIncident(fixture.app.db, fixture.tenantId, {
+            fingerprint: randomUUID(),
+            service: 'other',
+            severity: 'sev3',
+            alertSource: 'slack',
+          })
+        ).id
+      : incident.id;
+  const confirmation = await fixture.hub.append(fixture.tenantId, target, {
+    author: 'human',
+    authorUserId: actor,
+    kind: 'text',
+    content: 'Yes',
+  });
+  await worker.handle(
+    { ...job, id: randomUUID(), payload: { incidentId: target, humanMessageId: confirmation.id } },
+    { signal: new AbortController().signal },
+  );
+  expect(
+    await fixture.admin.db
+      .select()
+      .from(jobs)
+      .where(
+        sql`type='runbook.generate' AND payload->>'incidentId' in (${incident.id}, ${target})`,
+      ),
+  ).toHaveLength(0);
+});
+
+test('new input arriving during confirmation prevents capture even before its own resume job runs', async () => {
+  const { incident, job, worker } = await setup(true, true);
+  await worker.handle(job, { signal: new AbortController().signal });
+  const yes = await fixture.hub.append(fixture.tenantId, incident.id, {
+    author: 'human',
+    authorUserId: fixture.actorUserId,
+    kind: 'text',
+    content: 'Yes',
+  });
+  await fixture.hub.append(fixture.tenantId, incident.id, {
+    author: 'human',
+    authorUserId: fixture.actorUserId,
+    kind: 'text',
+    content: 'Wait, do not save it.',
+  });
+  await worker.handle(
+    { ...job, id: randomUUID(), payload: { incidentId: incident.id, humanMessageId: yes.id } },
+    { signal: new AbortController().signal },
+  );
+  expect(
+    await fixture.admin.db
+      .select()
+      .from(jobs)
+      .where(sql`type='runbook.generate' AND payload->>'incidentId'=${incident.id}`),
+  ).toHaveLength(0);
+});
 
 test('captures a linked Slack request once and publishes the persisted diagnostic document without investigating again', async () => {
   const { incident, job, worker, queue, resume } = await setup();

@@ -9,6 +9,7 @@
     "@sre/connectors": "workspace:*",
     "@sre/contracts": "workspace:*",
     "@sre/db": "workspace:*",
+    "@sre/hub": "workspace:*",
     "@sre/slo": "workspace:*",
     "@sre/topology": "workspace:*",
     "drizzle-orm": "^0.45.2",

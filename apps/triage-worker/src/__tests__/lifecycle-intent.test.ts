@@ -40,3 +40,18 @@ test.each([
     ),
   ).rejects.toThrow();
 });
+
+test('accepts a capture-only alternative offer without granting external-write authority', async () => {
+  const result = await classifyLifecycleIntent(
+    makeFakeGenerator(() => ({
+      kind: 'offer_capture_knowledge',
+      target: 'current',
+      to: null,
+      reason:
+        'GitLab issue creation is unavailable; offer to save a diagnostic guide in the platform.',
+    })),
+    'Create a GitLab issue from these recommendations.',
+    new AbortController().signal,
+  );
+  expect(result).toMatchObject({ kind: 'offer_capture_knowledge', target: 'current', to: null });
+});

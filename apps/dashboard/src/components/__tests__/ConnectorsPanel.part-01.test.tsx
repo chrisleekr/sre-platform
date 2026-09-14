@@ -468,6 +468,7 @@ describe('ConnectorsPanel', () => {
         groupName: 'Platform',
         eventTransport: 'none',
         hookScope: 'projects',
+        issueManagement: { enabled: false, repositories: [] },
       },
       credential: 'glpat-browser-only',
     });

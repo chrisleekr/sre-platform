@@ -124,3 +124,4 @@ export {
 export * from './types';
 export { gitLabRevisionKey } from './data-sources/gitlab/event-identity';
 export * from './entity-coverage';
+export * from './issues';

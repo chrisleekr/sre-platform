@@ -42,7 +42,8 @@ export interface GitHubRateLimitEvidence {
 
 interface GitHubTokenScope {
   repositories?: string[];
-  permissions: Record<string, 'read'>;
+  repository_ids?: number[];
+  permissions: Record<string, 'read' | 'write'>;
 }
 
 interface RuntimeTokenScope {
@@ -52,7 +53,13 @@ interface RuntimeTokenScope {
   rateLimit: GitHubRateLimitEvidence;
 }
 
-const RUNTIME_PERMISSION_KEYS = ['contents', 'pull_requests', 'actions', 'deployments'] as const;
+const RUNTIME_PERMISSION_KEYS = [
+  'contents',
+  'pull_requests',
+  'actions',
+  'deployments',
+  'issues',
+] as const;
 
 function repositoryNames(fullNames: string[]): string[] {
   if (fullNames.length > 500)

@@ -7,6 +7,12 @@ import { classifyLifecycleIntent, type LifecycleIntent } from '../lifecycle-inte
 import type { WorkerRuntime } from './runtime';
 import { responderMessageWithinBudget } from './transcript';
 import { requestKnowledgeCapture } from './knowledge-capture';
+import { draftConversationIssue, handleIssueDecision } from './issue-actions';
+import {
+  hasPendingKnowledgeCapture,
+  invalidateKnowledgeCapture,
+  offerKnowledgeCapture,
+} from './knowledge-capture-offer';
 
 /** Execute only bounded, explicit actions; every receipt follows the lifecycle transaction.
  * @param runtime - Worker dependencies and semantic model boundary.
@@ -64,6 +70,43 @@ export async function processResponderActions(
       continue;
     }
     let intent: LifecycleIntent;
+    if (await handleIssueDecision(runtime, job, incidentId, message)) {
+      await invalidateKnowledgeCapture(runtime, job.tenantId, incidentId, message);
+      pendingQuestions = [];
+      await checkpoint(message.id);
+      continue;
+    }
+    const confirmation = /^(yes|no)[.!]?$/i.exec(message.content.trim())?.[1]?.toLowerCase();
+    if (confirmation) {
+      if (!(await hasPendingKnowledgeCapture(runtime, job.tenantId, incidentId))) {
+        pendingQuestions = [message];
+        await checkpoint(message.id);
+        continue;
+      }
+      if (confirmation === 'yes') {
+        await requestKnowledgeCapture(
+          runtime,
+          job.tenantId,
+          incidentId,
+          message,
+          progress.newer.at(-1)!.id,
+          true,
+        );
+      } else {
+        await invalidateKnowledgeCapture(runtime, job.tenantId, incidentId, message, true);
+        await runtime.deps.hub.appendOnce(job.tenantId, incidentId, {
+          author: 'system',
+          kind: 'reply',
+          content:
+            'No knowledge capture was requested. Any pending capture offer has been cancelled.',
+          originMessageId: `knowledge-declined:${message.id}`,
+        });
+      }
+      pendingQuestions = [];
+      await checkpoint(message.id);
+      continue;
+    }
+    await invalidateKnowledgeCapture(runtime, job.tenantId, incidentId, message);
     try {
       intent = await runtime.executeSemantic(job, 'responder-intent', signal, (generator) =>
         classifyLifecycleIntent(generator, message.content, signal, newer),
@@ -112,6 +155,24 @@ export async function processResponderActions(
         message,
         progress.newer.at(-1)!.id,
       );
+      pendingQuestions = [];
+      await checkpoint(message.id);
+      continue;
+    }
+    if (intent.kind === 'offer_capture_knowledge') {
+      await offerKnowledgeCapture(
+        runtime,
+        job.tenantId,
+        incidentId,
+        message,
+        progress.newer.at(-1)!.id,
+      );
+      pendingQuestions = [];
+      await checkpoint(message.id);
+      continue;
+    }
+    if (intent.kind === 'manage_issue') {
+      await draftConversationIssue(runtime, job, incidentId, message, signal);
       pendingQuestions = [];
       await checkpoint(message.id);
       continue;

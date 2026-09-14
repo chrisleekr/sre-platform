@@ -71,8 +71,9 @@ export function GitHubRemainingSteps({ view }: { view: GitHubWizardViewModel }) 
           </dl>
           {writePermissions.length > 0 && (
             <p className="rounded border border-critical-line bg-critical-soft p-3 text-sm text-critical">
-              Write access detected: {writePermissions.join(', ')}. SRE Platform requires a
-              read-only GitHub App.
+              Write access detected: {writePermissions.join(', ')}. Issues write access requires the
+              optional issue-management setting in the next step. Other permissions must stay
+              read-only.
             </p>
           )}
           {error && (
@@ -237,7 +238,10 @@ export function GitHubRemainingSteps({ view }: { view: GitHubWizardViewModel }) 
               {result.checks?.canEnumerateRepositories ? '✓' : '✕'} Repository catalog enumerated
             </li>
             <li>{result.checks?.canReadContents ? '✓' : '✕'} Contents and commit reads</li>
-            <li>{result.checks?.readOnlyApp ? '✓' : '✕'} Read-only App grant</li>
+            <li>
+              {(result.checks?.allowedPermissions ?? result.checks?.readOnlyApp) ? '✓' : '✕'} App
+              permissions match the configured policy
+            </li>
             <li>
               {result.checks?.webhookSecretConfigured ? '✓' : '✕'} Webhook signature secret
               configured

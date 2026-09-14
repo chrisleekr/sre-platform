@@ -1,5 +1,10 @@
-import { connectorCapabilities, type ConnectorType } from '@sre/connectors';
-import { connectorConfigs, connectorCredentialKey, connectorEventCredentialKey } from '@sre/db';
+import { connectorCapabilities, issueManagement, type ConnectorType } from '@sre/connectors';
+import {
+  connectorConfigs,
+  connectorCredentialKey,
+  connectorEventCredentialKey,
+  connectorIssueCredentialKey,
+} from '@sre/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { lockConnectorLifecycle, requestObject } from '../../helpers';
 import type {
@@ -146,6 +151,46 @@ export async function persistConnectorConfiguration(
     ? await providerSaveHandlers[input.type]!(input, current, initial)
     : initial;
   if (typeof outcome === 'string') return outcome;
+  if (input.type === 'gitlab') {
+    const token = input.body.issueCredential;
+    if (
+      token !== undefined &&
+      (typeof token !== 'string' || !token.trim() || token.length > 16_384)
+    )
+      return 'invalid GitLab issue-write credential';
+    const policy = issueManagement(outcome.settings);
+    const old = requestObject(current?.settings);
+    const identityChanged =
+      old &&
+      (old.baseUrl !== outcome.settings.baseUrl ||
+        old.groupId !== outcome.settings.groupId ||
+        old.projectId !== outcome.settings.projectId);
+    if (policy.enabled && identityChanged && !token)
+      return 'provide a new issue-write credential when the GitLab target changes';
+    if (
+      policy.enabled &&
+      !token &&
+      !(await input.deps.secrets.get(
+        input.tenantId,
+        connectorIssueCredentialKey(input.connectorId),
+        input.tx,
+      ))
+    )
+      return 'an issue-write credential with api scope is required';
+    if (!policy.enabled || identityChanged)
+      await input.deps.secrets.delete(
+        input.tenantId,
+        connectorIssueCredentialKey(input.connectorId),
+        input.tx,
+      );
+    if (policy.enabled && typeof token === 'string')
+      await input.deps.secrets.put(
+        input.tenantId,
+        connectorIssueCredentialKey(input.connectorId),
+        token.trim(),
+        input.tx,
+      );
+  }
   await persistRecord(input, current, outcome);
   return null;
 }
