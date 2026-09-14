@@ -1,6 +1,7 @@
 import { scrubSecrets } from '@sre/agent-tools';
 import * as z from 'zod';
 import { recordedEvidenceTool } from './recorded-evidence';
+import { boundedEvidenceReview, EvidenceReviewFailure } from './evidence-review-budget';
 import {
   ProviderRateLimitError,
   type InvestigationEvidence,
@@ -62,26 +63,18 @@ export async function reviewInvestigation(
   let reason = 'Evidence review did not complete.';
   let cited: string[] = [];
   let detail: string | undefined;
+  let performed = false;
   try {
-    const prompt = scrubSecrets(
-      JSON.stringify({
-        task: task ? { ...task, evidence: undefined } : undefined,
-        candidate,
-        evidence,
-        coverage: 'Bounded records, not proof of historical absence',
-      }),
+    const review = await boundedEvidenceReview(
+      generator,
+      evidenceReviewSchema,
+      EVIDENCE_REVIEW_INSTRUCTION,
+      candidate,
+      evidence,
+      signal,
+      task,
     );
-    // Do not silently discard decisive evidence to fit the review context.
-    if (prompt.length > 160_000)
-      throw new Error('Recorded evidence exceeds the bounded review window.');
-    const review = evidenceReviewSchema.parse(
-      await generator.generate(prompt, evidenceReviewSchema, {
-        system: EVIDENCE_REVIEW_INSTRUCTION,
-        signal,
-      }),
-    );
-    if (review.evidenceIds.some((id) => !allowed.has(id)))
-      throw new Error('Review cited unadmitted evidence.');
+    performed = true;
     if (review.supported && (candidate.disposition === 'reply' || review.evidenceIds.length > 0))
       return candidate.summary.length <= 360
         ? candidate
@@ -93,6 +86,14 @@ export async function reviewInvestigation(
   } catch (error) {
     if (signal.aborted) throw signal.reason;
     if (error instanceof ProviderRateLimitError) throw error;
+    reason =
+      error instanceof EvidenceReviewFailure
+        ? error.message
+        : error instanceof z.ZodError
+          ? 'Evidence review returned invalid structured output.'
+          : error instanceof Error && error.name === 'TimeoutError'
+            ? 'Evidence review timed out; coverage is incomplete.'
+            : 'Evidence review provider was unavailable; coverage is incomplete.';
   }
   if (candidate.disposition === 'recovery') {
     return {
@@ -132,7 +133,7 @@ export async function reviewInvestigation(
       ...(candidate.unknowns ?? []),
       {
         question: reason,
-        category: 'contradictory_evidence',
+        category: performed ? 'contradictory_evidence' : 'partial_evidence',
         evidenceKind: null,
         attemptedEvidenceIds: [...allowed].slice(0, 20),
       },

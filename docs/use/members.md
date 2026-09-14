@@ -1,19 +1,25 @@
 # Members
 
 Open **Workspace settings**, then **Members**, to see who can use the workspace. Every member can
-read the active member list. Owners and admins also see pending invitations and can invite people.
-Only owners can change roles or transfer ownership.
+read the active member list. Owners and admins also see pending invitations, can invite people, and
+are the only roles that can change the workspace's connections, its Slack connection, or which
+Slack channels it listens to. Only owners can change roles or transfer ownership.
 
 ## Roles
 
 | Role | Can do |
 | --- | --- |
 | Owner | Everything an admin can do, plus change roles, transfer ownership, remove admins and other owners, and manage workspace sign-in methods, work email domains, and workspace deletion |
-| Admin | Rename the workspace, invite people as member or admin, resend or revoke invitations, and remove members |
-| Member | Everything that is not listed above, including investigating and responding to incidents and reading the active member list |
+| Admin | Rename the workspace, invite people as member or admin, resend or revoke invitations, remove members, add, edit, verify, retest or remove connections, connect, recheck or disconnect Slack and choose which channels it listens to, define, retarget or delete service level objectives, and edit the service catalog and its dependencies |
+| Member | Everything that is not listed above, including investigating and responding to incidents, reading the active member list, and reading connections, the Slack connection and its channel subscriptions, objectives and their budgets, and the service graph, with their status |
 
-The final active owner cannot be removed or changed to another role. This prevents a workspace from
-losing every person who can recover its access settings.
+Removing, demoting or deleting an owner requires another owner with an active account and active
+membership. Ownership cannot be transferred to an inactive account.
+
+If **Members** reports missing ownership or inactive owner accounts, ask a platform administrator
+to [recover ownership](../operate/administration.md#recover-workspace-ownership). Disabling an
+account for security remains possible. Ownership status describes stored accounts and memberships,
+not whether an external sign-in provider is reachable.
 
 ## Invite someone
 

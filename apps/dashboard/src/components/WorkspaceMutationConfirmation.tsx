@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 
 /** Requires the workspace address before a destructive authentication change. */
 export function WorkspaceMutationConfirmation({
@@ -15,14 +15,15 @@ export function WorkspaceMutationConfirmation({
   onConfirm(): void;
 }) {
   const [confirmation, setConfirmation] = useState('');
+  const titleId = useId();
   return (
     <section
       role="alertdialog"
       aria-modal="false"
-      aria-labelledby="workspace-mutation-title"
+      aria-labelledby={titleId}
       className="rounded-xl border border-critical-line bg-critical-soft p-5"
     >
-      <h2 id="workspace-mutation-title" className="font-semibold text-critical">
+      <h2 id={titleId} className="font-semibold text-critical">
         {title}
       </h2>
       <form

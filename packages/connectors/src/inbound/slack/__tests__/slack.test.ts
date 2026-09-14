@@ -402,6 +402,32 @@ describe('slackInboundConnector', () => {
     });
   });
 
+  // Two shapes per line-anchored alternative in `firingProviderShape`, each with and without
+  // indentation. No row carries a `[FIRING]` marker, so the bracket alternative cannot mask a
+  // regression in the anchored one. The blank-line row is the case narrowing `\s*` to `[^\S\n]*`
+  // could plausibly have broken: the anchor relocates to the last newline of the run.
+  test.each([
+    ['a marker at the start of a line', 'Monitoring update\n*Alert:* Checkout latency is high.'],
+    ['a marker indented on its line', 'Monitoring update\n  *Alert:* Checkout latency is high.'],
+    ['a marker after a blank line', 'Monitoring update\n\n  *Alert:* Checkout latency is high.'],
+    ['bare firing-alert prose', 'Monitoring update\nfiring alert on checkout'],
+    ['indented firing-alert prose', 'Monitoring update\n  firing alert on checkout'],
+  ])('reads a provider firing shape from %s', (_shape, text) => {
+    const candidate = normalizedCandidate(
+      {
+        type: 'message',
+        subtype: 'bot_message',
+        channel: 'C123',
+        ts: '1787991000.000084',
+        bot_id: 'B_ALERT',
+        text,
+      },
+      ctx,
+    );
+
+    expect(candidate?.alertKind).toBe('firing');
+  });
+
   test('does not mark a failed deployment notice as a provider alert', () => {
     const candidate = normalizedCandidate(
       {
@@ -474,6 +500,17 @@ describe('slackInboundConnector', () => {
       ctx,
     );
 
+    // The exact summary, not a substring: it is the only assertion that pins `blockFieldValue`
+    // trimming its segment and stripping the provider's backticks. `summary` is hashed into
+    // `contentHash` and read by a responder, so an untrimmed `Severity:  \`warning\`` is a defect.
+    expect(candidate?.observations?.[0]?.summary).toBe(
+      [
+        'Checkout latency is high.',
+        'p99 exceeded the service objective.',
+        'Severity: warning',
+        'Source: Prometheus Alertmanager',
+      ].join('\n'),
+    );
     expect(candidate?.observations).toEqual([
       expect.objectContaining({
         alertName: 'Checkout latency is high.',

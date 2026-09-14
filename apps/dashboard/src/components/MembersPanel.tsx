@@ -6,6 +6,7 @@ import { useSession } from '../auth';
 import { WorkspaceSettingsNavigation } from './WorkspaceSettingsNavigation';
 import { config } from '../config';
 import { authenticatedFetch } from '../lib/authenticatedFetch';
+import { Link } from 'react-router-dom';
 
 type Role = 'owner' | 'admin' | 'member';
 interface Member {
@@ -13,6 +14,7 @@ interface Member {
   email: string | null;
   role: Role;
   status: string;
+  userStatus?: string;
 }
 interface Invitation {
   id: string;
@@ -22,7 +24,12 @@ interface Invitation {
 }
 
 interface MembersPanelProps {
-  viewer: { userId: string; role: Role };
+  ownership?: {
+    state: 'owned' | 'missing_owner' | 'inactive_owners';
+    activeOwnerCount: number;
+    inactiveOwnerCount: number;
+  };
+  viewer: { userId: string; role: Role; isPlatformAdmin?: boolean };
   members: Member[];
   invitations?: Invitation[];
   onInvite(): void;
@@ -35,6 +42,7 @@ interface MembersPanelProps {
 
 /** Renders the role-safe workspace directory and owner-preserving actions. */
 export function MembersPanel({
+  ownership,
   viewer,
   members,
   invitations = [],
@@ -47,7 +55,12 @@ export function MembersPanel({
 }: MembersPanelProps) {
   const [removeTarget, setRemoveTarget] = useState<Member>();
   const canManage = viewer.role === 'owner' || viewer.role === 'admin';
-  const owners = members.filter((member) => member.role === 'owner' && member.status === 'active');
+  const owners = members.filter(
+    (member) =>
+      member.role === 'owner' &&
+      member.status === 'active' &&
+      (!member.userStatus || member.userStatus === 'active'),
+  );
   const pendingInvitations = invitations.filter((invitation) => invitation.status === 'pending');
   return (
     <section className="rounded-xl border border-line bg-surface p-4 sm:p-6">
@@ -66,6 +79,23 @@ export function MembersPanel({
           </button>
         )}
       </div>
+      {ownership && ownership.state !== 'owned' && (
+        <p
+          role="status"
+          className="mt-4 rounded-lg border border-warning-line bg-warning-soft p-3 text-sm"
+        >
+          {ownership.state === 'missing_owner'
+            ? 'This workspace has no owner.'
+            : 'This workspace has owner memberships, but their accounts are inactive.'}{' '}
+          Ask a platform administrator to recover ownership. Account status does not confirm
+          external sign-in availability.
+          {viewer.isPlatformAdmin && (
+            <Link to="/admin/workspaces" className="mt-2 block font-semibold underline">
+              Recover ownership in platform administration
+            </Link>
+          )}
+        </p>
+      )}
       <div className="mt-5 overflow-x-auto">
         <table className="w-full min-w-[36rem] text-left text-sm">
           <thead>
@@ -78,16 +108,27 @@ export function MembersPanel({
           </thead>
           <tbody>
             {members.map((member) => {
-              const lastOwner = member.role === 'owner' && owners.length === 1;
+              const lastOwner =
+                member.role === 'owner' &&
+                (ownership?.activeOwnerCount ?? owners.length) -
+                  (!member.userStatus || member.userStatus === 'active' ? 1 : 0) <
+                  1;
               const canEdit = canManage && member.userId !== viewer.userId;
               return (
                 <tr key={member.userId} className="border-b border-line">
                   <td className="py-3">
                     {member.email ?? 'Email unavailable'}
-                    {lastOwner && <span className="ml-2 text-xs text-warning">Last owner</span>}
+                    {lastOwner && ownership?.activeOwnerCount !== 0 && (
+                      <span className="ml-2 text-xs text-warning">Last owner</span>
+                    )}
                   </td>
                   <td>{member.role}</td>
-                  <td>{member.status}</td>
+                  <td>
+                    {member.status}
+                    {member.userStatus && member.userStatus !== 'active'
+                      ? ` · account ${member.userStatus}`
+                      : ''}
+                  </td>
                   <td className="space-x-2 py-2 text-right">
                     {viewer.role === 'owner' && member.status === 'active' && (
                       <button
@@ -117,6 +158,7 @@ export function MembersPanel({
                       )}
                     {viewer.role === 'owner' &&
                       member.role !== 'owner' &&
+                      (!member.userStatus || member.userStatus === 'active') &&
                       member.status === 'active' && (
                         <button
                           type="button"
@@ -208,7 +250,7 @@ export function MembersPage() {
   const sessionKey = session.sessionKey;
   const loadVersion = useRef(0);
   const [data, setData] = useState<{
-    viewer: { userId: string; role: Role };
+    viewer: { userId: string; role: Role; isPlatformAdmin?: boolean };
     members: Member[];
     invitations?: Invitation[];
   }>();
@@ -225,13 +267,23 @@ export function MembersPage() {
         authenticatedFetch(`${config.apiBaseUrl}/tenant/members`, getCredentials),
       ]);
       if (!meResponse.ok || !membersResponse.ok) throw new Error('Member directory is unavailable');
-      const me = (await meResponse.json()) as { user: { id: string }; tenant: { role: Role } };
+      const me = (await meResponse.json()) as {
+        user: { id: string; isPlatformAdmin?: boolean };
+        tenant: { role: Role };
+      };
       const members = (await membersResponse.json()) as {
         members: Member[];
         invitations?: Invitation[];
       };
       if (version === loadVersion.current) {
-        setData({ viewer: { userId: me.user.id, role: me.tenant.role }, ...members });
+        setData({
+          viewer: {
+            userId: me.user.id,
+            role: me.tenant.role,
+            isPlatformAdmin: me.user.isPlatformAdmin,
+          },
+          ...members,
+        });
       }
     } catch (cause) {
       if (version === loadVersion.current) {

@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
-import { authMiddleware, type TenantAuthVariables } from './auth';
+import { authMiddleware, refuseImpersonatedChange, type TenantAuthVariables } from './auth';
 import { registerIncidentAuditRoutes } from './incidents/audit';
 import { registerIncidentDetailRoutes } from './incidents/detail';
 import { registerIncidentFeedbackRoutes } from './incidents/feedback';
@@ -25,6 +25,15 @@ export type { IncidentRouteDeps } from './incidents/support';
 export function incidentRoutes(deps: IncidentRouteDeps): Hono<{ Variables: TenantAuthVariables }> {
   const app = new Hono<{ Variables: TenantAuthVariables }>();
   app.use('*', authMiddleware(deps.auth));
+  // A support session may read an incident and talk in its conversation, which is a separate
+  // websocket ingress, but the durable record belongs to the workspace: resolving, archiving,
+  // merging, splitting, tagging, grading and publishing a postmortem are the responders' calls.
+  // The operator signal correction is exempt because it already requires platform-operator rights
+  // and an operator holds no membership here, so a support session is its only route to a tenant.
+  app.use(
+    '*',
+    refuseImpersonatedChange({ except: /^\/incidents\/[^/]+\/signals\/[^/]+\/correct$/ }),
+  );
   app.use(
     '/from-observation',
     bodyLimit({

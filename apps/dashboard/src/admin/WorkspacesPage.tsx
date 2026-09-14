@@ -9,6 +9,7 @@ import { invalidateMe } from '../lib/me-store';
 import { adminRequest } from './api';
 import { AdminPage } from './AdminPage';
 import { useAdminData } from './useAdminData';
+import { OwnerRecovery } from './OwnerRecovery';
 
 interface Workspace {
   id: string;
@@ -18,7 +19,12 @@ interface Workspace {
   deleteAfter: string | null;
   requireDirectory: boolean;
   memberCount: number;
-  owners: Array<{ userId: string; email: string | null }>;
+  owners: Array<{ userId: string; email: string | null; accountStatus: string }>;
+  ownership: {
+    state: 'owned' | 'missing_owner' | 'inactive_owners';
+    activeOwnerCount: number;
+    inactiveOwnerCount: number;
+  };
   providers: Array<{ id: string; displayName: string; claimValue: string | null }>;
   domains: Array<{ id: string; domain: string; status: string }>;
 }
@@ -178,9 +184,13 @@ export function WorkspacesPage() {
                 </div>
                 <div>
                   <dt className="text-ink-faint">Owners</dt>
-                  <dd className="truncate font-semibold">
-                    {workspace.owners.map((owner) => owner.email ?? owner.userId).join(', ') ||
-                      'None'}
+                  <dd className="break-words font-semibold">
+                    {workspace.owners
+                      .map(
+                        (owner) =>
+                          `${owner.email ?? owner.userId}${owner.accountStatus && owner.accountStatus !== 'active' ? ` (${owner.accountStatus})` : ''}`,
+                      )
+                      .join(', ') || 'None'}
                   </dd>
                 </div>
                 <div>
@@ -199,6 +209,11 @@ export function WorkspacesPage() {
                   </dd>
                 </div>
               </dl>
+              {workspace.status === 'active' &&
+                workspace.ownership &&
+                workspace.ownership.state !== 'owned' && (
+                  <OwnerRecovery workspace={workspace} onRecovered={query.refresh} />
+                )}
               <div className="mt-4 grid gap-2 border-t border-line pt-4 sm:grid-cols-[minmax(0,1fr)_auto]">
                 <input
                   aria-label={`Administrative reason for ${workspace.name}`}
@@ -263,12 +278,12 @@ export function WorkspacesPage() {
                   </button>
                 )}
               </div>
-              <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
                 <select
                   aria-label={`Binding provider for ${workspace.name}`}
                   value={draft.providerId ?? ''}
                   onChange={(event) => updateDraft({ providerId: event.target.value })}
-                  className="rounded-lg border border-line-strong bg-canvas px-3 py-2 text-sm"
+                  className="min-w-0 w-full rounded-lg border border-line-strong bg-canvas px-3 py-2 text-sm"
                 >
                   <option value="">Choose staff provider</option>
                   {(query.data?.providers ?? [])

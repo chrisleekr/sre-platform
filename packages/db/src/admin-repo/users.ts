@@ -1,6 +1,12 @@
-import { and, asc, count, countDistinct, eq, ilike, inArray, or, sql } from 'drizzle-orm';
+import { and, asc, countDistinct, eq, ilike, inArray, or, sql } from 'drizzle-orm';
 import type { Db } from '../client';
 import type { Tx } from '../rls';
+import {
+  hasOtherActiveOwner,
+  lockOwnershipAccounts,
+  lockOwnershipWorkspaces,
+  lockUserOwnershipScopes,
+} from '../ownership';
 import {
   identityProviders,
   memberships,
@@ -107,12 +113,18 @@ export function setAdminUserStatus(
   input: { actorUserId: string; userId: string; status: 'active' | 'disabled'; reason?: string },
 ) {
   return db.transaction(async (tx) => {
+    if ((await lockUserOwnershipScopes(tx, input.userId)) === null) {
+      throw new AdminMutationError(
+        'conflict',
+        'workspace membership changed; refresh and try again',
+      );
+    }
     const [current] = await tx
       .select({ status: users.status, email: users.email })
       .from(users)
       .where(eq(users.id, input.userId))
       .limit(1)
-      .for('update');
+      .for('no key update');
     if (!current) throw new AdminMutationError('not_found', 'user not found');
     if (current.status === 'deleted' || current.status === input.status) {
       throw new AdminMutationError('conflict', `user is ${current.status}`);
@@ -172,6 +184,8 @@ export function removeAdminMembership(
   input: { actorUserId: string; userId: string; tenantId: string; reason?: string },
 ) {
   return db.transaction(async (tx) => {
+    await lockOwnershipWorkspaces(tx, [input.tenantId]);
+    await lockOwnershipAccounts(tx, input.tenantId);
     const [membership] = await tx
       .select({ role: memberships.role })
       .from(memberships)
@@ -186,17 +200,7 @@ export function removeAdminMembership(
       .for('update');
     if (!membership) throw new AdminMutationError('not_found', 'active membership not found');
     if (membership.role === 'owner') {
-      const [owners] = await tx
-        .select({ count: count() })
-        .from(memberships)
-        .where(
-          and(
-            eq(memberships.tenantId, input.tenantId),
-            eq(memberships.role, 'owner'),
-            eq(memberships.status, 'active'),
-          ),
-        );
-      if ((owners?.count ?? 0) <= 1) {
+      if (!(await hasOtherActiveOwner(tx, input.tenantId, input.userId))) {
         throw new AdminMutationError('last_owner', 'assign another owner before removal');
       }
     }
@@ -352,6 +356,31 @@ export function tombstoneAdminUser(
 ) {
   return db.transaction(async (tx) => {
     await tx.execute(sql`lock table platform_operators in share row exclusive mode`);
+    const scopeIds = await lockUserOwnershipScopes(tx, input.userId);
+    if (scopeIds === null) {
+      throw new AdminMutationError(
+        'conflict',
+        'workspace membership changed; refresh and try again',
+      );
+    }
+    const ownerMemberships = await tx
+      .select({ tenantId: memberships.tenantId })
+      .from(memberships)
+      .where(
+        and(
+          eq(memberships.userId, input.userId),
+          eq(memberships.status, 'active'),
+          eq(memberships.role, 'owner'),
+        ),
+      );
+    for (const membership of ownerMemberships) {
+      if (!(await hasOtherActiveOwner(tx, membership.tenantId, input.userId))) {
+        throw new AdminMutationError(
+          'last_owner',
+          'assign another active-account owner in each workspace before deleting this user',
+        );
+      }
+    }
     const [operator] = await tx
       .select({ userId: platformOperators.userId })
       .from(platformOperators)
@@ -374,7 +403,7 @@ export function tombstoneAdminUser(
       .update(users)
       .set({
         email: null,
-        subject: sql`'deleted:' || gen_random_uuid()::text`,
+        // Retain the identity key so a still-valid provider token cannot create a replacement user.
         status: 'deleted',
         notBefore: sql`clock_timestamp()`,
       })

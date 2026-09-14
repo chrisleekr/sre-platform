@@ -13,7 +13,12 @@ import {
 } from '@sre/db';
 import { sloDashboard } from '@sre/slo';
 import { isConnectorType } from '@sre/connectors';
-import { authMiddleware, type AuthDeps, type TenantAuthVariables } from './auth';
+import {
+  authMiddleware,
+  requireTenantConfigurationAdmin,
+  type AuthDeps,
+  type TenantAuthVariables,
+} from './auth';
 import { UUID_RE } from './incidents/support';
 
 export interface SloRoutesDeps {
@@ -201,13 +206,18 @@ function parsePatch(body: SloBody): { error: string } | { patch: SloPatch } {
 
 /**
  * Tenant-facing CRUD for service level objectives, plus the dashboard status read. RLS-scoped; any
- * authenticated tenant member can read and write (flat membership). The scheduled evaluator and the
- * always-bound triage tool read the same definitions. Nothing here opens an incident: an objective is
- * a measurement, and a burning budget is reported rather than acted on.
+ * authenticated tenant member reads, while defining an objective takes the workspace change tier,
+ * because the target a budget is measured against is durable configuration rather than incident
+ * work. The scheduled evaluator and the always-bound triage tool read the same definitions. Nothing
+ * here opens an incident: an objective is a measurement, and a burning budget is reported rather
+ * than acted on.
  */
 export function sloRoutes(deps: SloRoutesDeps): Hono<{ Variables: TenantAuthVariables }> {
   const r = new Hono<{ Variables: TenantAuthVariables }>();
   r.use('*', authMiddleware(deps.auth));
+  // An objective is the definition every reliability figure and burn event is computed from, so
+  // changing one changes what the workspace reports about itself. Reads pass through.
+  r.use('*', requireTenantConfigurationAdmin());
   const sloBodyLimit = bodyLimit({
     maxSize: MAX_SLO_BODY_BYTES,
     onError: (c) => c.json({ error: 'payload too large' }, 413),

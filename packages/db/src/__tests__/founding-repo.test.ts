@@ -392,6 +392,33 @@ describe('workspace founding repository', () => {
     ).toBe('provisioning');
   });
 
+  test.each(['disabled', 'deleted'] as const)(
+    'refuses queued provisioning when the founder account became %s',
+    async (status) => {
+      const founding = await authenticatedFounding(`inactive-${status}`);
+      await submitWorkspaceFounding(db.db, {
+        foundingId: founding.id,
+        founderUserId: founderId,
+        requestedName: 'Inactive founder',
+        slug: founding.slug,
+        registrationMode: 'open',
+        insertJobTx: insertJob,
+      });
+      await markFoundingProvisioning(db.db, founding.id);
+      await db.db.update(users).set({ status }).where(eq(users.id, founderId));
+      try {
+        await expect(provisionFounding(db.db, founding.id)).rejects.toThrow(
+          'founder account is not active',
+        );
+        expect(
+          await db.db.select().from(tenants).where(eq(tenants.slug, founding.slug)),
+        ).toHaveLength(0);
+      } finally {
+        await db.db.update(users).set({ status: 'active' }).where(eq(users.id, founderId));
+      }
+    },
+  );
+
   test('records a recoverable failure and retries after an address change', async () => {
     const founding = await authenticatedFounding('retry');
     await submitWorkspaceFounding(db.db, {

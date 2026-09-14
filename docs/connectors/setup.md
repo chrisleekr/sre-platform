@@ -1,9 +1,10 @@
 # Set up a connector
 
-Every tool is connected from the **Connections** page in the dashboard. There is no configuration
-file to edit and nothing to redeploy. The shortest connection takes three steps, the longest takes
-five, and the wizard tells you exactly what to create in the other tool before it asks you for
-anything.
+Every tool is connected from the **Connections** page in the dashboard. Any member can open the
+page and read what is connected; adding, editing, verifying or removing a connection is reserved to
+a workspace owner or admin. There is no configuration file to edit and nothing to redeploy. The
+shortest connection takes three steps, the longest takes five, and the wizard tells you exactly what
+to create in the other tool before it asks you for anything.
 
 ## Start from the catalog
 

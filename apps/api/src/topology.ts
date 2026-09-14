@@ -18,7 +18,12 @@ import {
 import { and, eq, isNull } from 'drizzle-orm';
 import type { SnapshotCache } from '@sre/queue';
 import { computeBlastRadius } from '@sre/topology';
-import { authMiddleware, type AuthDeps, type TenantAuthVariables } from './auth';
+import {
+  authMiddleware,
+  requireTenantConfigurationAdmin,
+  type AuthDeps,
+  type TenantAuthVariables,
+} from './auth';
 import { toInfraSnapshot } from './snapshots';
 
 export interface TopologyRoutesDeps {
@@ -52,6 +57,7 @@ function isFkViolation(e: unknown): boolean {
 export function topologyRoutes(deps: TopologyRoutesDeps): Hono<{ Variables: TenantAuthVariables }> {
   const r = new Hono<{ Variables: TenantAuthVariables }>();
   r.use('*', authMiddleware(deps.auth));
+  r.use('*', requireTenantConfigurationAdmin());
 
   r.get('/services', async (c) => {
     const { tenantId } = c.get('tenant');

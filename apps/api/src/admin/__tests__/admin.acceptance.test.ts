@@ -589,7 +589,7 @@ describe('platform administration API', () => {
         .select({ status: users.status, email: users.email, subject: users.subject })
         .from(users)
         .where(eq(users.id, ids.target)),
-    ).toEqual([{ status: 'deleted', email: null, subject: expect.stringMatching(/^deleted:/) }]);
+    ).toEqual([{ status: 'deleted', email: null, subject: 'target' }]);
     expect(
       await admin.db
         .select({ authorUserId: incidentMessages.authorUserId })

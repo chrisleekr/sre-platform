@@ -2,6 +2,7 @@ import {
   MembershipMutationError,
   createTenantInvitation,
   getWorkspaceSummary,
+  getWorkspaceOwnership,
   listTenantInvitations,
   listTenantMembers,
   removeTenantMember,
@@ -14,7 +15,13 @@ import {
 import type { Notifier } from '@sre/notifications';
 import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
-import { requireTenant, requireUser, type AuthDeps, type AuthVariables } from '../auth';
+import {
+  refuseImpersonatedChange,
+  requireTenant,
+  requireUser,
+  type AuthDeps,
+  type AuthVariables,
+} from '../auth';
 
 const MAX_MEMBER_MUTATION_BODY_BYTES = 4 * 1024;
 
@@ -49,6 +56,9 @@ export function memberRoutes(deps: {
     '/tenant/invitations/*',
   ]) {
     routes.use(path, requireUser(deps.auth), requireTenant());
+    // Who belongs to a workspace is the workspace's own decision. A support session may read the
+    // roster while diagnosing, but inviting, revoking, re-roling or removing is never support work.
+    routes.use(path, refuseImpersonatedChange());
   }
   for (const path of ['/tenant/invitations', '/tenant/members/:userId/role']) {
     routes.use(
@@ -63,15 +73,17 @@ export function memberRoutes(deps: {
   routes.get('/tenant/members', async (c) => {
     const tenant = c.get('tenant')!;
     const members = await listTenantMembers(deps.db, tenant.tenantId);
+    const ownership = await getWorkspaceOwnership(deps.db, tenant.tenantId);
     if (tenant.role !== 'owner' && tenant.role !== 'admin') {
       return c.json({
         members: members
           .filter((member) => member.status === 'active')
-          .map(({ userId, email, role }) => ({ userId, email, role })),
+          .map(({ userId, email, role, status }) => ({ userId, email, role, status })),
+        ownership,
       });
     }
     const invitations = await listTenantInvitations(deps.db, tenant.tenantId);
-    return c.json({ members, invitations });
+    return c.json({ members, invitations, ownership });
   });
 
   routes.post('/tenant/invitations', async (c) => {

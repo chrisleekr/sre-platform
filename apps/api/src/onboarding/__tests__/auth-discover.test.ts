@@ -8,9 +8,11 @@ import {
   makeSecretStore,
   tenantIdentityBindings,
   tenants,
+  type Db,
   type DbHandle,
 } from '@sre/db';
 import { makeApp, type AppDeps } from '../../app';
+import { authDiscoveryRoutes } from '../auth-discover';
 
 const marker = randomUUID();
 const tenantId = randomUUID();
@@ -312,5 +314,72 @@ describe('public sign-in discovery', () => {
         .set({ status: 'active' })
         .where(eq(identityProviders.id, directoryId));
     }
+  });
+});
+
+// A workspace address in a public URL is attacker-supplied. The sign-in-methods route answers it
+// unauthenticated, so it owes the same address contract and the same request budget as the
+// availability route beside it.
+describe('public workspace sign-in methods', () => {
+  const unavailableDb = (): Db =>
+    ({
+      select: vi.fn(() => {
+        throw new Error('database must not be called');
+      }),
+    }) as unknown as Db;
+
+  const permissive = () => ({
+    limiter: { allow: vi.fn(async () => true) },
+    sourceAddress: vi.fn(() => '203.0.113.20'),
+  });
+
+  test.each([
+    { name: 'a reserved address', slug: 'settings' },
+    { name: 'an address with an illegal character', slug: 'acme_corp' },
+    { name: 'an address that starts with a separator', slug: '-acme' },
+  ])('refuses $name before reading the workspace', async ({ slug }) => {
+    const db = unavailableDb();
+    const response = await authDiscoveryRoutes({ db, ...permissive() }).request(
+      `/workspaces/${slug}/sign-in-methods`,
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: 'invalid_workspace_address' });
+    expect(db.select).not.toHaveBeenCalled();
+  });
+
+  test('a well-formed address still answers with the workspace or with not found', async () => {
+    const api = application({ allow: async () => true });
+
+    const found = await api.request(`/workspaces/discovery-${marker}/sign-in-methods`);
+    expect(found.status).toBe(200);
+    expect(await found.json()).toMatchObject({
+      workspace: { id: tenantId, status: 'suspended' },
+      methods: [{ providerId: directoryId, displayName: 'Directory' }],
+    });
+
+    const missing = await api.request(`/workspaces/absent-${marker}/sign-in-methods`);
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toMatchObject({ code: 'workspace_not_found' });
+  });
+
+  test('sign-in method discovery spends its own request budget, not the address-availability one', async () => {
+    // Declared with the limiter's real parameters so the recorded scope argument is readable here.
+    const allow = vi.fn(
+      async (_scope: string, _source: string, _limit: number, _windowMs: number) => false,
+    );
+    const sourceAddress = vi.fn(() => '203.0.113.20');
+    const routes = () =>
+      authDiscoveryRoutes({ db: unavailableDb(), limiter: { allow }, sourceAddress });
+
+    expect((await routes().request(`/workspaces/acme-${marker}/sign-in-methods`)).status).toBe(429);
+    expect(
+      (await routes().request(`/workspace-addresses/acme-${marker}/availability`)).status,
+    ).toBe(429);
+
+    expect(allow).toHaveBeenCalledTimes(2);
+    expect(allow.mock.calls[0]?.[0]).toBe('workspace-sign-in-methods');
+    expect(allow.mock.calls[0]?.[1]).toBe('203.0.113.20');
+    expect(allow.mock.calls[1]?.[0]).toBe('workspace-address-availability');
   });
 });

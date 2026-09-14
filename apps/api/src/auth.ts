@@ -72,7 +72,8 @@ export type AuthVariables = {
 export type TenantAuthVariables = AuthVariables & { tenant: TenantContext };
 
 export type TenantResolution =
-  | { ok: true; tenant: TenantContext; scopes: string[] }
+  /** `providerId` is the provider that actually verified the token, never one a caller named. */
+  | { ok: true; tenant: TenantContext; providerId: string; scopes: string[] }
   | { ok: false; status: 401 | 403; error: string; state?: TenantAccessState | 'disabled' };
 
 export type IdentityResolution =
@@ -249,7 +250,12 @@ export async function resolveTenantFromToken(
       state: resolution.tenantAccessState ?? 'unaffiliated',
     };
   }
-  return { ok: true, tenant: resolution.tenant, scopes: resolution.scopes };
+  return {
+    ok: true,
+    tenant: resolution.tenant,
+    providerId: resolution.user.providerId,
+    scopes: resolution.scopes,
+  };
 }
 
 function bearerToken(header: string | undefined): string | undefined {
@@ -407,6 +413,55 @@ export function requireTenant() {
         },
         403,
       );
+    }
+    await next();
+  });
+}
+
+/** Reads are flat across a tenant, so only a change needs a tier above ordinary membership. */
+const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/**
+ * Reserves durable workspace configuration changes to an owner or administrator.
+ *
+ * Reads stay flat across the tenant, so safe methods pass through untouched. An impersonated
+ * support session is refused even though it carries a synthesised administrator role: it exists to
+ * look at someone else's workspace, not to reconfigure it.
+ *
+ * @returns Middleware that runs after the tenant context is established.
+ */
+export function requireTenantConfigurationAdmin() {
+  return createMiddleware<{ Variables: TenantAuthVariables }>(async (c, next) => {
+    if (!READ_METHODS.has(c.req.method)) {
+      const tenant = c.get('tenant');
+      if (!tenant || tenant.impersonation || (tenant.role !== 'owner' && tenant.role !== 'admin')) {
+        return c.json(
+          { error: 'A workspace owner or administrator must change this configuration.' },
+          403,
+        );
+      }
+    }
+    await next();
+  });
+}
+
+/**
+ * Refuses a change made inside an impersonated support session.
+ *
+ * A support session exists to look at someone else's workspace, so safe methods pass through and
+ * every other method is refused whatever rights the operator holds elsewhere. It is the membership
+ * and workspace-identity counterpart to the configuration tier, which carries the same refusal
+ * inside its own role check.
+ *
+ * @param options - Optional `except` pattern for a request path that only reads external state.
+ * @returns Middleware that runs after the tenant context is established.
+ */
+export function refuseImpersonatedChange(options: { except?: RegExp } = {}) {
+  return createMiddleware<{ Variables: AuthVariables }>(async (c, next) => {
+    if (!READ_METHODS.has(c.req.method) && !options.except?.test(c.req.path)) {
+      if (c.get('tenant')?.impersonation) {
+        return c.json({ error: 'A support session cannot change this workspace.' }, 403);
+      }
     }
     await next();
   });

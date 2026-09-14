@@ -107,8 +107,10 @@ function firingProviderShape(body: Record<string, unknown>, text: string): boole
     );
   return (
     structuredAlertFields ||
-    /\[\s*firing(?:\s*:\s*\d+)?\s*\]|(?:^|\n)\s*\*alert:\*/i.test(metadata) ||
-    /\balertmanager\s*:[^\n]*\bfiring\b|(?:^|\n)\s*firing alert\b/i.test(metadata) ||
+    // `[^\S\n]` is horizontal whitespace only: `\s*` next to the `\n` anchor overlaps it, which
+    // makes the scan quadratic on untrusted Slack text full of newlines.
+    /\[\s*firing(?:\s*:\s*\d+)?\s*\]|(?:^|\n)[^\S\n]*\*alert:\*/i.test(metadata) ||
+    /\balertmanager\s*:[^\n]*\bfiring\b|(?:^|\n)[^\S\n]*firing alert\b/i.test(metadata) ||
     /\bwebsite\s*\|[\s\S]*\bwent\s+down\s*\[http\s+\d{3}\]/i.test(metadata) ||
     /\bssl monitoring\b|\bexpiration reminder\b[\s\S]*\bcertificate\b|\bcertificate valid until\b/i.test(
       metadata,
@@ -132,12 +134,21 @@ function providerKey(source: string): string | undefined {
   return key || undefined;
 }
 
+// A capturing split pairs each field marker with the text that follows it. The markers are literal,
+// so the scan is linear; a lazy `[\s\S]*?` closed by a `\s*` lookahead backtracks quadratically on
+// untrusted provider text, which is what reaches this parser. `Alert` is inert for the current
+// caller, which has already split on it, and is kept so a caller that has not pre-split still
+// terminates a field at the next block rather than running into it.
+const FIELD_MARKER = /\*(Description|Severity|Source|Alert):\*/i;
+
 function blockFieldValue(block: string, name: string): string | undefined {
-  const match = new RegExp(
-    `\\*${name}:\\*\\s*([\\s\\S]*?)(?=\\s*\\*(?:Description|Severity|Source|Alert):\\*|$)`,
-    'i',
-  ).exec(block);
-  return match?.[1]?.trim().replace(/^`|`$/g, '') || undefined;
+  const parts = block.split(FIELD_MARKER);
+  const wanted = name.toLowerCase();
+  for (let i = 1; i < parts.length; i += 2) {
+    if (parts[i]!.toLowerCase() !== wanted) continue;
+    return parts[i + 1]!.trim().replace(/^`|`$/g, '') || undefined;
+  }
+  return undefined;
 }
 
 function groupedEventKey(eventKey: string, identity: string): string {
@@ -146,8 +157,13 @@ function groupedEventKey(eventKey: string, identity: string): string {
   return `${eventKey.slice(0, producerIndex)}:observation:${identity}${eventKey.slice(producerIndex)}`;
 }
 
+// The lazy `([^|\n]+?)` this replaces was fenced by `\s+` and `\s*`, sharing the space character
+// with both neighbours: a 5KB message of `[firing] ` plus spaces took 65 seconds to reject. Here a
+// single `\s` separates the bracket from a greedy class that cannot contain `|`, and the optional
+// `(?:\n\s*)?` keeps the pre-pipe newline the old `\s*` allowed. No two unbounded repetitions are
+// adjacent, so the scan is linear. The caller trims and collapses the capture.
 const ALERTMANAGER_GROUP =
-  /(?:^|\n)\[\s*(?:firing|resolved)(?:\s*:\s*\d+)?\s*\]\s+([^|\n]+?)\s*\|\s*<([^|>\n]+)(?:\|[^>\n]*)?>/i;
+  /(?:^|\n)\[\s*(?:firing|resolved)(?:\s*:\s*\d+)?\s*\]\s([^|\n]*)(?:\n\s*)?\|\s*<([^|>\n]+)(?:\|[^>\n]*)?>/i;
 
 function alertmanagerGroupKey(text: string): string | undefined {
   const match = ALERTMANAGER_GROUP.exec(text);
@@ -198,16 +214,21 @@ interface ProviderAlertBlock {
  * @param text - Slack text containing zero or more provider alert blocks.
  */
 function providerAlertBlocks(text: string): ProviderAlertBlock[] {
-  return [...text.matchAll(/\*Alert:\*\s*([\s\S]*?)(?=\s*\*Alert:\*|$)/gi)].map((match) => {
-    const raw = match[1]!.trim();
-    return {
-      raw,
-      alertName: raw.split(/\s*\*(?:Description|Severity|Source):\*/i, 1)[0]!.trim(),
-      description: blockFieldValue(raw, 'Description'),
-      severity: blockFieldValue(raw, 'Severity'),
-      source: blockFieldValue(raw, 'Source'),
-    };
-  });
+  // Split on the literal marker rather than matching lazily around it, for the same reason as
+  // `blockFieldValue` above. `slice(1)` drops the text preceding the first marker.
+  return text
+    .split(/\*Alert:\*/i)
+    .slice(1)
+    .map((segment) => {
+      const raw = segment.trim();
+      return {
+        raw,
+        alertName: raw.split(/\*(?:Description|Severity|Source):\*/i, 1)[0]!.trim(),
+        description: blockFieldValue(raw, 'Description'),
+        severity: blockFieldValue(raw, 'Severity'),
+        source: blockFieldValue(raw, 'Source'),
+      };
+    });
 }
 
 function providerObservations(input: {
@@ -345,8 +366,10 @@ function controlNotificationReason(
   return (isAlertmanager && infoInhibitor) || nullReceiver ? 'provider_control_notification' : null;
 }
 
+// A Slack link never spans lines, so `[^|>\n]` bounds the label scan. Allowing `\n` there overlaps
+// the `(?:^|\n)` anchor and makes the scan quadratic on untrusted text full of `\n<`.
 const resolvedNotification = (text: string): boolean =>
-  /(?:^|\n)(?:(?:<[^|>]+\|)?\[\s*resolved(?:\s*:\s*\d+)?\s*\]|resolved\s*:)/i.test(text);
+  /(?:^|\n)(?:(?:<[^|>\n]+\|)?\[\s*resolved(?:\s*:\s*\d+)?\s*\]|resolved\s*:)/i.test(text);
 
 function slackTimestamp(value: string): { eventAt: string; eventVersion: string } | null {
   const match = /^(\d+)(?:\.(\d{1,6}))?$/.exec(value);

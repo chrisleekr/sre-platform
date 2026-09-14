@@ -88,6 +88,57 @@ describe('public onboarding rate limits', () => {
     expect(registrationMode).not.toHaveBeenCalled();
   });
 
+  // Sign-in method discovery answers an unauthenticated public URL from the control-plane database,
+  // so an unusable limiter must close the route rather than leave it unmetered.
+  test.each([
+    {
+      name: 'denied',
+      expectedStatus: 429,
+      limiter: { allow: vi.fn(async () => false) },
+      sourceAddress: vi.fn(() => '203.0.113.20'),
+    },
+    {
+      name: 'limiter unavailable',
+      expectedStatus: 503,
+      limiter: {
+        allow: vi.fn(async () => {
+          throw new Error('limiter unavailable');
+        }),
+      },
+      sourceAddress: vi.fn(() => '203.0.113.20'),
+    },
+    {
+      name: 'source unavailable',
+      expectedStatus: 503,
+      limiter: { allow: vi.fn(async () => true) },
+      sourceAddress: vi.fn(() => {
+        throw new Error('source unavailable');
+      }),
+    },
+    {
+      name: 'the limiter is absent',
+      expectedStatus: 503,
+      limiter: undefined,
+      sourceAddress: vi.fn(() => '203.0.113.20'),
+    },
+    {
+      name: 'the request source is absent',
+      expectedStatus: 503,
+      limiter: { allow: vi.fn(async () => true) },
+      sourceAddress: undefined,
+    },
+  ])('does not list workspace sign-in methods when $name', async (scenario) => {
+    const db = unavailableDb();
+    const response = await authDiscoveryRoutes({
+      db,
+      limiter: scenario.limiter,
+      sourceAddress: scenario.sourceAddress,
+    }).request('/workspaces/acme/sign-in-methods');
+
+    expect(response.status).toBe(scenario.expectedStatus);
+    expect(db.select).not.toHaveBeenCalled();
+  });
+
   test('uses independent buckets for availability and founding creation', async () => {
     const allow = vi.fn(async () => false);
     const sourceAddress = vi.fn(() => '203.0.113.20');

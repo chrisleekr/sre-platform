@@ -25,6 +25,7 @@ import { browserSessionRoutes } from '../browser-session-routes';
 import { meRoutes } from '../me';
 import { authDiscoveryRoutes } from '../auth-discover';
 import { withFoundingRetirementRace } from './browser-session-recovery-race';
+import { permissivePublicMetering } from './public-discovery-metering';
 
 let db: DbHandle;
 const fixtureProviders: string[] = [];
@@ -112,7 +113,7 @@ async function fixture(production = false) {
   const runtime = makeBrowserSessionRuntime(deps);
   auth.browserSession = runtime.resolve;
   const app = new Hono<{ Variables: AuthVariables }>()
-    .route('/', authDiscoveryRoutes({ db: db.db }))
+    .route('/', authDiscoveryRoutes({ db: db.db, ...permissivePublicMetering }))
     .route(
       '/',
       browserSessionRoutes(runtime, { allow: async () => true }, () => '203.0.113.1'),

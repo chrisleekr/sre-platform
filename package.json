@@ -55,7 +55,8 @@
     "prepare": "husky",
     "docs:lint": "bun scripts/docs/check-prose.ts",
     "docs:screenshots": "bun scripts/docs/screenshots/capture.ts",
-    "typecheck:scripts": "tsc -p tsconfig.scripts.json"
+    "typecheck:scripts": "tsc -p tsconfig.scripts.json",
+    "test:ownership-e2e": "node -e \"if(process.versions.bun) throw new Error('This test requires real Node, not the Bun shim')\" && node node_modules/vitest/vitest.mjs run --config apps/dashboard/checks/ownership-integration.config.ts"
   },
   "lint-staged": {
     "*.{ts,tsx}": [

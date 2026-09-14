@@ -207,6 +207,20 @@ describe('scrubSecrets', () => {
     expect(out).not.toContain(header.split(': ')[1]!);
   });
 
+  it('scrubs a folded header whose value sits on the continuation line', () => {
+    // RFC 9112 5.2 obs-fold. The value never appears on the header line, and nothing else in
+    // scrubSecrets catches it: it is not a vendor-prefixed token, `isSensitiveKey` is false for a
+    // base64 run, and it is under the 32-character high-entropy floor.
+    const out = scrubSecrets('Authorization:\n\tBasic YWRtaW46aHVudGVyMg==');
+    expect(out).not.toContain('YWRtaW46aHVudGVyMg==');
+    expect(out).toBe('Authorization: [REDACTED]');
+  });
+
+  it('stops at the line end when the next line is a separate header', () => {
+    const out = scrubSecrets('Cookie: session=abc\nX-Request-Id: req-42');
+    expect(out).toBe('Cookie: [REDACTED]\nX-Request-Id: req-42');
+  });
+
   it('scrubs connection URL passwords while retaining the endpoint', () => {
     const out = scrubSecrets('postgres://alice:secret@db.example/app');
     expect(out).toBe('postgres://alice:[REDACTED]@db.example/app');

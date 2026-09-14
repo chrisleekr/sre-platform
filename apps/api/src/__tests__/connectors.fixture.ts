@@ -129,8 +129,8 @@ export function createFixture() {
       { id: tenantA, name: 'A' },
       { id: tenantB, name: 'B' },
     ]);
-    await seedMembership(admin.db, { issuer: ISSUER, subject: orgA }, tenantA);
-    await seedMembership(admin.db, { issuer: ISSUER, subject: orgB }, tenantB);
+    await seedMembership(admin.db, { issuer: ISSUER, subject: orgA }, tenantA, 'admin');
+    await seedMembership(admin.db, { issuer: ISSUER, subject: orgB }, tenantB, 'admin');
     auth = await makeTestAuth({
       adminDb: admin.db,
       appDb: app.db,

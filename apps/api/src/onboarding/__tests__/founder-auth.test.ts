@@ -67,7 +67,7 @@ describe('founder onboarding authentication', () => {
     const token = (subject: string) =>
       new SignJWT({
         sub: subject,
-        email: `${subject.replace('|', '-')}@${domain}`,
+        email: `${subject.replaceAll('|', '-')}@${domain}`,
         email_verified: true,
       })
         .setProtectedHeader({ alg: 'RS256', kid: keyId })
@@ -336,7 +336,7 @@ describe('founder onboarding authentication', () => {
       scope: 'tenant',
     });
     const token = (subject: string) =>
-      new SignJWT({ sub: subject, email: `${subject.replace('|', '-')}@example.test` })
+      new SignJWT({ sub: subject, email: `${subject.replaceAll('|', '-')}@example.test` })
         .setProtectedHeader({ alg: 'RS256', kid: 'shared-founder-auth-key' })
         .setIssuer(issuer)
         .setAudience(audience)
@@ -363,7 +363,7 @@ describe('founder onboarding authentication', () => {
           id: attempt.founderUserId,
           issuer,
           subject: attempt.subject,
-          email: `${attempt.subject.replace('|', '-')}@example.test`,
+          email: `${attempt.subject.replaceAll('|', '-')}@example.test`,
         })),
       );
       await admin.db.insert(workspaceFoundings).values(

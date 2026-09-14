@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import type { Tx } from './rls';
+import { hasOtherActiveOwner, lockOwnershipAccounts } from './ownership';
 import {
   identityProviders,
   identityProviderDomains,
@@ -41,18 +42,27 @@ export async function activeResponderTx(
   userId: string | null | undefined,
 ): Promise<boolean> {
   if (!userId) return false;
+  // Match membership administration and sign-in lock order, not the query planner's join order.
+  const [tenant] = await tx
+    .select({ status: tenants.status })
+    .from(tenants)
+    .where(eq(tenants.id, tenantId))
+    .for('share');
+  if (tenant?.status !== 'active') return false;
+  const [user] = await tx
+    .select({ status: users.status })
+    .from(users)
+    .where(eq(users.id, userId))
+    .for('share');
+  if (user?.status !== 'active') return false;
   const rows = await tx
-    .select({ id: users.id })
+    .select({ userId: memberships.userId })
     .from(memberships)
-    .innerJoin(users, eq(users.id, memberships.userId))
-    .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
     .where(
       and(
         eq(memberships.tenantId, tenantId),
-        eq(users.id, userId),
+        eq(memberships.userId, userId),
         eq(memberships.status, 'active'),
-        eq(users.status, 'active'),
-        eq(tenants.status, 'active'),
       ),
     )
     .limit(1)
@@ -68,17 +78,20 @@ async function lockTenant(tx: Tx, tenantId: string): Promise<void> {
     .limit(1)
     .for('update');
   if (!rows[0]) throw new MembershipMutationError('member_not_found', 'workspace not found');
+  await lockOwnershipAccounts(tx, tenantId);
 }
 
-async function activeMember(tx: Tx, tenantId: string, userId: string) {
+async function activeMember(tx: Tx, tenantId: string, userId: string, requireActiveAccount = true) {
   const rows = await tx
     .select({ role: memberships.role })
     .from(memberships)
+    .innerJoin(users, eq(users.id, memberships.userId))
     .where(
       and(
         eq(memberships.tenantId, tenantId),
         eq(memberships.userId, userId),
         eq(memberships.status, 'active'),
+        requireActiveAccount ? eq(users.status, 'active') : undefined,
       ),
     )
     .limit(1);
@@ -86,19 +99,7 @@ async function activeMember(tx: Tx, tenantId: string, userId: string) {
 }
 
 async function assertAnotherOwner(tx: Tx, tenantId: string, targetUserId: string): Promise<void> {
-  const rows = await tx
-    .select({ userId: memberships.userId })
-    .from(memberships)
-    .where(
-      and(
-        eq(memberships.tenantId, tenantId),
-        eq(memberships.role, 'owner'),
-        eq(memberships.status, 'active'),
-        sql`${memberships.userId} <> ${targetUserId}`,
-      ),
-    )
-    .limit(1);
-  if (!rows[0]) {
+  if (!(await hasOtherActiveOwner(tx, tenantId, targetUserId))) {
     throw new MembershipMutationError(
       'last_owner',
       'assign another owner before changing the last owner',
@@ -235,7 +236,7 @@ export function setTenantMemberRole(
   return db.transaction(async (tx) => {
     await lockTenant(tx, input.tenantId);
     const actor = await activeMember(tx, input.tenantId, input.actorUserId);
-    const target = await activeMember(tx, input.tenantId, input.targetUserId);
+    const target = await activeMember(tx, input.tenantId, input.targetUserId, false);
     if (actor?.role !== 'owner') throw new MembershipMutationError('forbidden', 'owner required');
     if (!target) throw new MembershipMutationError('member_not_found', 'member not found');
     if (target.role === 'owner') {
@@ -268,7 +269,7 @@ export function removeTenantMember(
   return db.transaction(async (tx) => {
     await lockTenant(tx, input.tenantId);
     const actor = await activeMember(tx, input.tenantId, input.actorUserId);
-    const target = await activeMember(tx, input.tenantId, input.targetUserId);
+    const target = await activeMember(tx, input.tenantId, input.targetUserId, false);
     if (!actor || (actor.role !== 'owner' && actor.role !== 'admin')) {
       throw new MembershipMutationError('forbidden', 'workspace administrator required');
     }

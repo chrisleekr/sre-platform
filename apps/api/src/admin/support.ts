@@ -17,6 +17,7 @@ export async function adminBody<T extends z.ZodType>(
 /** Maps stable repository refusals to explicit HTTP conflicts. */
 export function adminMutationResponse(c: Context, error: unknown): Response | null {
   if (!(error instanceof AdminMutationError)) return null;
+  if (error.code === 'forbidden') return c.json({ error: error.message }, 403);
   if (error.code === 'not_found') return c.json({ error: error.message }, 404);
   if (error.code === 'invalid_target') return c.json({ error: error.message }, 422);
   return c.json({ error: error.message, code: error.code }, 409);

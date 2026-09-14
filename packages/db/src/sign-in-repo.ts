@@ -48,11 +48,14 @@ export async function upsertUserForSignIn(db: Db, identity: SignInIdentity): Pro
   try {
     return await db.transaction(async (tx) => {
       const [existing] = await tx
-        .select({ id: users.id })
+        .select({ id: users.id, status: users.status, notBefore: users.notBefore })
         .from(users)
         .where(and(eq(users.issuer, identity.issuer), eq(users.subject, identity.subject)))
         .limit(1)
-        .for('update');
+        .for('no key update');
+      if (existing && existing.status !== 'active') {
+        return { userId: existing.id, status: existing.status, notBefore: existing.notBefore };
+      }
       const directory = identity.providerId
         ? await resolveDirectoryAccountForSignIn(tx, {
             providerId: identity.providerId,
@@ -69,7 +72,7 @@ export async function upsertUserForSignIn(db: Db, identity: SignInIdentity): Pro
         .onConflictDoUpdate({
           target: [users.issuer, users.subject],
           set: { email: sql`coalesce(${identity.email ?? null}, ${users.email})` },
-          setWhere: sql`${users.email} is distinct from coalesce(${identity.email ?? null}, ${users.email})`,
+          setWhere: sql`${users.status} = 'active' and ${users.email} is distinct from coalesce(${identity.email ?? null}, ${users.email})`,
         })
         .returning({ id: users.id });
       const [resolved] =
@@ -82,6 +85,14 @@ export async function upsertUserForSignIn(db: Db, identity: SignInIdentity): Pro
               .limit(1);
       const userId = inserted?.id ?? existing?.id ?? resolved?.id;
       if (!userId) throw new Error('user upsert returned no row');
+      const [row] = await tx
+        .select({ status: users.status, notBefore: users.notBefore })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1)
+        .for('no key update');
+      if (!row) throw new Error('signed-in user disappeared');
+      if (row.status !== 'active') return { userId, status: row.status, notBefore: row.notBefore };
       if (directory.accountId && directory.link) {
         await linkDirectoryAccount(tx, identity.providerId!, directory.accountId, userId);
       }
@@ -97,12 +108,6 @@ export async function upsertUserForSignIn(db: Db, identity: SignInIdentity): Pro
             ),
           ),
         );
-      const [row] = await tx
-        .select({ status: users.status, notBefore: users.notBefore })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
-      if (!row) throw new Error('signed-in user disappeared');
       return { userId, status: row.status, notBefore: row.notBefore };
     });
   } catch (error) {

@@ -11,6 +11,7 @@ import {
   connectorConfigs,
   connectorCredentialKey,
   createIncident,
+  identityProviders,
   incidents,
   makeDb,
   makeSecretStore,
@@ -52,6 +53,7 @@ let tokenWithoutExp: string;
 let connectorId: string;
 let secondaryConnectorId: string;
 let connectorConstructions = 0;
+let providerId: string;
 
 beforeAll(async () => {
   admin = makeDb(ADMIN_URL);
@@ -173,15 +175,19 @@ beforeAll(async () => {
       tx,
     );
   });
+  const auth = await makeTestAuth({
+    adminDb: admin.db,
+    appDb: appDb.db,
+    issuer: ISSUER,
+    audience: AUDIENCE,
+    keys: createLocalJWKSet({ keys: [jwk] } as JSONWebKeySet),
+    bindings: [{ tenantId, subject }],
+  });
+  // The resource is addressed by the provider that verifies its tokens, so the acceptance client
+  // has to discover the same provider row the verifier reports.
+  providerId = (await auth.verifiers.byIssuer(ISSUER))!.providerId;
   api = makeApp({
-    auth: await makeTestAuth({
-      adminDb: admin.db,
-      appDb: appDb.db,
-      issuer: ISSUER,
-      audience: AUDIENCE,
-      keys: createLocalJWKSet({ keys: [jwk] } as JSONWebKeySet),
-      bindings: [{ tenantId, subject }],
-    }),
+    auth,
     readinessDb: appDb.db,
     appDb: appDb.db,
     secrets,
@@ -205,6 +211,7 @@ afterAll(async () => {
       .where(eq(tenantIdentityBindings.tenantId, tenantId));
     await admin.db.delete(users).where(eq(users.subject, subject));
     await admin.db.delete(tenants).where(inArray(tenants.id, [tenantId, foreignTenantId]));
+    await admin.db.delete(identityProviders).where(eq(identityProviders.issuer, ISSUER));
     await admin.close();
   }
   if (appDb) await appDb.close();
@@ -212,7 +219,7 @@ afterAll(async () => {
 
 describe('incident-scoped MCP facade', () => {
   test('challenges unauthenticated clients and exposes protected-resource metadata', async () => {
-    const response = await api.request(`/mcp/incidents/${incidentId}`, {
+    const response = await api.request(`/mcp/providers/${providerId}/incidents/${incidentId}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
@@ -221,16 +228,14 @@ describe('incident-scoped MCP facade', () => {
     expect(response.headers.get('www-authenticate')).toContain('resource_metadata=');
 
     const metadata = await api.request(
-      `/.well-known/oauth-protected-resource/mcp/incidents/${incidentId}`,
+      `/.well-known/oauth-protected-resource/mcp/providers/${providerId}/incidents/${incidentId}`,
     );
     expect(metadata.status).toBe(200);
-    expect(await metadata.json()).toMatchObject({
-      authorization_servers: expect.arrayContaining([ISSUER]),
-    });
+    expect(await metadata.json()).toMatchObject({ authorization_servers: [ISSUER] });
   });
 
   test('requires the MCP scope before incident lookup or tool construction', async () => {
-    const response = await api.request(`/mcp/incidents/${incidentId}`, {
+    const response = await api.request(`/mcp/providers/${providerId}/incidents/${incidentId}`, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${tokenWithoutMcpScope}`,
@@ -248,7 +253,7 @@ describe('incident-scoped MCP facade', () => {
   // `expiresAt === undefined` branch, and must still refuse it once resolveTenantFromToken rejects
   // such a token outright and that branch is removed. Green before and after, by design.
   test('refuses a token with no exp exactly as it refuses an invalid one', async () => {
-    const response = await api.request(`/mcp/incidents/${incidentId}`, {
+    const response = await api.request(`/mcp/providers/${providerId}/incidents/${incidentId}`, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${tokenWithoutExp}`,
@@ -262,7 +267,7 @@ describe('incident-scoped MCP facade', () => {
   });
 
   test('rejects oversized MCP requests before the SDK buffers or parses them', async () => {
-    const response = await api.request(`/mcp/incidents/${incidentId}`, {
+    const response = await api.request(`/mcp/providers/${providerId}/incidents/${incidentId}`, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${token}`,
@@ -290,14 +295,17 @@ describe('incident-scoped MCP facade', () => {
       .set({ status: 'closed', archivedAt: new Date() })
       .where(eq(incidents.id, archivedIncidentId));
     for (const requestedIncidentId of [foreignIncidentId, missingIncidentId, archivedIncidentId]) {
-      const response = await api.request(`/mcp/incidents/${requestedIncidentId}`, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${token}`,
-          'content-type': 'application/json',
+      const response = await api.request(
+        `/mcp/providers/${providerId}/incidents/${requestedIncidentId}`,
+        {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${token}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
         },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
-      });
+      );
       expect(response.status).toBe(404);
       expect(await response.json()).toEqual({ error: 'incident not found' });
     }
@@ -317,7 +325,7 @@ describe('incident-scoped MCP facade', () => {
   });
 
   test('lists and runs multiple same-type tools through MCP with an incident audit', async () => {
-    const endpoint = new URL(`http://sre.test/mcp/incidents/${incidentId}`);
+    const endpoint = new URL(`http://sre.test/mcp/providers/${providerId}/incidents/${incidentId}`);
     const fetchImpl: FetchLike = async (input, init) => {
       const request =
         input instanceof Request

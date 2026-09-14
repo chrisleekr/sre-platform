@@ -20,6 +20,7 @@ import type { AuthDeps, AuthVariables } from '../../auth';
 import { authDiscoveryRoutes } from '../auth-discover';
 import { memberRoutes } from '../members';
 import { tenantSettingsRoutes } from '../tenant-settings';
+import { permissivePublicMetering } from './public-discovery-metering';
 
 const marker = randomUUID();
 const tenantId = randomUUID();
@@ -192,7 +193,7 @@ beforeAll(async () => {
       checkDomain: async () => ({ status: 'pending' }),
     }),
   );
-  api.route('/', authDiscoveryRoutes({ db: admin.db }));
+  api.route('/', authDiscoveryRoutes({ db: admin.db, ...permissivePublicMetering }));
 }, 30_000);
 
 afterAll(async () => {

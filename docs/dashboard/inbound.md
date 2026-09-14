@@ -1,6 +1,8 @@
 # Inbound
 
-Which Slack channels the platform listens to, and what happened to every message it saw.
+Which Slack channels the platform listens to, and what happened to every message it saw. Any member
+can read this page. Adding or pausing a channel is reserved to a workspace owner or admin, as are
+the connection controls this page links to: editing, rechecking and disconnecting Slack.
 
 This page is a reference for what the screen shows. The step-by-step setup, including how to pick
 channels and why a newly invited channel can take up to five minutes to appear, is

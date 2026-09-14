@@ -9,6 +9,7 @@ function buildCharacterizePrompt(transcript: string, candidates: IncidentSummary
     '- belongs_to: the thread is about the SAME incident as one shown below. Return its 1-based `index` exactly as listed.',
     '- new_incident: a new investigation not covered by any shown case. Return affected service, severity (sev1|sev2|sev3), short title, and purpose.',
     'purpose=health_check for a general health-check request that does not assert a current outage. purpose=incident when an actual production problem is reported. A question about health is not proof of an outage.',
+    'The title must describe the reported symptom or requested diagnostic task, not a Slack mention, user name or transport. Use relevant opening-thread context when the triggering message only addresses the bot. Preserve questions, scope and uncertainty; do not promote a possible cause to fact.',
     'Only choose belongs_to with an index from the shown list; never invent a number.',
     // The transcript AND the candidate titles are human-authored, attacker-influenced content: guard
     // both as data, not commands.

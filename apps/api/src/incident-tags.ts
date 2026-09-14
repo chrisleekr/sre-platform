@@ -9,12 +9,20 @@ import {
   removeIncidentTag,
   type Db,
 } from '@sre/db';
-import { authMiddleware, type AuthDeps, type TenantAuthVariables } from './auth';
+import {
+  authMiddleware,
+  refuseImpersonatedChange,
+  type AuthDeps,
+  type TenantAuthVariables,
+} from './auth';
 
 /** Authenticated incident-tag application, suggestion, and rendering routes. */
 export function incidentTagRoutes(deps: { auth: AuthDeps; db: Db }) {
   const app = new Hono<{ Variables: TenantAuthVariables }>();
   app.use('*', authMiddleware(deps.auth));
+  // Tags are a durable statement about someone else's incident, so a support session reads them
+  // and leaves them alone.
+  app.use('*', refuseImpersonatedChange());
   app.get('/tags/suggestions', async (c) => {
     const tenantId = c.get('tenant').tenantId;
     return c.json({

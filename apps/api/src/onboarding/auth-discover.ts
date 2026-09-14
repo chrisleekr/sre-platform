@@ -9,8 +9,7 @@ import {
 import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import type { PublicRateLimiter } from './contracts';
-import { workspaceSlug } from './validation';
-import { isPublicEmailDomain } from './validation';
+import { isPublicEmailDomain, workspaceSlug } from './validation';
 
 const MAX_DISCOVERY_BODY_BYTES = 1024;
 
@@ -80,8 +79,27 @@ export function authDiscoveryRoutes(deps: {
     return c.json({ kind: 'unknown' });
   });
 
+  // Unauthenticated and reached from a public URL, so the address is validated and the request is
+  // metered before the control-plane database is touched. Metering raises the cost of walking the
+  // address space; it does not close it, because a 200 still differs from a 404.
   routes.get('/workspaces/:slug/sign-in-methods', async (c) => {
-    const result = await listWorkspaceSignInMethods(deps.db, c.req.param('slug'));
+    const slug = workspaceSlug(c.req.param('slug'));
+    if (!slug) {
+      return c.json({ error: 'invalid workspace address', code: 'invalid_workspace_address' }, 400);
+    }
+    if (!deps.limiter || !deps.sourceAddress) {
+      return c.json({ error: 'workspace sign-in methods are unavailable' }, 503);
+    }
+    try {
+      const source = deps.sourceAddress(c);
+      if (!(await deps.limiter.allow('workspace-sign-in-methods', source, 30, 60_000))) {
+        return c.json({ error: 'too many workspace sign-in requests' }, 429);
+      }
+    } catch {
+      // The limiter has no internal try/catch, so without this the route would fail open.
+      return c.json({ error: 'workspace sign-in methods are unavailable' }, 503);
+    }
+    const result = await listWorkspaceSignInMethods(deps.db, slug);
     return result
       ? c.json(result)
       : c.json({ error: 'workspace not found', code: 'workspace_not_found' }, 404);

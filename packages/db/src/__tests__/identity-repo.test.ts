@@ -44,6 +44,14 @@ function ident(subject: string, email?: string): Identity {
   return { issuer: ISSUER, subject, email };
 }
 
+// Reads the column back rather than trusting a return value, and stays inside one tenant.
+function storedRoles(userId: string, tenantId: string): Promise<Array<{ role: string }>> {
+  return admin.db
+    .select({ role: memberships.role })
+    .from(memberships)
+    .where(and(eq(memberships.userId, userId), eq(memberships.tenantId, tenantId)));
+}
+
 beforeAll(async () => {
   admin = makeDb(ADMIN_URL);
   app = makeDb(APP_URL);
@@ -149,6 +157,24 @@ describe('attachMembership', () => {
       .from(memberships)
       .where(eq(memberships.userId, first.userId));
     expect(rows).toEqual([{ tenantId: tenantA }]);
+  });
+
+  test('stores the supplied role on the first attach', async () => {
+    const id = ident('sub|attach-role-first');
+
+    const { userId } = await attachMembership(admin.db, id, tenantA, 'admin');
+
+    expect(await storedRoles(userId, tenantA)).toEqual([{ role: 'admin' }]);
+  });
+
+  test('keeps the stored role when a re-attach supplies a different one', async () => {
+    const id = ident('sub|attach-role-reattach');
+    const first = await attachMembership(admin.db, id, tenantA, 'admin');
+
+    const second = await attachMembership(admin.db, id, tenantA, 'member');
+
+    expect(second).toEqual({ userId: first.userId, created: false });
+    expect(await storedRoles(first.userId, tenantA)).toEqual([{ role: 'admin' }]);
   });
 });
 

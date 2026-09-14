@@ -1,5 +1,6 @@
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import type { Db } from './client';
+import { lockOwnershipWorkspaces } from './ownership';
 import {
   identityProviderDomains,
   identityProviders,
@@ -43,7 +44,7 @@ export async function upsertIdentity(db: Db, identity: Identity): Promise<string
       // No-clobber: an absent incoming email keeps the stored value (coalesce($1, "users"."email")).
       set: { email: sql`coalesce(${email ?? null}, ${users.email})` },
       // An identical bootstrap rerun must not create a new row version.
-      setWhere: sql`${users.email} is distinct from coalesce(${email ?? null}, ${users.email})`,
+      setWhere: sql`${users.status} = 'active' and ${users.email} is distinct from coalesce(${email ?? null}, ${users.email})`,
     })
     .returning({ id: users.id });
   if (inserted) return inserted.id;
@@ -115,13 +116,24 @@ export async function resolveTenantByBinding(
       return { status: 'directory_required', tenantId: binding.tenantId };
     }
 
+    await lockOwnershipWorkspaces(tx, [binding.tenantId]);
+    const [workspace] = await tx
+      .select({ status: tenants.status, requireDirectory: tenants.requireDirectory })
+      .from(tenants)
+      .where(eq(tenants.id, binding.tenantId));
+    if (!workspace) return { status: 'unaffiliated' };
+    if (workspace.status !== 'active')
+      return { status: workspace.status, tenantId: binding.tenantId };
+    if (workspace.requireDirectory && binding.providerScope === 'installation')
+      return { status: 'directory_required', tenantId: binding.tenantId };
     const lockedUsers = await tx
-      .select({ id: users.id })
+      .select({ id: users.id, status: users.status })
       .from(users)
       .where(eq(users.id, args.userId))
       .limit(1)
-      .for('update');
+      .for('no key update');
     if (!lockedUsers[0]) throw new Error('tenant binding user disappeared');
+    if (lockedUsers[0].status !== 'active') return { status: 'unaffiliated' };
 
     const membershipRows = await tx
       .select({ role: memberships.role, status: memberships.status })
@@ -400,21 +412,35 @@ export async function getUserEmailById(
  * @param db - Database connection used for the operation.
  * @param identity - Validated identity used by the operation.
  * @param tenantId - Tenant whose records are read or changed.
+ * @param role - Role for a first attach; omitted takes the column default and the idempotent
+ *   insert ignores it on a re-attach.
  */
 export async function attachMembership(
   db: Db,
   identity: Identity,
   tenantId: string,
+  role?: MembershipRole,
 ): Promise<{ userId: string; created: boolean }> {
   const userId = await upsertIdentity(db, identity);
-  // `memberships` is exempt from RLS and the app role keeps INSERT on it, so nothing in the database
-  // stops this from attaching an identity to a tenant it must never reach. Only an administrative or
-  // test caller may run it.
-  const attached = await db
-    .insert(memberships)
-    .values({ userId, tenantId })
-    .onConflictDoNothing({ target: [memberships.userId, memberships.tenantId] })
-    // ON CONFLICT DO NOTHING returns no row when it conflicted, which is the idempotence signal.
-    .returning({ userId: memberships.userId });
-  return { userId, created: attached.length === 1 };
+  return db.transaction(async (tx) => {
+    await lockOwnershipWorkspaces(tx, [tenantId]);
+    const [user] = await tx
+      .select({ status: users.status })
+      .from(users)
+      .where(eq(users.id, userId))
+      .for('no key update');
+    if (user?.status !== 'active') throw new Error('cannot attach an inactive account');
+    // `memberships` is exempt from RLS and the app role keeps INSERT on it, so nothing in the database
+    // stops this from attaching an identity to a tenant it must never reach. Only an administrative or
+    // test caller may run it.
+    const attached = await tx
+      .insert(memberships)
+      // The column is omitted rather than defaulted in code, so the schema stays the single place
+      // that decides what an unspecified membership role is.
+      .values({ userId, tenantId, ...(role ? { role } : {}) })
+      .onConflictDoNothing({ target: [memberships.userId, memberships.tenantId] })
+      // ON CONFLICT DO NOTHING returns no row when it conflicted, which is the idempotence signal.
+      .returning({ userId: memberships.userId });
+    return { userId, created: attached.length === 1 };
+  });
 }

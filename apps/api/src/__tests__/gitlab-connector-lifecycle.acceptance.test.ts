@@ -129,8 +129,8 @@ beforeAll(async () => {
     { id: tenantA, name: 'GitLab acceptance A' },
     { id: tenantB, name: 'GitLab acceptance B' },
   ]);
-  await seedMembership(admin.db, { issuer: ISSUER, subject: subjectA }, tenantA);
-  await seedMembership(admin.db, { issuer: ISSUER, subject: subjectB }, tenantB);
+  await seedMembership(admin.db, { issuer: ISSUER, subject: subjectA }, tenantA, 'admin');
+  await seedMembership(admin.db, { issuer: ISSUER, subject: subjectB }, tenantB, 'admin');
   auth = await makeTestAuth({
     adminDb: admin.db,
     appDb: app.db,

@@ -38,6 +38,7 @@ export * from './knowledge-repo';
 export * from './llm-repo';
 export * from './local-founding-repo';
 export * from './membership-repo';
+export { getWorkspaceOwnership } from './ownership';
 export * from './notification-repo';
 export { appRolePassword, createLoginRole, runMigrations } from './migrate';
 export * from './platform-secret-store';

@@ -6,12 +6,15 @@ import {
   listAdminTenants,
   getAdminTenant,
   setAdminTenantStatus,
+  recoverWorkspaceOwner,
+  listOwnershipRecoveryMembers,
   type TenantStatus,
 } from '@sre/db';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AdminRoutesDeps, AdminVariables } from './contracts';
 import { adminBody, adminMutationResponse } from './support';
+import { refuseImpersonatedChange } from '../auth';
 
 const reasonBody = z.object({ reason: z.string().trim().min(3).max(2_000) }).strict();
 const bindingBody = z
@@ -25,6 +28,33 @@ async function publishRevocations(deps: AdminRoutesDeps, userIds: string[], tena
 /** Builds platform-administrator workspace lifecycle routes. */
 export function adminTenantRoutes(deps: AdminRoutesDeps) {
   const routes = new Hono<{ Variables: AdminVariables }>();
+  routes.use('/:id/recover-owner', refuseImpersonatedChange());
+  routes.get('/:id/recovery-members', async (c) => {
+    if (!z.uuid().safeParse(c.req.param('id')).success)
+      return c.json({ error: 'valid workspace ID is required' }, 400);
+    return c.json({
+      members: await listOwnershipRecoveryMembers(deps.controlDb, c.req.param('id')),
+    });
+  });
+  routes.post('/:id/recover-owner', async (c) => {
+    const body = await adminBody(c, reasonBody.extend({ userId: z.uuid() }));
+    if (!body || !z.uuid().safeParse(c.req.param('id')).success)
+      return c.json({ error: 'an exact member and a recovery reason are required' }, 400);
+    try {
+      const user = c.get('user');
+      const result = await recoverWorkspaceOwner(deps.controlDb, {
+        actorUserId: user.userId,
+        actorProviderId: user.providerId,
+        allowLocal: deps.auth.allowLocalPlatformAdmin,
+        tenantId: c.req.param('id'),
+        ...body,
+      });
+      await publishRevocations(deps, [result.userId], result.tenantId);
+      return c.json(result);
+    } catch (error) {
+      return adminMutationResponse(c, error) ?? Promise.reject(error);
+    }
+  });
   routes.get('/', async (c) => {
     const status = c.req.query('status');
     if (status && !TENANT_STATUSES.includes(status as TenantStatus)) {

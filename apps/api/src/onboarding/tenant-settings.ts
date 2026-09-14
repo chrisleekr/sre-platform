@@ -26,7 +26,13 @@ import {
 import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { z } from 'zod';
-import { requireTenant, requireUser, type AuthDeps, type AuthVariables } from '../auth';
+import {
+  refuseImpersonatedChange,
+  requireTenant,
+  requireUser,
+  type AuthDeps,
+  type AuthVariables,
+} from '../auth';
 import type { FoundingQueuePort } from './contracts';
 import { OidcDiscoveryError, type OidcMetadata } from './oidc-discovery';
 import { isPublicEmailDomain } from './validation';
@@ -146,6 +152,14 @@ export function tenantSettingsRoutes(deps: {
     },
   );
   routes.use('/tenant/*', requireUser(deps.auth), requireTenant());
+  // A support session may look at a workspace, never change what it is. Re-checking a domain is
+  // the one exception: it reads verification state from DNS rather than writing anything, and a
+  // stuck domain is usually why support is looking. Matching on the request path means a later
+  // rename of that route stops matching and the session is refused, which is the safe direction.
+  routes.use(
+    '/tenant/*',
+    refuseImpersonatedChange({ except: /^\/tenant\/domains\/[^/]+\/check$/ }),
+  );
   routes.use(
     '/tenant/*',
     bodyLimit({

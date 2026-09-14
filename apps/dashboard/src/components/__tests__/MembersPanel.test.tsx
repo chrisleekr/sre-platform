@@ -27,6 +27,59 @@ vi.mock('../../auth', () => ({
 
 import { MembersPage, MembersPanel } from '../MembersPanel';
 
+test.each(['missing_owner', 'inactive_owners'] as const)(
+  'shows server ownership state %s even to ordinary members',
+  (state) => {
+    render(
+      <MembersPanel
+        viewer={{ userId: 'member', role: 'member' }}
+        members={[]}
+        ownership={{
+          state,
+          activeOwnerCount: 0,
+          inactiveOwnerCount: state === 'inactive_owners' ? 1 : 0,
+        }}
+        onInvite={vi.fn()}
+        onRemove={vi.fn()}
+        onRoleChange={vi.fn()}
+        onTransferOwnership={vi.fn()}
+        onResendInvitation={vi.fn()}
+        onRevokeInvitation={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('status').textContent).toContain(
+      state === 'missing_owner' ? 'This workspace has no owner.' : 'their accounts are inactive.',
+    );
+    expect(screen.queryByRole('button', { name: 'Invite member' })).toBeNull();
+  },
+);
+
+test('does not offer ownership transfer to disabled accounts', () => {
+  render(
+    <MembersPanel
+      viewer={{ userId: 'owner', role: 'owner' }}
+      members={[
+        {
+          userId: 'member',
+          email: 'disabled@example.test',
+          role: 'member',
+          status: 'active',
+          userStatus: 'disabled',
+        },
+      ]}
+      ownership={{ state: 'owned', activeOwnerCount: 1, inactiveOwnerCount: 0 }}
+      onInvite={vi.fn()}
+      onRemove={vi.fn()}
+      onRoleChange={vi.fn()}
+      onTransferOwnership={vi.fn()}
+      onResendInvitation={vi.fn()}
+      onRevokeInvitation={vi.fn()}
+    />,
+  );
+  expect(screen.queryByRole('button', { name: /Transfer ownership/i })).toBeNull();
+  expect(screen.getByText('active · account disabled')).toBeDefined();
+});
+
 const MEMBERS = [
   { userId: 'owner-1', email: 'owner@example.test', role: 'owner' as const, status: 'active' },
   { userId: 'member-1', email: 'member@example.test', role: 'member' as const, status: 'active' },

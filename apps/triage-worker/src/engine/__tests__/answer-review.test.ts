@@ -38,6 +38,149 @@ const candidate: TriageResult = {
   evidenceIds: [evidenceId],
 };
 
+test('bounded review preserves gap-free serialized source ranges and supplies all chunk notes to synthesis', async () => {
+  const source = {
+    ...evidence,
+    output: `10:28 absent ${'x'.repeat(120_000)} 10:56 active ${'x'.repeat(120_000)}`,
+  };
+  const serialized = JSON.stringify(source);
+  const ranges: {
+    offset: number;
+    endOffset: number;
+    totalLength: number;
+    content: string;
+    evidenceId: string;
+  }[] = [];
+  let synthesis = false;
+  const generator = makeFakeGenerator((prompt) => {
+    const payload = JSON.parse(prompt);
+    if (payload.evidenceSlices) {
+      ranges.push(...payload.evidenceSlices);
+      return {
+        supported: false,
+        summary: prompt.includes('10:56 active')
+          ? 'Runner active at 10:56.'
+          : 'Slice alone cannot establish continuing absence.',
+        reason: 'Preserve the observation window.',
+        evidenceIds: [evidenceId],
+      };
+    }
+    synthesis = true;
+    expect(payload.reviewedEvidence).toHaveLength(ranges.length);
+    expect(JSON.stringify(payload.reviewedEvidence)).toContain('Runner active at 10:56.');
+    return {
+      supported: false,
+      summary: 'The runner was active at 10:56.',
+      detail: 'Do not generalize absence from 10:28 to the later window.',
+      reason: 'Observation windows differ.',
+      evidenceIds: [evidenceId],
+    };
+  });
+  const result = await reviewInvestigation(
+    generator,
+    candidate,
+    [source],
+    new AbortController().signal,
+    input,
+  );
+  expect(synthesis).toBe(true);
+  expect(ranges[0]?.offset).toBe(0);
+  expect(ranges.at(-1)?.endOffset).toBe(serialized.length);
+  expect(ranges.map((range) => range.content).join('')).toBe(serialized);
+  for (const [index, range] of ranges.entries()) {
+    expect(range.evidenceId).toBe(evidenceId);
+    expect(range.totalLength).toBe(serialized.length);
+    expect(range.endOffset - range.offset).toBe(range.content.length);
+    expect(range.content.length).toBeLessThanOrEqual(80_000);
+    if (index > 0) expect(range.offset).toBe(ranges[index - 1]!.endOffset);
+  }
+  expect(result.detail).toContain('10:28');
+});
+
+test('an invalid intermediate review stops coverage and withholds unchecked procedures', async () => {
+  let calls = 0;
+  const result = await reviewInvestigation(
+    makeFakeGenerator(() => {
+      calls++;
+      if (calls === 2) return {};
+      return {
+        supported: true,
+        summary: 'One slice reviewed.',
+        reason: 'More coverage required.',
+        evidenceIds: [evidenceId],
+      };
+    }),
+    candidate,
+    [{ ...evidence, output: 'x'.repeat(240_000) }],
+    new AbortController().signal,
+  );
+  expect(calls).toBe(2);
+  expect(result).toMatchObject({ outcome: 'inconclusive', confidence: 0 });
+  expect(result.unknowns?.at(-1)).toMatchObject({
+    category: 'partial_evidence',
+    question: expect.stringMatching(/invalid/i),
+  });
+  expect(result.detail).not.toContain('Unverified remedy');
+});
+
+test('covers a large Kubernetes pod inventory without dropping nested status fields', async () => {
+  const output = {
+    kind: 'PodList',
+    items: Array.from({ length: 950 }, (_, index) => ({
+      metadata: { name: `runner-${index}`, namespace: 'ci', labels: { app: 'runner' } },
+      spec: { nodeName: 'node-1', containers: [{ name: 'runner', image: 'runner:stable' }] },
+      status: {
+        phase: 'Running',
+        containerStatuses: [
+          {
+            ready: true,
+            restartCount: index,
+            state: { running: { startedAt: '2026-09-13T01:00:00Z' } },
+          },
+        ],
+      },
+    })),
+  };
+  const seen: string[] = [];
+  const result = await reviewInvestigation(
+    makeFakeGenerator((prompt) => {
+      const payload = JSON.parse(prompt);
+      if (payload.evidenceSlices)
+        seen.push(...payload.evidenceSlices.map((slice: { content: string }) => slice.content));
+      return {
+        supported: true,
+        summary: 'Pod status is available.',
+        reason: 'All admitted pod records were reviewed.',
+        evidenceIds: [evidenceId],
+      };
+    }),
+    candidate,
+    [{ ...evidence, output }],
+    new AbortController().signal,
+  );
+  expect(result.outcome).toBe('conclusive');
+  const restored = JSON.parse(seen.join(''));
+  expect(restored.output).toEqual(output);
+});
+
+test('a reviewer timeout has a safe explicit reason and is not retried', async () => {
+  const script = vi.fn(() => {
+    throw new DOMException('Private provider context', 'TimeoutError');
+  });
+  const result = await reviewInvestigation(
+    makeFakeGenerator(script),
+    candidate,
+    [evidence],
+    new AbortController().signal,
+  );
+  expect(script).toHaveBeenCalledTimes(1);
+  expect(result.unknowns?.at(-1)).toMatchObject({
+    category: 'partial_evidence',
+    question: expect.stringContaining('timed out'),
+  });
+  expect(JSON.stringify(result)).not.toContain('Private provider context');
+});
+
 test('corrects the requested document instead of replacing it with an evidence audit', async () => {
   const generate = vi.fn((prompt: string) => {
     expect(JSON.parse(prompt).task.humanMessage).toBe(input.humanMessage);

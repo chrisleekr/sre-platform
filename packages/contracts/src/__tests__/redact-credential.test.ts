@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { hasKnownCredential, isSensitiveKey } from '../redact';
+import { hasKnownCredential, isSensitiveKey, scrubSecrets } from '../redact';
+
+it.each([
+  'password:\n  hunter2\nsafe source',
+  '-----BEGIN PRIVATE KEY-----\nhunter2\n-----END PRIVATE KEY-----\nsafe source',
+  'Authorization:\r\n  hunter2\r\nsafe source',
+])('preserves source line numbers while redacting multiline credentials', (value) => {
+  const redacted = scrubSecrets(value, { preserveLines: true });
+  expect(redacted).not.toContain('hunter2');
+  expect(redacted.split('\n')).toHaveLength(value.split('\n').length);
+  expect(redacted.split('\n').at(-1)).toBe('safe source');
+});
 
 describe('hasKnownCredential', () => {
   it('detects a sensitive key=value pair', () => {
