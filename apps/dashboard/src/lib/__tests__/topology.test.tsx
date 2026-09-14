@@ -131,6 +131,26 @@ describe('operationalTopologyGraph', () => {
       {
         nodes: ['unknown', 'healthy', 'stale', 'attention', 'incident'].map(node),
         edges: [],
+        runtimeBindings: ['healthy', 'stale', 'attention', 'incident'].map((name) => ({
+          id: name,
+          serviceName: name,
+          connectorId: '00000000-0000-4000-8000-000000000001',
+          namespace: name,
+          labelKey: '',
+          labelValue: '',
+          environment: 'test',
+          rationale: 'Confirmed',
+          updatedAt: '2026-08-21T00:59:30Z',
+        })),
+        coverage: [
+          {
+            dataSourceId: '00000000-0000-4000-8000-000000000001',
+            dataSourceName: 'Primary Kubernetes',
+            state: 'complete',
+            observedAt: '2026-08-21T00:59:30.000Z',
+            lastSucceededAt: null,
+          },
+        ],
         infrastructure: [
           pod('incident'),
           pod('attention', { metrics: { ready: 1, restartCount: 4, oomKilled: 1 } }),
@@ -181,6 +201,45 @@ describe('operationalTopologyGraph', () => {
 
     expect(graph.nodes[0]?.status).toBe('incident');
   });
+
+  test.each(['partial', 'unknown', 'unavailable'] as const)(
+    'does not call partial evidence healthy: %s',
+    (state) => {
+      const graph = topology.operationalTopologyGraph(
+        {
+          nodes: [node('checkout')],
+          edges: [],
+          infrastructure: [pod('checkout')],
+          runtimeBindings: [
+            {
+              id: 'binding',
+              serviceName: 'checkout',
+              connectorId: '00000000-0000-4000-8000-000000000001',
+              namespace: 'checkout',
+              labelKey: '',
+              labelValue: '',
+              environment: 'test',
+              rationale: 'Confirmed',
+              updatedAt: '2026-08-21T00:59:30Z',
+            },
+          ],
+          coverage: [
+            {
+              dataSourceId: '00000000-0000-4000-8000-000000000001',
+              dataSourceName: 'Primary Kubernetes',
+              state,
+              observedAt: '2026-08-21T00:59:30.000Z',
+              lastSucceededAt: null,
+            },
+          ],
+        },
+        [],
+        now,
+      );
+      expect(graph.nodes[0]?.status).toBe('unknown');
+      expect(graph.nodes[0]?.runtime?.pods).toBe(1);
+    },
+  );
 });
 
 const dep = (name: string, over = {}) => ({
@@ -209,7 +268,7 @@ describe('blastHighlights', () => {
     expect(m.get('checkout')).toBe('affected');
     expect(m.get('orders')).toBe('direct');
     expect(m.get('shipping')).toBe('indirect');
-    expect(m.has('email')).toBe(false); // insulated dependents are not highlighted
+    expect(m.get('email')).toBe('insulated');
   });
 
   test('the origin service wins over a direct/indirect tier', () => {

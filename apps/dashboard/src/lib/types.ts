@@ -193,6 +193,7 @@ export interface IncidentEvidenceProgress {
 
 export interface IncidentWorkspaceData {
   incident: Incident;
+  serviceTeams?: string[];
   assessmentState?: 'pending' | 'available' | 'invalid';
   viewerUserId: string | null;
   progress: IncidentEvidenceProgress;
@@ -398,6 +399,7 @@ export interface InfraSnapshot {
   error?: string; // connector error, if the snapshot failed
   kind?: 'pod' | 'node';
   namespace?: string;
+  labels?: Record<string, string>;
   phase?: string;
   containers?: Array<{
     name?: string;
@@ -414,9 +416,7 @@ export interface InfraSnapshot {
 /** A snapshot older than this is shown as stale. */
 export const INFRA_STALE_AFTER_MS = 60_000;
 
-/** Pipeline / deploy outcome from a GitHub Actions run or GitLab pipeline. Keep in sync with connectors'
- *  DEPLOY_STATUSES (packages/connectors/src/deploy-decode.ts), the server-side source of truth that
- * coerces free-text connector statuses onto this union. The API only ever serves these values. */
+/** Normalized outcome from connectors' DEPLOY_STATUSES, not a provider's raw status. */
 export type DeployStatus =
   | 'success'
   | 'failed'
@@ -430,7 +430,6 @@ export type DeployStatus =
 
 export type { SloEvaluation, SloRow } from './slo-types';
 
-/** A recent deployment + pipeline status (mirrors the planned API shape). */
 export interface Deployment {
   id?: string;
   dataSourceId?: string;

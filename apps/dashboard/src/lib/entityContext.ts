@@ -3,9 +3,11 @@ import type {
   EntityCapabilityGap,
   EntityMapping,
   SignalSource,
+  IncidentTopologyContext,
 } from '@sre/contracts';
 
 export interface IncidentEntityContext {
+  topology?: IncidentTopologyContext;
   observations: Array<{
     signalId: string;
     source: SignalSource | null;

@@ -8,6 +8,7 @@ import {
   saveTopologyService,
 } from '../useTopology';
 import type { TopologyGraph, BlastRadius } from '../topology';
+import { discoveryFixture } from '../../components/__tests__/topology-discovery.fixture';
 
 const origFetch = globalThis.fetch;
 afterEach(() => {
@@ -35,6 +36,29 @@ const graph: TopologyGraph = {
 };
 
 describe('useTopology', () => {
+  test('preserves automatic identity, relationship and coverage evidence without a catalog', async () => {
+    const discovery = discoveryFixture();
+    globalThis.fetch = vi.fn(async () => Response.json({ nodes: [], edges: [], discovery }));
+    const { result } = renderHook(() => useTopology(opts));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.graph.discovery).toEqual(discovery);
+    expect(result.current.graph.nodes).toEqual([]);
+  });
+  test('a failed historical read never substitutes a previously loaded live graph', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json(graph))
+      .mockResolvedValue(Response.json({}, { status: 503 }));
+    const { result, rerender } = renderHook(({ at }) => useTopology({ ...opts, at }), {
+      initialProps: { at: '' },
+    });
+    await waitFor(() => expect(result.current.graph.nodes).toHaveLength(1));
+    rerender({ at: '2026-09-01T00:00:00.000Z' });
+    expect(result.current.graph.nodes).toEqual([]);
+    await waitFor(() => expect(result.current.error).toBe(true));
+    expect(result.current.graph.nodes).toEqual([]);
+    expect(result.current.graph.historicalAt).toBe('2026-09-01T00:00:00.000Z');
+  });
   test('loads the tenant service graph', async () => {
     globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => graph }) as Response);
     const { result } = renderHook(() => useTopology(opts));

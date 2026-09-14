@@ -14,8 +14,9 @@ faster than the window allows is the thing worth knowing about.
 
 ## Defining an objective
 
-Objectives are managed through the platform API today. Create, edit and delete them there. This panel
-reports objectives and their budgets; it does not edit them.
+Objectives are managed through the platform API today. Create, edit and delete them there, as a
+workspace owner or admin. This panel reports objectives and their budgets; it does not edit them,
+and every member can read it.
 
 ## Writing the query
 

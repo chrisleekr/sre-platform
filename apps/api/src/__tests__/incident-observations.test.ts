@@ -6,6 +6,7 @@ import {
   deployments,
   makeDb,
   services,
+  serviceRuntimeBindings,
   tenants,
   upsertDeployments,
   type DbHandle,
@@ -83,6 +84,14 @@ beforeAll(async () => {
       },
       observedAt: new Date(),
     },
+    {
+      tenantId,
+      source: 'kubernetes',
+      entityId: 'collection/pods',
+      metrics: {},
+      metadata: { kind: 'collection', resource: 'pods', completeness: 'complete' },
+      observedAt: new Date(),
+    },
   ]);
   await upsertDeployments(app.db, tenantId, [
     {
@@ -107,11 +116,23 @@ beforeAll(async () => {
     team: 'platform',
     criticality: 'tier1',
   });
+  await admin.db.insert(serviceRuntimeBindings).values({
+    tenantId,
+    serviceName: 'argocd',
+    connectorId: kubernetesId,
+    namespace: 'argocd',
+    environment: 'test',
+    confirmedByUserId: randomUUID(),
+    rationale: 'Confirmed fixture runtime',
+  });
 }, 30_000);
 
 afterAll(async () => {
   if (admin) {
     await admin.db.delete(deployments).where(sql`tenant_id in (${tenantId}, ${foreignTenantId})`);
+    await admin.db
+      .delete(serviceRuntimeBindings)
+      .where(sql`tenant_id in (${tenantId}, ${foreignTenantId})`);
     await admin.db.delete(services).where(sql`tenant_id in (${tenantId}, ${foreignTenantId})`);
     await admin.db
       .delete(connectorConfigs)
@@ -123,6 +144,34 @@ afterAll(async () => {
 });
 
 describe('platform observation resolvers', () => {
+  test('captures exact server-owned resource identity and retains namespace as scope, not a second affected resource', async () => {
+    const values = await cache.get(tenantId, 'kubernetes');
+    const ref = {
+      authority: 'kubernetes-object',
+      kind: 'Pod',
+      id: JSON.stringify(['argocd', 'pod-uid']),
+    };
+    const previous = values[0]!.topology;
+    values[0]!.topology = { ref, state: 'attention' };
+    try {
+      const result = await resolveObservation({ db: app.db, cache }, tenantId, {
+        kind: 'infrastructure_resource',
+        dataSourceId: kubernetesId,
+        entityId: 'argocd/argocd-server',
+      });
+      expect(result.subject.affectedEntities).toEqual([
+        expect.objectContaining({
+          kind: 'workload',
+          topologyRef: ref,
+          scope: { dataSourceId: kubernetesId, namespace: 'argocd' },
+          provenance: { kind: 'platform_snapshot', source: 'kubernetes' },
+        }),
+      ]);
+    } finally {
+      if (previous) values[0]!.topology = previous;
+      else delete values[0]!.topology;
+    }
+  });
   test('resolves all four typed subjects from tenant-owned server evidence', async () => {
     const resolved = await Promise.all([
       resolveObservation({ db: app.db, cache }, tenantId, {
@@ -254,6 +303,7 @@ describe('platform observation resolvers', () => {
         metadata: { kind: 'pod', namespace: 'argocd', phase: 'Running' },
         observedAt: new Date(Date.now() - 2 * 60_000),
       },
+      original[1]!,
     ]);
     try {
       const resolved = await resolveObservation({ db: app.db, cache }, tenantId, {

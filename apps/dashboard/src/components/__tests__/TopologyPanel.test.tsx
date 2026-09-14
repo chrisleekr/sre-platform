@@ -1,12 +1,10 @@
 // @vitest-environment jsdom
-// AC2 end-to-end wiring (finding 2): the panel effect turns an active incident into a
-// blast-radius fetch and applies the overlay. The data hooks + Auth0 are mocked so the test drives
-// only TopologyPanel's overlay logic; the real activeIncident/blastHighlights/DeploymentGraph render.
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { render, screen, waitFor, act, fireEvent, within } from '@testing-library/react';
 import type { Incident } from '../../lib/types';
 import type { BlastRadius, TopologyGraph } from '../../lib/topology';
 import type { InvestigationSubject } from '../../lib/investigations';
+import { installMatchMedia } from './match-media.fixture';
 
 const graph: TopologyGraph = {
   nodes: [
@@ -41,7 +39,6 @@ const h = vi.hoisted(() => ({
   refetch: vi.fn(),
 }));
 
-// The shared auth boundary is a hard dependency of the panel; stub it so the hook wiring doesn't run.
 vi.mock('../../auth', () => ({
   useSession: () => ({ getCredentials: async () => ({ kind: 'bearer' as const, token: 'tok' }) }),
 }));
@@ -50,7 +47,7 @@ vi.mock('../../lib/useIncidents', () => ({
 }));
 vi.mock('../../lib/useTopology', () => ({
   useTopology: () => ({
-    graph: h.graph ?? graph,
+    graph: { ...(h.graph ?? graph), incidents: h.incidents },
     loading: h.loading,
     error: h.error,
     refetch: h.refetch,
@@ -67,6 +64,19 @@ vi.mock('../../lib/useInvestigationWorkspaces', () => ({
 }));
 
 import { TopologyPanel } from '../TopologyPanel';
+import { discoveryFixture } from './topology-discovery.fixture';
+import './topology-map-browser.fixture';
+vi.mock('elkjs/lib/elk-api.js', async () => {
+  const { default: ELK } = await import('elkjs/lib/elk.bundled.js');
+  return {
+    default: class extends ELK {
+      constructor() {
+        super({ algorithms: ['layered'] });
+      }
+      override terminateWorker() {}
+    },
+  };
+});
 
 const BLAST: BlastRadius = {
   service: 'payments',
@@ -96,34 +106,9 @@ function incident(over: Partial<Incident>): Incident {
   };
 }
 
-function installMatchMedia(initialMatches: boolean) {
-  const listeners = new Set<(event: MediaQueryListEvent) => void>();
-  const media = {
-    matches: initialMatches,
-    media: '(max-width: 639px)',
-    onchange: null,
-    addListener: () => {},
-    removeListener: () => {},
-    addEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) =>
-      listeners.add(listener),
-    removeEventListener: (_type: string, listener: (event: MediaQueryListEvent) => void) =>
-      listeners.delete(listener),
-    dispatchEvent: () => true,
-  };
-  vi.stubGlobal(
-    'matchMedia',
-    vi.fn(() => media as MediaQueryList),
-  );
-  return {
-    resize(matches: boolean) {
-      media.matches = matches;
-      for (const listener of listeners) listener({ matches } as MediaQueryListEvent);
-    },
-  };
-}
-
 beforeEach(() => {
   installMatchMedia(false);
+  h.fetchBlastRadius.mockResolvedValue(BLAST);
 });
 
 afterEach(() => {
@@ -139,12 +124,67 @@ afterEach(() => {
 });
 
 describe('TopologyPanel blast-radius overlay', () => {
+  test('automatic discovery is primary and catalog correction is a secondary, optional workflow', async () => {
+    h.graph = { nodes: [], edges: [], discovery: discoveryFixture() };
+    render(<TopologyPanel />);
+    expect(screen.getByRole('region', { name: 'Discovered topology map' })).toBeTruthy();
+    await screen.findByRole('group', { name: 'Topology relationships' });
+    const summary = screen.getByText('Catalog and corrections');
+    expect(summary.closest('details')?.open).toBe(false);
+    expect(screen.queryByRole('button', { name: 'Edit catalog' })).toBeNull();
+    fireEvent.click(summary);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Edit catalog' })).toBeTruthy());
+  });
+  test('selected-service impact refreshes after relationship changes and reports retryable errors', async () => {
+    h.fetchBlastRadius
+      .mockRejectedValueOnce(new Error('Impact request unavailable'))
+      .mockResolvedValue(BLAST);
+    const view = render(<TopologyPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'payments, unknown' }));
+    expect(await screen.findByText('Impact request unavailable')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry impact analysis' }));
+    await waitFor(() => expect(screen.getByText('Synchronous exposure (1)')).toBeDefined());
+    const calls = h.fetchBlastRadius.mock.calls.length;
+    h.graph = { ...graph, edges: [] };
+    view.rerender(<TopologyPanel />);
+    await waitFor(() => expect(h.fetchBlastRadius.mock.calls.length).toBe(calls + 1));
+  });
+
+  test('uses confirmed mappings instead of a transport label and lets the overlay be disabled', async () => {
+    h.incidents = [incident({ service: 'slack:C-TEST' })];
+    h.graph = { ...graph, incidentMappings: [{ incidentId: 'i1', services: ['payments'] }] };
+    render(<TopologyPanel />);
+    expect(h.fetchBlastRadius).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Incident overlay' }), {
+      target: { value: 'i1' },
+    });
+    await waitFor(() => expect(h.fetchBlastRadius.mock.calls[0]?.[2]).toBe('payments'));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Incident overlay' }), {
+      target: { value: '' },
+    });
+    await waitFor(() => expect(screen.queryByLabelText('Dependency impact')).toBeNull());
+  });
+
+  test('does not calculate impact for an unresolved conversation identity', () => {
+    h.incidents = [incident({ service: 'slack:C-TEST' })];
+    h.graph = { ...graph, incidentMappings: [{ incidentId: 'i1', services: [] }] };
+    render(<TopologyPanel />);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Incident overlay' }), {
+      target: { value: 'i1' },
+    });
+    expect(
+      screen.getByText(/Dependency impact is unavailable until an affected service is linked/i),
+    ).toBeDefined();
+    expect(h.fetchBlastRadius).not.toHaveBeenCalled();
+  });
   test('fetches and applies the blast radius for the active incident', async () => {
     h.fetchBlastRadius.mockResolvedValue(BLAST);
     h.incidents = [incident({ service: 'payments', status: 'mitigated' })];
     const { container } = render(<TopologyPanel />);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Incident overlay' }), {
+      target: { value: 'i1' },
+    });
     await waitFor(() => expect(h.fetchBlastRadius).toHaveBeenCalled());
-    // 3rd arg is the affected service the overlay fetches for.
     expect(h.fetchBlastRadius.mock.calls[0]?.[2]).toBe('payments');
     await waitFor(() =>
       expect(container.querySelector('[data-highlight="affected"]')).not.toBeNull(),
@@ -163,7 +203,7 @@ describe('TopologyPanel blast-radius overlay', () => {
     expect(screen.queryByRole('combobox', { name: 'Incident overlay' })).toBeNull();
   });
 
-  test('preserves active-incident order, shows the default, changes source, and clears old rings', async () => {
+  test('starts without an overlay, preserves incident order and clears rings when selection changes', async () => {
     installMatchMedia(false);
     h.incidents = [
       incident({ id: 'resolved', service: 'ignored', status: 'resolved' }),
@@ -195,7 +235,9 @@ describe('TopologyPanel blast-radius overlay', () => {
       .map((option) => (option as HTMLOptionElement).value)
       .filter(Boolean);
     expect(activeValues).toEqual(['payments-incident', 'checkout-incident']);
-    expect(selector.value).toBe('payments-incident');
+    expect(selector.value).toBe('');
+    expect(h.fetchBlastRadius).not.toHaveBeenCalled();
+    fireEvent.change(selector, { target: { value: 'payments-incident' } });
     await act(async () => {
       resolvePayments?.(BLAST);
     });
@@ -236,6 +278,7 @@ describe('TopologyPanel blast-radius overlay', () => {
     const { container } = render(<TopologyPanel />);
     const selector = screen.getByRole('combobox', { name: 'Incident overlay' });
 
+    fireEvent.change(selector, { target: { value: 'payments-incident' } });
     fireEvent.change(selector, { target: { value: 'checkout-incident' } });
     expect(container.querySelector('[data-highlight]')).toBeNull();
 
@@ -331,7 +374,7 @@ describe('TopologyPanel page states', () => {
     h.graph = { nodes: [], edges: [] };
     const { container } = render(<TopologyPanel />);
 
-    expect(screen.getByText('No services in topology.')).toBeDefined();
+    expect(screen.getByText('No manual catalog entries')).toBeDefined();
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(screen.getByRole('heading', { level: 1, name: 'Service topology' })).toBeDefined();
     expect(container.querySelector('svg')).toBeNull();
@@ -346,7 +389,7 @@ describe('TopologyPanel page states', () => {
     });
 
     expect(screen.getByText('No services match your search.')).toBeDefined();
-    expect(screen.queryByText('No services in topology.')).toBeNull();
+    expect(screen.queryByText('No manual catalog entries')).toBeNull();
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
   });
 });
@@ -376,6 +419,28 @@ describe('TopologyPanel representations and detail selection', () => {
         { ...graph.nodes[1]!, sources: ['incident'] },
       ],
       edges: [],
+      coverage: [
+        {
+          dataSourceId: '00000000-0000-4000-8000-000000000001',
+          dataSourceName: 'Primary Kubernetes',
+          state: 'complete',
+          observedAt: new Date().toISOString(),
+          lastSucceededAt: null,
+        },
+      ],
+      runtimeBindings: [
+        {
+          id: 'binding',
+          serviceName: 'checkout',
+          connectorId: '00000000-0000-4000-8000-000000000001',
+          namespace: 'checkout',
+          labelKey: '',
+          labelValue: '',
+          environment: 'test',
+          rationale: 'Confirmed',
+          updatedAt: new Date().toISOString(),
+        },
+      ],
       infrastructure: [
         {
           dataSourceId: '00000000-0000-4000-8000-000000000001',
@@ -407,16 +472,21 @@ describe('TopologyPanel representations and detail selection', () => {
 
     render(<TopologyPanel />);
 
+    fireEvent.change(screen.getByRole('combobox', { name: 'Incident overlay' }), {
+      target: { value: 'i1' },
+    });
     const overview = screen.getByLabelText('Topology health overview');
     expect(within(overview).getByRole('button', { name: /Active incident\s*1/ })).toBeDefined();
-    expect(within(overview).getByRole('button', { name: /Healthy\s*1/ })).toBeDefined();
-    expect(screen.getByText(/2 services · 0 registered relationships · 1 pods/)).toBeDefined();
+    expect(within(overview).getByRole('button', { name: /Runtime healthy\s*1/ })).toBeDefined();
+    expect(
+      screen.getByText(/2 services · 0 registered relationships · source inventory: 1 pods/),
+    ).toBeDefined();
     expect(screen.getByText('No service relationships are registered.')).toBeDefined();
     expect(screen.getByText('Runtime coverage is incomplete.')).toBeDefined();
     expect(screen.getByText(/cluster\/nodes: node read denied/)).toBeDefined();
 
     await waitFor(() =>
-      expect(screen.getByText(/affected service is visible from live signals/i)).toBeDefined(),
+      expect(screen.getByText(/No unambiguous service identity is available/i)).toBeDefined(),
     );
 
     fireEvent.change(screen.getByRole('combobox', { name: 'Topology source' }), {
@@ -481,8 +551,16 @@ describe('TopologyPanel representations and detail selection', () => {
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search services' }), {
       target: { value: 'PAY' },
     });
-    expect(screen.getByRole('button', { name: /payments/i })).toBeDefined();
-    expect(screen.queryByRole('button', { name: /checkout/i })).toBeNull();
+    expect(
+      within(screen.getByRole('list', { name: 'Topology services' })).getByRole('button', {
+        name: /payments/i,
+      }),
+    ).toBeDefined();
+    expect(
+      within(screen.getByRole('list', { name: 'Topology services' })).queryByRole('button', {
+        name: /checkout/i,
+      }),
+    ).toBeNull();
     expect(screen.getByRole('complementary', { name: 'Service details: checkout' })).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: 'Map' }));

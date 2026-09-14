@@ -116,8 +116,9 @@ describe('NodeDetail via node click', () => {
     expect(screen.getByText('catalog · kubernetes · incident')).toBeDefined();
     expect(screen.getByText(/2\/3 pods healthy · 1 attention/)).toBeDefined();
     expect(screen.getByText(/7 restarts · 1 OOM-killed pods/)).toBeDefined();
-    expect(screen.getByText(/Called by: storefront/)).toBeDefined();
-    expect(screen.getByText(/Depends on: payments \(async, breaker\)/)).toBeDefined();
+    expect(screen.getByRole('button', { name: 'storefront' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'payments' })).toBeDefined();
+    expect(screen.getByText(/\(async, breaker\)/)).toBeDefined();
   });
 
   test('clicking a node opens a drawer with its recent deploys and active alerts', () => {

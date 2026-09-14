@@ -1,4 +1,5 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { readServiceRuntime, readTopologyRuntime } from '@sre/topology';
 import {
   connectorConfigs,
   investigationSubjects,
@@ -12,6 +13,7 @@ import {
   normalizeConnectorVerificationObservation,
   normalizeInfrastructureObservation,
   normalizeTopologyServiceObservation,
+  normalizeDiscoveredRuntimeObservation,
   type NormalizedSnapshot,
 } from '@sre/connectors';
 import { scrubSecrets } from '@sre/agent-tools';
@@ -108,6 +110,23 @@ export function makeSubjectSyncResolver(deps: { db: Db; cache: SnapshotCache }) 
       return safeInfrastructure(current);
     }
 
+    if (subject.sourceId === 'topology-discovery') {
+      const key =
+        subject.currentSnapshot.topologySubjectKey ?? subject.capturedSnapshot.topologySubjectKey;
+      if (typeof key !== 'string')
+        throw new SubjectSyncUnavailableError('Topology runtime identity is unavailable');
+      const evidence = await readTopologyRuntime(
+        deps.db,
+        tenantId,
+        { key, kind: 'service' },
+        (tenant, source) => deps.cache.get(tenant, source.type, source),
+      );
+      const syncedAt = new Date();
+      return atSyncTime(
+        normalizeDiscoveredRuntimeObservation(evidence, syncedAt, scrubSecrets),
+        syncedAt,
+      );
+    }
     const service = await withTenant(deps.db, tenantId, async (tx) => {
       const rows = await tx
         .select()
@@ -117,40 +136,15 @@ export function makeSubjectSyncResolver(deps: { db: Db; cache: SnapshotCache }) 
       return rows[0] ?? null;
     });
     if (!service) throw new SubjectSyncUnavailableError('service observation unavailable');
-    const configs = await withTenant(deps.db, tenantId, (tx) =>
-      tx
-        .select()
-        .from(connectorConfigs)
-        .where(
-          and(
-            eq(connectorConfigs.type, 'kubernetes'),
-            eq(connectorConfigs.enabled, true),
-            isNull(connectorConfigs.deletedAt),
-          ),
-        ),
-    );
-    if (configs.length === 0)
-      throw new SubjectSyncUnavailableError('runtime observation unavailable');
-    let snapshots: NormalizedSnapshot[];
+    let serviceSnapshots: NormalizedSnapshot[] | null;
     try {
-      snapshots = (
-        await Promise.all(
-          configs.map((config) =>
-            deps.cache.get(tenantId, 'kubernetes', {
-              id: config.id,
-              lifecycleVersion: config.lifecycleVersion,
-            }),
-          ),
-        )
-      ).flat();
+      serviceSnapshots = await readServiceRuntime(deps.db, tenantId, service.name, (source) =>
+        deps.cache.get(tenantId, 'kubernetes', source),
+      );
     } catch {
       throw new SubjectSyncUnavailableError('runtime observation unavailable');
     }
-    const serviceSnapshots = snapshots.filter(
-      (snapshot) =>
-        snapshot.metadata.kind === 'pod' && snapshot.metadata.namespace === subject.subjectId,
-    );
-    if (serviceSnapshots.length === 0)
+    if (!serviceSnapshots || serviceSnapshots.length === 0)
       throw new SubjectSyncUnavailableError('service runtime observation unavailable');
     const syncedAt = new Date();
     return atSyncTime(

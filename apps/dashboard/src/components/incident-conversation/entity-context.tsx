@@ -7,6 +7,7 @@ import { config } from '../../config';
 import { authenticatedFetch } from '../../lib/authenticatedFetch';
 import { formatAbsoluteTime } from '../../lib/time';
 import type { IncidentWorkspaceData } from '../../lib/types';
+import { IncidentTopologyMatches } from './topology-context';
 
 interface CatalogService {
   name: string;
@@ -112,6 +113,20 @@ export function EntityContextPanel({
       <h2 id="entity-context-title" className="font-semibold text-ink">
         Affected entity
       </h2>
+      <IncidentTopologyMatches context={context.topology} />
+      {context.mappings.some((mapping) => mapping.candidateKey.startsWith('incident-service:')) && (
+        <p className="mt-2 text-sm text-info">
+          A responder assigned this incident to{' '}
+          {context.services.map((service) => service.name).join(', ')}. These assignments take
+          precedence over provider candidates.{' '}
+          <Link
+            className="underline"
+            to={`/w/topology?incident=${encodeURIComponent(workspace.incident.id)}`}
+          >
+            Edit affected services
+          </Link>
+        </p>
+      )}
       <p className="mt-1 text-xs text-ink-muted">
         Producers are shown separately from resources that may be affected. Confirm mappings before
         treating ownership or code as fact.

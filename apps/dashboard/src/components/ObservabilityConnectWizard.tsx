@@ -58,6 +58,12 @@ export function ObservabilityConnectWizard({
   const [site, setSite] = useState(
     typeof initialSettings?.site === 'string' ? initialSettings.site : 'datadoghq.com',
   );
+  const [collectApm, setCollectApm] = useState(
+    typeof initialSettings?.collectApm === 'boolean'
+      ? initialSettings.collectApm
+      : Boolean(connectorId),
+  );
+  const [collectLogs, setCollectLogs] = useState(initialSettings?.collectLogs === true);
   const [baseUrl, setBaseUrl] = useState(
     typeof initialSettings?.baseUrl === 'string' ? initialSettings.baseUrl : '',
   );
@@ -160,7 +166,7 @@ export function ObservabilityConnectWizard({
           name: name.trim(),
           settings:
             type === 'datadog'
-              ? { site }
+              ? { site, collectApm, collectLogs }
               : {
                   baseUrl: baseUrl.trim(),
                   ...(usesHttps && trust === 'ca'
@@ -219,20 +225,52 @@ export function ObservabilityConnectWizard({
             placeholder={`Production ${label}`}
           />
           {type === 'datadog' ? (
-            <label className="text-sm font-medium">
-              Datadog site
-              <select
-                value={site}
-                onChange={(event) => setSite(event.target.value)}
-                className="mt-1 w-full rounded border border-line-strong px-2 py-1.5"
-              >
-                {DATADOG_SITES.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <>
+              <label className="text-sm font-medium">
+                Datadog site
+                <select
+                  value={site}
+                  onChange={(event) => setSite(event.target.value)}
+                  className="mt-1 w-full rounded border border-line-strong px-2 py-1.5"
+                >
+                  {DATADOG_SITES.map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={collectLogs}
+                  onChange={(event) => setCollectLogs(event.target.checked)}
+                />
+                <span>
+                  Discover traffic from logs (optional)
+                  <span className="mt-1 block text-xs text-ink-muted">
+                    Sample ingress and gRPC request logs for this workspace’s verified Kubernetes
+                    clusters. No APM required. Needs log-read permission; sampled traffic is not a
+                    complete dependency inventory.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={collectApm}
+                  onChange={(event) => setCollectApm(event.target.checked)}
+                />
+                <span>
+                  Collect APM service-call evidence (optional)
+                  <span className="mt-1 block text-xs text-ink-muted">
+                    Enable only if this organization has indexed APM spans. Hosts, monitors and
+                    catalog declarations are collected independently; metrics and logs remain
+                    available for investigations.
+                  </span>
+                </span>
+              </label>
+            </>
           ) : (
             <>
               <label className="text-sm font-medium">
@@ -391,6 +429,18 @@ export function ObservabilityConnectWizard({
             <dd>{type === 'datadog' ? site : baseUrl}</dd>
             <dt className="font-medium">Access</dt>
             <dd>On-demand, read-only investigation tools</dd>
+            {type === 'datadog' && (
+              <>
+                <dt className="font-medium">Traffic discovery</dt>
+                <dd>
+                  {collectLogs
+                    ? 'Enabled for verified Kubernetes clusters, bounded log samples'
+                    : 'Disabled'}
+                </dd>
+                <dt className="font-medium">APM discovery</dt>
+                <dd>{collectApm ? 'Enabled' : 'Disabled'}</dd>
+              </>
+            )}
           </dl>
           {error && (
             <p role="alert" className="text-sm text-critical">

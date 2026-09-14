@@ -1,17 +1,19 @@
-import type { GraphNode, TopologyGraph } from '../lib/topology';
-import { ACTIVE_INCIDENT_STATUSES } from '../lib/topology';
-import type { Incident } from '../lib/types';
+import type { GraphNode, TopologyGraph, TopologyIncident } from '../lib/topology';
+import { activeIncidents, topologyIncidentServices } from '../lib/topology';
 import { formatAbsoluteTime, relativeTime } from '../lib/time';
 import type { InvestigationDeclaration, InvestigationSubject } from '../lib/investigations';
 import { InvestigationAction } from './InvestigationAction';
+import type { ReactNode } from 'react';
 
 export interface NodeDetailProps {
   node: GraphNode;
-  incidents: Incident[];
+  incidents: TopologyIncident[];
   graph?: TopologyGraph;
   onClose: () => void;
   activeIncidentId?: string | null;
   declareInvestigation?: (subject: InvestigationSubject) => Promise<InvestigationDeclaration>;
+  onSelect?: (node: GraphNode) => void;
+  reliability?: ReactNode;
 }
 
 export function runtimeNeedsInvestigation(node: GraphNode): boolean {
@@ -31,10 +33,12 @@ export function NodeDetail({
   onClose,
   activeIncidentId,
   declareInvestigation,
+  onSelect,
+  reliability,
 }: NodeDetailProps) {
   const now = Date.now();
-  const activeAlerts = incidents.filter(
-    (i) => i.service === node.name && ACTIVE_INCIDENT_STATUSES.has(i.status),
+  const activeAlerts = activeIncidents(incidents).filter((i) =>
+    graph ? topologyIncidentServices(graph, i).includes(node.name) : i.service === node.name,
   );
   const callers = graph?.edges.filter((edge) => edge.downstream === node.name) ?? [];
   const dependencies = graph?.edges.filter((edge) => edge.upstream === node.name) ?? [];
@@ -47,7 +51,7 @@ export function NodeDetail({
         event.stopPropagation();
         onClose();
       }}
-      className="w-full min-w-0 shrink-0 rounded border border-line bg-surface p-4 text-sm lg:w-80"
+      className="order-first w-full min-w-0 shrink-0 self-start rounded border border-line bg-surface p-4 text-sm lg:order-last lg:sticky lg:top-4 lg:w-80"
     >
       <div className="mb-3 flex items-start justify-between gap-2">
         <div className="min-w-0">
@@ -69,6 +73,7 @@ export function NodeDetail({
         </button>
       </div>
 
+      {reliability}
       <section className="mb-4">
         <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-faint">
           Runtime
@@ -76,8 +81,24 @@ export function NodeDetail({
         {node.runtime ? (
           <div className="space-y-1 text-xs text-ink-muted">
             <p>
-              Kubernetes namespace <span className="font-instrument">{node.runtime.namespace}</span>
+              Mapped namespaces <span className="font-instrument">{node.runtime.namespace}</span>
             </p>
+            {node.runtime.scopes?.map((scope) => (
+              <p key={`${scope.dataSourceId}/${scope.namespace}/${scope.environment}`}>
+                {scope.environment} ·{' '}
+                {graph?.coverage?.find((source) => source.dataSourceId === scope.dataSourceId)
+                  ?.dataSourceName ?? 'Unavailable connection'}{' '}
+                / {scope.namespace}
+                {' · '}
+                <a
+                  className="text-info underline"
+                  href={`/w/connectors?connection=${encodeURIComponent(scope.dataSourceId)}`}
+                >
+                  Connection
+                </a>
+              </p>
+            ))}
+            <p>Runtime health does not measure request success or service availability.</p>
             <p>
               {node.runtime.healthy}/{node.runtime.pods} pods healthy · {node.runtime.attention}{' '}
               attention · {node.runtime.stale} stale · {node.runtime.errors} errors
@@ -102,6 +123,9 @@ export function NodeDetail({
         )}
         {declareInvestigation && runtimeNeedsInvestigation(node) ? (
           <div className="mt-3">
+            <p className="mb-2 text-xs text-ink-muted">
+              Investigates this logical service across all confirmed runtime scopes.
+            </p>
             <InvestigationAction
               subject={{ kind: 'topology_service', service: node.name }}
               activeIncidentId={activeIncidentId}
@@ -127,42 +151,69 @@ export function NodeDetail({
           <p className="text-xs text-ink-muted">No registered service relationships.</p>
         ) : (
           <div className="space-y-2 text-xs text-ink-muted">
-            <p>
-              Called by:{' '}
-              {callers.length > 0
-                ? callers.map((edge) => edge.upstream).join(', ')
-                : 'No registered callers'}
-            </p>
-            <p>
-              Depends on:{' '}
-              {dependencies.length > 0
-                ? dependencies
-                    .map(
-                      (edge) =>
-                        `${edge.downstream} (${edge.syncType}${edge.circuitBreaker ? ', breaker' : ''})`,
-                    )
-                    .join(', ')
-                : 'No registered dependencies'}
-            </p>
+            {(
+              [
+                ['Called by', callers, 'upstream'],
+                ['Depends on', dependencies, 'downstream'],
+              ] as const
+            ).map(([label, edges, endpoint]) => (
+              <div key={label}>
+                <h4 className="font-medium">{label}</h4>
+                {edges.length === 0 ? (
+                  <p>None registered</p>
+                ) : (
+                  <ul>
+                    {edges.map((edge) => (
+                      <li key={`${edge[endpoint]}/${edge.environment ?? ''}`}>
+                        <button
+                          type="button"
+                          className="sre-hit-target break-all text-info underline"
+                          onClick={() => {
+                            const target = graph?.nodes.find(
+                              (item) => item.name === edge[endpoint],
+                            );
+                            if (target) onSelect?.(target);
+                          }}
+                        >
+                          {edge[endpoint]}
+                        </button>{' '}
+                        ({edge.syncType}
+                        {edge.circuitBreaker ? ', breaker' : ''}
+                        {edge.protocol ? `, ${edge.protocol}` : ''}){' · '}
+                        {edge.environment || 'Unscoped'}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </section>
 
       <section className="mb-4">
         <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-faint">
-          Recent deploys
+          Reported deployment matches
         </h3>
+        <p className="mb-2 text-xs text-ink-muted">
+          Matched by the provider's service name, not a confirmed runtime association. Check the
+          connection and environment before treating a deployment as relevant.
+        </p>
         {node.recentDeploys.length === 0 ? (
           <p className="text-xs text-ink-muted">No deploys.</p>
         ) : (
           <ul className="space-y-1">
             {node.recentDeploys.map((d) => (
               <li
-                key={`${d.sha}/${d.deployedAt}`}
+                key={d.id ?? `${d.sha}/${d.deployedAt}`}
                 className="flex min-w-0 flex-wrap items-center gap-2"
               >
                 <span className="min-w-0 break-all font-instrument text-xs text-ink-muted">
                   {d.sha}
+                </span>
+                <span className="text-xs text-ink-muted">
+                  {d.environment ?? 'Environment not recorded'}
+                  {d.dataSourceName || d.source ? ` · ${d.dataSourceName ?? d.source}` : ''}
                 </span>
                 {d.ref && (
                   <span className="min-w-0 break-all font-instrument text-xs text-ink-faint">
@@ -193,7 +244,12 @@ export function NodeDetail({
                 </span>
                 <span className="text-xs text-ink-muted">{i.status}</span>
                 {i.title && (
-                  <span className="basis-full text-xs text-ink-secondary">{i.title}</span>
+                  <a
+                    href={`/w/incidents/${i.id}`}
+                    className="basis-full text-xs text-info underline"
+                  >
+                    {i.title}
+                  </a>
                 )}
                 <span className="ml-auto min-w-0 break-all text-xs text-ink-faint">
                   {i.alertSource}

@@ -1,4 +1,19 @@
 import { createHash } from 'node:crypto';
+import { readServiceRuntime } from '@sre/topology';
+import {
+  resolveTopologyRuntimeObservation,
+  topologyObservationId,
+} from './topology-runtime-observation';
+import {
+  ObservationNotFoundError,
+  ObservationNotActionableError,
+  ObservationUnavailableError,
+} from './observation-errors';
+export {
+  ObservationNotFoundError,
+  ObservationNotActionableError,
+  ObservationUnavailableError,
+} from './observation-errors';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import {
   connectorConfigs,
@@ -29,11 +44,7 @@ export type ObservationSubject =
   | { kind: 'infrastructure_resource'; dataSourceId: string; entityId: string }
   | { kind: 'deployment'; deploymentId: string }
   | { kind: 'connector_verification'; connectorId: string }
-  | { kind: 'topology_service'; service: string };
-
-export class ObservationNotFoundError extends Error {}
-export class ObservationNotActionableError extends Error {}
-export class ObservationUnavailableError extends Error {}
+  | { kind: 'topology_service'; service: string; subjectKey?: string };
 
 export interface ResolvedObservation {
   source: string;
@@ -158,8 +169,17 @@ function infrastructureObservation(
               ),
             ]
           : []),
-        entityCandidate(entityKind, snapshot.entityId, observation.observedAt, config.type, scope),
-        ...(namespace
+        {
+          ...entityCandidate(
+            entityKind,
+            snapshot.entityId,
+            observation.observedAt,
+            config.type,
+            scope,
+          ),
+          ...(snapshot.topology ? { topologyRef: snapshot.topology.ref } : {}),
+        },
+        ...(namespace && !snapshot.topology
           ? [
               entityCandidate('namespace', namespace, observation.observedAt, config.type, {
                 dataSourceId: config.id,
@@ -337,6 +357,8 @@ export async function resolveObservation(
     };
   }
 
+  if (subject.subjectKey)
+    return resolveTopologyRuntimeObservation(deps, tenantId, subject.subjectKey);
   const service = await withTenant(deps.db, tenantId, async (tx) => {
     const rows = await tx
       .select()
@@ -346,31 +368,18 @@ export async function resolveObservation(
     return rows[0] ?? null;
   });
   if (!service) throw new ObservationNotFoundError('observation not found');
-  const configs = await withTenant(deps.db, tenantId, (tx) =>
-    tx
-      .select()
-      .from(connectorConfigs)
-      .where(
-        and(
-          eq(connectorConfigs.type, 'kubernetes'),
-          eq(connectorConfigs.enabled, true),
-          isNull(connectorConfigs.deletedAt),
-        ),
-      ),
-  );
-  let snapshots: NormalizedSnapshot[];
+  let runtime: NormalizedSnapshot[] | null;
   try {
-    snapshots = (
-      await Promise.all(
-        configs.map((config) => deps.cache.get(tenantId, 'kubernetes', generation(config))),
-      )
-    ).flat();
+    runtime = await readServiceRuntime(deps.db, tenantId, service.name, (source) =>
+      deps.cache.get(tenantId, 'kubernetes', source),
+    );
   } catch {
     throw new ObservationUnavailableError('observation source unavailable');
   }
-  const runtime = snapshots.filter(
-    (item) => item.metadata.kind === 'pod' && item.metadata.namespace === service.name,
-  );
+  if (!runtime)
+    throw new ObservationUnavailableError(
+      'Confirmed runtime mapping or complete current collection is unavailable. Check topology runtime evidence.',
+    );
   if (runtime.length === 0)
     throw new ObservationNotActionableError('service has no unhealthy runtime');
   const observation = normalizeTopologyServiceObservation(
@@ -449,6 +458,12 @@ export function observationIdentity(subject: ObservationSubject): InvestigationS
     case 'connector_verification':
       return { kind: subject.kind, sourceId: subject.connectorId, subjectId: subject.connectorId };
     case 'topology_service':
+      if (subject.subjectKey)
+        return {
+          kind: subject.kind,
+          sourceId: 'topology-discovery',
+          subjectId: topologyObservationId(subject.subjectKey),
+        };
       return { kind: subject.kind, sourceId: 'topology', subjectId: subject.service };
   }
 }
@@ -458,5 +473,21 @@ export async function activeObservationWorkspaces(
   tenantId: string,
   subjects: ObservationSubject[],
 ) {
-  return listActiveInvestigationSubjects(db, tenantId, subjects.map(observationIdentity));
+  const active = await listActiveInvestigationSubjects(
+    db,
+    tenantId,
+    subjects.map(observationIdentity),
+  );
+  const keys = new Map(
+    subjects.flatMap((subject) =>
+      subject.kind === 'topology_service' && subject.subjectKey
+        ? [[topologyObservationId(subject.subjectKey), subject.subjectKey] as const]
+        : [],
+    ),
+  );
+  return active.map((item) =>
+    item.kind === 'topology_service' && item.sourceId === 'topology-discovery'
+      ? { ...item, subjectKey: keys.get(item.subjectId) }
+      : item,
+  );
 }

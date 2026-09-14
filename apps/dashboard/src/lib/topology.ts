@@ -1,8 +1,20 @@
-import type { Incident, InfraSnapshot } from './types';
+import { INFRA_STALE_AFTER_MS, type Incident, type InfraSnapshot } from './types';
 import { infrastructureHealth } from './infrastructure';
+import type { BlastRadius } from '@sre/contracts';
+export type { BlastRadius, BlastRadiusDependent as BlastDep } from '@sre/contracts';
+import type { DiscoveredTopologyGraph, OperationalTopology } from '@sre/contracts';
+
+export type TopologyDiscoveryGraph = DiscoveredTopologyGraph & { operational: OperationalTopology };
 
 /** One recent deployment for a service (mirrors GET /topology/graph node.recentDeploys). */
 export interface RecentDeploy {
+  id?: string;
+  dataSourceId?: string | null;
+  dataSourceName?: string;
+  attribution?: 'provider_reported';
+  environment?: string | null;
+  source?: string;
+  url?: string | null;
   sha: string;
   ref: string | null;
   status: string;
@@ -20,7 +32,7 @@ export interface GraphNode {
   recentDeploys: RecentDeploy[];
   /** Added by operationalTopologyGraph in the dashboard. */
   status?: ServiceStatus;
-  /** Added by operationalTopologyGraph when live Kubernetes pods map to this service namespace. */
+  /** Runtime evidence from explicitly bound connection and resource selectors. */
   runtime?: ServiceRuntime;
 }
 
@@ -37,6 +49,7 @@ export interface ServiceRuntime {
   restarts: number;
   oomKilled: number;
   observedAt: string | null;
+  scopes?: Array<{ dataSourceId: string; namespace: string; environment: string }>;
 }
 
 const STATUS_ORDER: Record<ServiceStatus, number> = {
@@ -53,6 +66,11 @@ export interface GraphEdge {
   downstream: string;
   syncType: string; // sync | async
   circuitBreaker: boolean;
+  protocol?: string | null;
+  environment?: string;
+  rationale?: string | null;
+  confirmedByUserId?: string | null;
+  lastConfirmedAt?: string | null;
 }
 
 export interface TopologyGraph {
@@ -60,64 +78,146 @@ export interface TopologyGraph {
   edges: GraphEdge[];
   /** Safe runtime projection used to derive per-service health; cluster-scoped nodes stay global. */
   infrastructure?: InfraSnapshot[];
+  incidentMappings?: Array<{ incidentId: string; services: string[] }>;
+  incidents?: TopologyIncident[];
+  coverage?: TopologyCoverage[];
+  runtimeBindings?: RuntimeBinding[];
+  historicalAt?: string;
+  discovery?: TopologyDiscoveryGraph;
 }
 
-/** One dependent in a blast radius; `via` marks the insulating hop (async / circuit breaker). */
-export interface BlastDep {
-  name: string;
-  criticality: string | null;
-  team: string | null;
-  hops: number;
-  via?: 'async' | 'circuit_breaker';
+export interface RuntimeBinding {
+  id: string;
+  serviceName: string;
+  connectorId: string;
+  namespace: string;
+  labelKey: string;
+  labelValue: string;
+  environment: string;
+  rationale: string;
+  updatedAt: string;
 }
 
-/** On-demand blast radius for a service (mirrors GET /topology/blast-radius). */
-export interface BlastRadius {
-  service: string;
-  mapped: boolean; // false when the service is not a graph node
-  dependents: { direct: BlastDep[]; indirect: BlastDep[]; insulated: BlastDep[] };
-  suspects: { name: string; syncType: string; criticality: string | null }[];
-  truncated: boolean;
-  note?: string;
+export function bindingMatchesPod(binding: RuntimeBinding, pod: InfraSnapshot): boolean {
+  return (
+    pod.kind === 'pod' &&
+    pod.dataSourceId === binding.connectorId &&
+    pod.namespace === binding.namespace &&
+    (!binding.labelKey || pod.labels?.[binding.labelKey] === binding.labelValue)
+  );
+}
+
+export interface TopologyCoverage {
+  dataSourceId: string;
+  dataSourceName: string;
+  state: 'complete' | 'partial' | 'unknown' | 'unavailable';
+  observedAt: string | null;
+  lastSucceededAt: string | null;
+}
+
+/** Scope observations before aggregation; an unscoped deploy does not match an environment. */
+export function scopeTopologyGraph(graph: TopologyGraph, environment: string): TopologyGraph {
+  if (!environment) return graph;
+  const runtimeBindings =
+    graph.runtimeBindings?.filter((binding) => binding.environment === environment) ?? [];
+  const names = new Set(runtimeBindings.map((binding) => binding.serviceName));
+  const edges = graph.edges.filter((edge) => !edge.environment || edge.environment === environment);
+  for (const edge of edges) {
+    names.add(edge.upstream);
+    names.add(edge.downstream);
+  }
+  const nodes = graph.nodes.flatMap((node) => {
+    const recentDeploys = node.recentDeploys.filter((deploy) => deploy.environment === environment);
+    return names.has(node.name) || recentDeploys.length
+      ? [{ ...node, recentDeploys, lastDeployAt: recentDeploys[0]?.deployedAt ?? null }]
+      : [];
+  });
+  const visible = new Set(nodes.map((node) => node.name));
+  return {
+    ...graph,
+    nodes,
+    runtimeBindings,
+    edges: edges.filter(
+      (edge) =>
+        visible.has(edge.upstream) &&
+        visible.has(edge.downstream) &&
+        (!edge.environment || edge.environment === environment),
+    ),
+  };
+}
+
+export type TopologyIncident = Pick<
+  Incident,
+  | 'id'
+  | 'service'
+  | 'title'
+  | 'severity'
+  | 'status'
+  | 'createdAt'
+  | 'purpose'
+  | 'archivedAt'
+  | 'alertSource'
+>;
+
+/** Mentions alone do not describe an incident, and transport identifiers are not titles. */
+export function topologyIncidentTitle(incident: Pick<TopologyIncident, 'id' | 'title'>): string {
+  const title = incident.title
+    ?.replace(/<@[A-Z0-9]+>/g, '')
+    .replace(/<https?:\/\/[^>|]+\|([^>]+)>/g, '$1')
+    .replace(/<https?:\/\/[^>]+>/g, '')
+    .trim();
+  return title || `Incident ${incident.id.slice(0, 8)}`;
+}
+
+/** Prefer the server's resolved service identities, including an explicitly unresolved result. */
+export function topologyIncidentServices(
+  graph: TopologyGraph,
+  incident: Pick<Incident, 'id' | 'service'>,
+): string[] {
+  return graph.incidentMappings
+    ? (graph.incidentMappings.find((mapping) => mapping.incidentId === incident.id)?.services ?? [])
+    : [incident.service];
 }
 
 /** Incident statuses that count as "active" for the overlay + drawer alerts list. */
 export const ACTIVE_INCIDENT_STATUSES = new Set(['open', 'mitigated']);
 
 /** Active incidents in API order. */
-export function activeIncidents(incidents: Incident[]): Incident[] {
+export function activeIncidents<T extends Pick<Incident, 'purpose' | 'archivedAt' | 'status'>>(
+  incidents: T[],
+): T[] {
   return incidents.filter(
     (incident) =>
-      incident.purpose !== 'health_check' && ACTIVE_INCIDENT_STATUSES.has(incident.status),
+      incident.purpose !== 'health_check' &&
+      !incident.archivedAt &&
+      ACTIVE_INCIDENT_STATUSES.has(incident.status),
   );
 }
 
 /** The first active incident, or undefined. Drives which service's blast radius the overlay fetches. */
-export function activeIncident(incidents: Incident[]): Incident | undefined {
+export function activeIncident<T extends Pick<Incident, 'purpose' | 'archivedAt' | 'status'>>(
+  incidents: T[],
+): T | undefined {
   return activeIncidents(incidents)[0];
 }
 
 /** Add live operational status without changing the server's authoritative relationship graph. */
 export function operationalTopologyGraph(
   graph: TopologyGraph,
-  incidents: Incident[],
+  incidents: TopologyIncident[],
   now: number,
 ): TopologyGraph {
   const activeServices = new Set([
-    ...activeIncidents(incidents).map((incident) => incident.service),
+    ...activeIncidents(incidents).flatMap((incident) => topologyIncidentServices(graph, incident)),
     ...graph.nodes.filter((node) => node.sources?.includes('incident')).map((node) => node.name),
   ]);
-  const podsByNamespace = new Map<string, InfraSnapshot[]>();
-  for (const snapshot of graph.infrastructure ?? []) {
-    if (snapshot.kind !== 'pod' || !snapshot.namespace) continue;
-    const pods = podsByNamespace.get(snapshot.namespace) ?? [];
-    pods.push(snapshot);
-    podsByNamespace.set(snapshot.namespace, pods);
-  }
-
   const nodes = graph.nodes
     .map((node) => {
-      const pods = podsByNamespace.get(node.name) ?? [];
+      const bindings =
+        graph.runtimeBindings?.filter((binding) => binding.serviceName === node.name) ?? [];
+      const pods = (graph.infrastructure ?? []).filter((pod) =>
+        bindings.some((binding) => bindingMatchesPod(binding, pod)),
+      );
       const counts = { healthy: 0, attention: 0, stale: 0, error: 0 };
       let observedAtMs = 0;
       let restarts = 0;
@@ -132,7 +232,12 @@ export function operationalTopologyGraph(
       const runtime: ServiceRuntime | undefined =
         pods.length > 0
           ? {
-              namespace: node.name,
+              namespace: [...new Set(bindings.map((binding) => binding.namespace))].join(', '),
+              scopes: bindings.map((binding) => ({
+                dataSourceId: binding.connectorId,
+                namespace: binding.namespace,
+                environment: binding.environment,
+              })),
               pods: pods.length,
               healthy: counts.healthy,
               attention: counts.attention,
@@ -149,7 +254,17 @@ export function operationalTopologyGraph(
           ? 'attention'
           : counts.stale > 0
             ? 'stale'
-            : pods.length > 0
+            : pods.length > 0 &&
+                bindings.every((binding) =>
+                  graph.coverage?.some(
+                    (source) =>
+                      source.dataSourceId === binding.connectorId &&
+                      source.state === 'complete' &&
+                      source.observedAt !== null &&
+                      Number.isFinite(Date.parse(source.observedAt)) &&
+                      now - Date.parse(source.observedAt) <= INFRA_STALE_AFTER_MS,
+                  ),
+                )
               ? 'healthy'
               : 'unknown';
       return { ...node, status, ...(runtime ? { runtime } : {}) };
@@ -166,11 +281,21 @@ export function operationalTopologyGraph(
 export function filterTopologyGraph(
   graph: TopologyGraph,
   query: string,
-  filters: { status?: ServiceStatus | 'all'; source?: TopologySource | 'all' } = {},
+  filters: {
+    status?: ServiceStatus | 'all';
+    source?: TopologySource | 'all';
+    focus?: string | null;
+  } = {},
 ): TopologyGraph {
   const normalizedQuery = query.trim().toLowerCase();
+  const neighbors = new Set([filters.focus]);
+  for (const edge of graph.edges) {
+    if (edge.upstream === filters.focus) neighbors.add(edge.downstream);
+    if (edge.downstream === filters.focus) neighbors.add(edge.upstream);
+  }
   const nodes = graph.nodes.filter(
     (node) =>
+      (!filters.focus || neighbors.has(node.name)) &&
       (!normalizedQuery || node.name.toLowerCase().includes(normalizedQuery)) &&
       (!filters.status || filters.status === 'all' || node.status === filters.status) &&
       (!filters.source ||
@@ -186,7 +311,7 @@ export function filterTopologyGraph(
 }
 
 /** How a node is highlighted by the blast-radius overlay. */
-export type BlastHighlight = 'affected' | 'direct' | 'indirect';
+export type BlastHighlight = 'affected' | 'direct' | 'indirect' | 'insulated' | 'unclassified';
 
 /**
  * Map service name -> blast-radius highlight. The affected service wins over direct, direct over
@@ -198,7 +323,9 @@ export function blastHighlights(
 ): Map<string, BlastHighlight> {
   const m = new Map<string, BlastHighlight>();
   if (!blastRadius) return m;
+  for (const d of blastRadius.dependents.insulated) m.set(d.name, 'insulated');
   for (const d of blastRadius.dependents.indirect) m.set(d.name, 'indirect');
+  for (const d of blastRadius.dependents.unclassified ?? []) m.set(d.name, 'unclassified');
   for (const d of blastRadius.dependents.direct) m.set(d.name, 'direct');
   m.set(blastRadius.service, 'affected'); // the origin service always wins
   return m;

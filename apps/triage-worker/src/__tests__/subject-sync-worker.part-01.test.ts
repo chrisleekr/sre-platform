@@ -1,9 +1,6 @@
 import { describe, expect, test } from 'vitest';
-
 import { randomUUID } from 'node:crypto';
-
 import { sql } from 'drizzle-orm';
-
 import {
   connectorConfigs,
   incidentMessages,
@@ -11,21 +8,17 @@ import {
   investigationSubjects,
   jobs,
   services,
+  serviceRuntimeBindings,
 } from '@sre/db';
-
 import {
   normalizeConnectorVerificationObservation,
   normalizeInfrastructureObservation,
   normalizeTopologyServiceObservation,
   type NormalizedSnapshot,
 } from '@sre/connectors';
-
 import { openIncidentWorkspace } from '@sre/alerts';
-
 import { makeSubjectSyncResolver } from '../subject-sync';
-
 import { createFixture } from './subject-sync-worker.fixture';
-
 const __fixture = createFixture();
 
 describe('subject.sync worker', () => {
@@ -355,6 +348,23 @@ describe('subject.sync worker', () => {
       metadata: { kind: 'pod', namespace: serviceName, phase: 'Running' },
       observedAt: new Date(),
     };
+    await __fixture.admin.db.insert(serviceRuntimeBindings).values({
+      tenantId: __fixture.tenantId,
+      serviceName,
+      connectorId: config!.id,
+      namespace: serviceName,
+      environment: 'test',
+      confirmedByUserId: randomUUID(),
+      rationale: 'Confirmed fixture runtime',
+    });
+    const coverage: NormalizedSnapshot = {
+      tenantId: __fixture.tenantId,
+      source: 'kubernetes',
+      entityId: 'collection/pods',
+      metadata: { kind: 'collection', resource: 'pods', completeness: 'complete' },
+      metrics: {},
+      observedAt: new Date(),
+    };
     const initial = normalizeTopologyServiceObservation(
       { service: serviceName, team: 'platform', criticality: 'tier1', snapshots: [runtime] },
       new Date(),
@@ -378,7 +388,8 @@ describe('subject.sync worker', () => {
     const resolver = makeSubjectSyncResolver({
       db: __fixture.app.db,
       cache: {
-        get: async (_tenant, _type, generation) => (generation?.id === config!.id ? [runtime] : []),
+        get: async (_tenant, _type, generation) =>
+          generation?.id === config!.id ? [runtime, coverage] : [],
         set: async () => undefined,
       },
     });
