@@ -28,6 +28,43 @@ vi.mock('../../auth', () => ({
 import { MembersPage, MembersPanel } from '../MembersPanel';
 
 test.each(['missing_owner', 'inactive_owners'] as const)(
+  'loads the %s warning through the members page',
+  async (state) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async (input: RequestInfo | URL) =>
+          new Response(
+            JSON.stringify(
+              String(input).endsWith('/me')
+                ? { user: { id: 'member' }, tenant: { role: 'member' } }
+                : {
+                    members: [],
+                    ownership: {
+                      state,
+                      activeOwnerCount: 0,
+                      inactiveOwnerCount: state === 'inactive_owners' ? 1 : 0,
+                    },
+                  },
+            ),
+            { headers: { 'content-type': 'application/json' } },
+          ),
+      ),
+    );
+    render(
+      <MemoryRouter>
+        <MembersPage />
+      </MemoryRouter>,
+    );
+    expect(
+      await screen.findByText(
+        state === 'missing_owner' ? /This workspace has no owner/ : /their accounts are inactive/,
+      ),
+    ).toBeDefined();
+  },
+);
+
+test.each(['missing_owner', 'inactive_owners'] as const)(
   'shows server ownership state %s even to ordinary members',
   (state) => {
     render(
