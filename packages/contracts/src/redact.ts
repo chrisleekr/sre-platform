@@ -63,18 +63,15 @@ const looksLikeToken = (run: string): boolean =>
   /[a-z]/.test(run) && /[A-Z]/.test(run) && /[0-9]/.test(run);
 
 /**
- * Removes recognized credentials and high-entropy tokens from free text.
+ * Removes recognized credentials and high-entropy tokens without shifting source line numbers.
  * @param value - Untrusted text that may contain a credential.
- * @param options - Preserve newline counts when redacting numbered source evidence.
  */
-export function scrubSecrets(value: string, options: { preserveLines?: boolean } = {}): string {
+export function scrubSecrets(value: string): string {
   const replace = (match: string, replacement: string) =>
-    options.preserveLines
-      ? replacement +
-        '\n'.repeat(
-          Math.max(0, (match.match(/\n/g)?.length ?? 0) - (replacement.match(/\n/g)?.length ?? 0)),
-        )
-      : replacement;
+    replacement +
+    '\n'.repeat(
+      Math.max(0, (match.match(/\n/g)?.length ?? 0) - (replacement.match(/\n/g)?.length ?? 0)),
+    );
   let scrubbed = value.replace(SENSITIVE_HEADER, (match, header: string) =>
     replace(match, `${header}: ${REDACTED}`),
   );

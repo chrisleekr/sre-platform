@@ -92,6 +92,12 @@ capped.
 You can point an external client at a single incident and get the same read-only, redacted, audited
 tools the platform uses itself.
 
+After upgrading, replace existing `/mcp/incidents/<incident-uuid>` client addresses with
+`/mcp/providers/<sign-in-method-uuid>/incidents/<incident-uuid>`. The old address and its
+OAuth discovery address return `410 Gone` with migration instructions. Select the sign-in
+method that issued your token, then reconnect the client so it discovers the new address.
+The server cannot choose a sign-in method for an old client address.
+
 ```json
 {
   "mcpServers": {
