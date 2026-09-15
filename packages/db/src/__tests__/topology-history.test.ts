@@ -63,7 +63,11 @@ test('edit, delete and recreate close only the exact environment with half-open 
   expect(
     (await at(replacement.validFrom)).filter((row) => row.environment === 'production'),
   ).toEqual([replacement]);
-  await removeDependency(app.db, tenantId, 'caller', 'database', 'production');
+  expect(await removeDependency(app.db, tenantId, 'caller', 'database', 'production')).toBe(1);
+  const beforeNoop = await versions();
+  expect(await removeDependency(app.db, tenantId, 'caller', 'database', 'production')).toBe(0);
+  expect(await removeDependency(app.db, randomUUID(), 'caller', 'database', 'staging')).toBe(0);
+  expect(await versions()).toEqual(beforeNoop);
   const deleted = (await versions()).find((row) => row.id === replacement.id)!;
   expect(deleted.validUntil).not.toBeNull();
   expect((await at(deleted.validUntil!)).map((row) => row.environment)).toEqual(['staging']);

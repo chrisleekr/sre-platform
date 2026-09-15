@@ -148,8 +148,8 @@ export function discoveredBlastRadius(
       subjectKey: key,
       scope: node.scope,
       hops: path.hops,
-      team: metadata.get(key)?.team ?? null,
-      criticality: metadata.get(key)?.criticality ?? null,
+      team: (metadata.get(key) ?? catalog.get(node.name))?.team ?? null,
+      criticality: (metadata.get(key) ?? catalog.get(node.name))?.criticality ?? null,
       evidenceKeys: path.evidenceKeys,
     };
     if (path.tier === 2) entry.via = 'async';
@@ -180,7 +180,7 @@ export function discoveredBlastRadius(
       syncType: paths.every((path) => path.syncType === paths[0]!.syncType)
         ? paths[0]!.syncType
         : 'unknown',
-      criticality: metadata.get(key)?.criticality ?? null,
+      criticality: (metadata.get(key) ?? catalog.get(nodes.get(key)!.name))?.criticality ?? null,
       evidenceKeys: [...new Set(paths.flatMap((path) => path.evidenceKeys))],
     })),
     note: `Known service-call evidence and dependency declarations, not observed outages. Coverage may be incomplete.${omitted ? ` ${omitted} stale, inferred or ambiguous dependency relationships were excluded.` : ''}`,

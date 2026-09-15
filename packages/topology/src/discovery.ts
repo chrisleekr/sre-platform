@@ -155,17 +155,16 @@ export function resolveDiscoveredTopology(
       target.stale = !fresh(target.sources);
     } else graph.entities.push(entity);
   }
+  const resolvableTrafficEntities = trafficEntities.filter(
+    (entity) => !conflicting.has(entity.key),
+  );
   const relations = new Map<string, DiscoveredTopologyGraph['relations'][number]>();
   for (const collection of collections)
     for (const fact of collection.relations) {
       const relation = fact.value;
       const resolve = (ref: TopologyRef) =>
         ref.authority.startsWith('kubernetes-traffic:')
-          ? resolveTrafficReference(
-              ref,
-              fact.observedAt,
-              trafficEntities.filter((entity) => !conflicting.has(entity.key)),
-            )
+          ? resolveTrafficReference(ref, fact.observedAt, resolvableTrafficEntities)
           : canonical(ref);
       const fromKey = resolve(relation.from),
         toKey = resolve(relation.to);

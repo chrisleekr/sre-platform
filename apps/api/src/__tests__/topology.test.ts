@@ -269,3 +269,71 @@ describe('topology CRUD API', () => {
     expect(res.status).toBe(404);
   });
 });
+
+test('dependency mutations preserve exact scope and return 404 for missing or foreign edges', async () => {
+  const headers = bearer(await sign(orgA, ['admin']));
+  for (const name of ['scoped-caller', 'scoped-target']) {
+    expect(
+      (await api.request(`/topology/services/${name}`, { method: 'PUT', headers, body: '{}' }))
+        .status,
+    ).toBe(200);
+  }
+  const edge = { upstream: 'scoped-caller', downstream: 'scoped-target' };
+  const request = (method: string, body: object, auth = headers) =>
+    api.request('/topology/dependencies', { method, headers: auth, body: JSON.stringify(body) });
+  for (const environment of ['', 'production', 'staging']) {
+    const result = await request('PUT', { ...edge, environment });
+    expect(result.status).toBe(200);
+    expect(
+      ((await result.json()) as { dependency: { environment: string } }).dependency.environment,
+    ).toBe(environment);
+  }
+  const updated = await request('PATCH', { ...edge, environment: 'production', syncType: 'async' });
+  expect(updated.status).toBe(200);
+  expect(
+    ((await updated.json()) as { dependency: { environment: string; syncType: string } })
+      .dependency,
+  ).toMatchObject({
+    environment: 'production',
+    syncType: 'async',
+  });
+  const foreign = bearer(await sign(orgB, ['admin']));
+  expect(
+    (await request('PATCH', { ...edge, environment: 'production', syncType: 'sync' }, foreign))
+      .status,
+  ).toBe(404);
+  expect((await request('DELETE', { ...edge, environment: 'production' }, foreign)).status).toBe(
+    404,
+  );
+  expect((await request('DELETE', { ...edge, environment: 'production' })).status).toBe(200);
+  expect((await request('DELETE', { ...edge, environment: 'production' })).status).toBe(404);
+  const remaining = await api.request('/topology/dependencies', { headers });
+  expect(
+    (
+      (await remaining.json()) as { dependencies: Array<{ upstream: string; environment: string }> }
+    ).dependencies
+      .filter((row: { upstream: string }) => row.upstream === edge.upstream)
+      .map((row: { environment: string }) => row.environment)
+      .sort(),
+  ).toEqual(['', 'staging']);
+  expect((await request('DELETE', edge)).status).toBe(200);
+  expect((await request('DELETE', edge)).status).toBe(404);
+});
+
+test.each(['PUT', 'PATCH', 'DELETE'])(
+  'dependency %s rejects non-string environment',
+  async (method) => {
+    const response = await api.request('/topology/dependencies', {
+      method,
+      headers: bearer(await sign(orgA, ['admin'])),
+      body: JSON.stringify({
+        upstream: 'caller',
+        downstream: 'target',
+        environment: 123,
+        syncType: 'sync',
+      }),
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'environment must be a string' });
+  },
+);

@@ -181,3 +181,37 @@ test('bounds cyclic traversal and reports only genuinely missing paths at the de
   ).toBe(false);
   expect(discoveredBlastRadius(graph, c, none, 10).dependents.unclassified).toHaveLength(2);
 });
+
+test.each([false, true])(
+  'discovered catalog services retain metadata with declared edges: %s',
+  (withDeclaration) => {
+    const api = service('api'),
+      database = service('database');
+    const graph = { subjects: [api, database], relations: [call(api, database)] };
+    const declared = {
+      services: [
+        { name: 'api', team: 'payments', criticality: 'tier1' },
+        { name: 'database', team: 'storage', criticality: 'tier0' },
+      ],
+      edges: withDeclaration
+        ? [
+            {
+              id: 'edge',
+              upstream: 'api',
+              downstream: 'database',
+              environment: 'production',
+              syncType: 'sync',
+              circuitBreaker: false,
+            },
+          ]
+        : [],
+    };
+    const result = discoveredBlastRadius(graph, database, declared);
+    expect(Object.values(result.dependents).flat()).toEqual([
+      expect.objectContaining({ subjectKey: api.key, team: 'payments', criticality: 'tier1' }),
+    ]);
+    expect(discoveredBlastRadius(graph, api, declared).suspects).toEqual([
+      expect.objectContaining({ subjectKey: database.key, criticality: 'tier0' }),
+    ]);
+  },
+);
