@@ -6,6 +6,7 @@ import {
 import {
   connectorConfigs,
   connectorCredentialKey,
+  connectorIssueCredentialKey,
   listGitHubRepositories,
   listGitLabProjects,
   nextGitLabPollProjects,
@@ -93,6 +94,15 @@ export function makeDbConnectorProvider(deps: DbConnectorProviderDeps) {
             throw new Error(`no credential stored for data source '${row.name}'`);
           return row.credential;
         },
+        ...(type === 'gitlab'
+          ? {
+              getIssueCredential: async () => {
+                const value = await deps.secrets.get(tenantId, connectorIssueCredentialKey(row.id));
+                if (!value) throw new Error('No issue-write credential is configured.');
+                return value;
+              },
+            }
+          : {}),
         ...(type === 'github' || type === 'gitlab'
           ? {
               repositories: {

@@ -8,6 +8,7 @@ import { useIncidentWorkspace } from '../lib/useIncidentWorkspace';
 import { PageHeader } from './PageHeader';
 import { StatePanel } from './PageState';
 import { LiveIncidentConversation } from './incident-conversation/live';
+import { IssueManagement } from './IssueManagement';
 
 export { lifecycleActions, signalTargets } from './incident-conversation/signals';
 export { ConversationLog, alignFor, messageText } from './incident-conversation/timeline';
@@ -48,6 +49,13 @@ export function IncidentConversation() {
         <span aria-current="page" className="text-ink-muted">
           Incident
         </span>
+        {currentWorkspace && (
+          <IssueManagement
+            incidentId={incidentId}
+            apiBaseUrl={config.apiBaseUrl}
+            getCredentials={getCredentials}
+          />
+        )}
       </nav>
       {!currentWorkspace && (loading || error) && <PageHeader title="Incident" />}
       {!currentWorkspace && loading && (

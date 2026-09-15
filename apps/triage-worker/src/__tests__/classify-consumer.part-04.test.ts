@@ -327,7 +327,7 @@ describe('makeClassifyHandler mention pull path', () => {
     );
   });
 
-  test('M3 characterize failure falls back to channel service, sev3, and the mention text as title', async () => {
+  test('characterize failure preserves the reported symptom without addressing mentions', async () => {
     const { handler, route } = __fixture.setupMention({
       generateImpl: async () => {
         throw new Error('generator boom');
@@ -341,7 +341,7 @@ describe('makeClassifyHandler mention pull path', () => {
     expect(sig.service).toBe(`slack:${__fixture.CHANNEL}`); // serviceForChannel(channel)
     expect(sig.severity).toBe('sev3');
     expect(sig.purpose).toBe('incident');
-    expect((sig as { title?: string }).title).toBe('<@U_BOT> checkout is on fire');
+    expect((sig as { title?: string }).title).toBe('checkout is on fire');
   });
 
   test('M4 the transcript is secret-scrubbed before it reaches route context and the hub', async () => {
@@ -358,6 +358,41 @@ describe('makeClassifyHandler mention pull path', () => {
     expect(append).not.toHaveBeenCalled();
     const hubContent = (route.mock.calls[0]![0].opener as { content: string }).content;
     expect(hubContent).not.toContain(SECRET);
+  });
+
+  test('a mention-only failed characterization uses opening context, not post-trigger chatter', async () => {
+    const { handler, route, generate } = __fixture.setupMention({
+      transcript: [
+        { user: 'U_ROOT', text: 'Can we check cluster health?', ts: __fixture.ROOT_TS },
+        {
+          user: 'U_LATER',
+          text: 'Everything is down because of a deployment',
+          ts: '1700000002.0001',
+        },
+      ],
+      generateImpl: async () => {
+        throw new Error('Provider unavailable');
+      },
+    });
+    await handler(
+      __fixture.makeMentionJob({ payload: __fixture.makeMentionPayload({ text: '<@U_BOT>' }) }),
+    );
+    expect(route.mock.calls[0]?.[0].title).toBe('Can we check cluster health?');
+    expect(String(generate.mock.calls[0]?.[0])).not.toContain('Everything is down');
+  });
+
+  test('an unusable model title falls back to the opening request without another model call', async () => {
+    const { handler, route, generate } = __fixture.setupMention({
+      generateImpl: async () => ({
+        decision: 'new_incident',
+        service: 'checkout',
+        severity: 'sev3',
+        title: '<@U_BOT>',
+      }),
+    });
+    await handler(__fixture.makeMentionJob());
+    expect(route.mock.calls[0]?.[0].title).toBe('checkout is on fire');
+    expect(generate).toHaveBeenCalledTimes(1);
   });
 
   test('M5 a characterize provider outage is best-effort: the incident opens, not a RetryableError', async () => {

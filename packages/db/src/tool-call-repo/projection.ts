@@ -9,6 +9,7 @@ export interface EvidencePageCursor {
 }
 
 export interface EvidenceListItem {
+  summary?: string | null;
   id: string;
   tool: string;
   outcome: string;

@@ -1,6 +1,7 @@
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import {
   activeResponderTx,
+  consumeCaptureProposalTx,
   humanMessageFenceMatchesTx,
   jobs,
   lockIncidentWorkTx,
@@ -16,6 +17,7 @@ import type { WorkerRuntime } from './runtime';
  * @param incidentId - Current case.
  * @param request - Persisted human request, never model-selected identity.
  * @param fence - Latest human message used during interpretation.
+ * @param confirmation - Requires current durable capture-only consent for a bare Yes.
  */
 export async function requestKnowledgeCapture(
   runtime: WorkerRuntime,
@@ -23,6 +25,7 @@ export async function requestKnowledgeCapture(
   incidentId: string,
   request: HumanMessage,
   fence: string,
+  confirmation = false,
 ): Promise<void> {
   const { deps } = runtime;
   const queue = deps.runbookQueue;
@@ -33,8 +36,13 @@ export async function requestKnowledgeCapture(
         'New input arrived before knowledge capture; reinterpret the request.',
       );
     const authorized = await activeResponderTx(tx, tenantId, request.authorUserId);
+    const confirmed =
+      !confirmation ||
+      (authorized &&
+        !!queue &&
+        (await consumeCaptureProposalTx(tx, incidentId, request.authorUserId!, request.id)));
     let jobId: string | null = null;
-    if (authorized && queue) {
+    if (authorized && queue && confirmed) {
       const [existing] = await tx
         .select({ id: jobs.id })
         .from(jobs)
@@ -68,7 +76,9 @@ export async function requestKnowledgeCapture(
         ? 'I could not save a runbook. An active, linked workspace member must request it.'
         : !queue
           ? 'Knowledge capture is not configured. No runbook was saved. Ask the platform administrator to enable it.'
-          : 'Runbook capture requested. I will save reusable guidance in this workspace and post the document here. Without a verified fix, it will be a diagnostic guide, not a proven remediation. No repository will be changed.',
+          : !confirmed
+            ? 'There is no current capture offer for you to confirm. Nothing was saved. Ask explicitly to save a diagnostic guide if you want one.'
+            : 'Runbook capture requested. I will save reusable guidance in this workspace and post the document here. Without a verified fix, it will be a diagnostic guide, not a proven remediation. No repository will be changed.',
       originMessageId: `knowledge-request:${request.id}`,
     });
     return { jobId, message };

@@ -31,6 +31,8 @@ describe('github connector — shape', () => {
       'list_workflow_runs',
       'get_workflow_run_jobs',
       'get_job_logs',
+      'search_issues',
+      'get_issue',
     ]);
   });
 

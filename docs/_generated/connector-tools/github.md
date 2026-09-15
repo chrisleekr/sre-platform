@@ -16,3 +16,5 @@
 | `list_workflow_runs` | List recent GitHub Actions workflow runs for a repo (newest first). Filter by branch, event, status (e.g. completed/failure/in_progress), and actor. The core deploy-correlation tool. |
 | `get_workflow_run_jobs` | List the jobs of a workflow run, each with its status, conclusion, and failing-step names. |
 | `get_job_logs` | Fetch a workflow job log. Returns bounded plain text (last ~64K characters). Logs may contain secrets not masked by GitHub — treat as sensitive. |
+| `search_issues` | Read up to 50 recent repository issues. GitHub query filtering covers this bounded recent page, not all history. Use get_issue for an exact number. This never writes. |
+| `get_issue` | Read one exact issue number within an admitted repository. This never writes. |

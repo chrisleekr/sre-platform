@@ -1,4 +1,5 @@
 import { scrubSecrets } from '@sre/agent-tools';
+import { meaningfulIncidentTitle, openingIncidentTitle } from '@sre/contracts';
 import type { MentionCandidate } from '@sre/connectors';
 import type { ZodType } from 'zod';
 import {
@@ -128,7 +129,9 @@ export class MentionHandler {
     let priorThread = '';
     try {
       const messages = await threadReader.readThread(tenantId, channel, rootTs);
-      const earlier = messages.filter((message) => message.ts !== ts);
+      const earlier = messages.filter(
+        (message) => /^\d+\.\d+$/.test(message.ts) && Number(message.ts) < Number(ts),
+      );
       priorThread = renderThread(earlier);
       transcript = renderThread([...earlier, { user: candidate.user, text, ts }]);
     } catch {
@@ -141,7 +144,7 @@ export class MentionHandler {
       decision: 'new_incident',
       service: serviceForChannel(channel),
       severity: DEGRADED_SEVERITY,
-      title: scrubSecrets(text),
+      title: openingIncidentTitle(scrubSecrets(text), scrubSecrets(priorThread)).displayTitle,
       purpose: 'incident',
     };
     let verdict: MentionVerdict;
@@ -211,7 +214,7 @@ export class MentionHandler {
       {
         service: publicModelText(verdict.service),
         severity: verdict.severity,
-        title: publicModelText(verdict.title),
+        title: meaningfulIncidentTitle(publicModelText(verdict.title)) ?? fallback.title,
         purpose: verdict.purpose,
       },
       { currentMessage: scrubSecrets(text), priorThread: scrubSecrets(priorThread) },

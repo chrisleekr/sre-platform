@@ -9,6 +9,11 @@
  * @param connectorId - Connector instance targeted by the operation.
  */
 export const connectorCredentialKey = (connectorId: string): string => `connector:${connectorId}`;
+/** Separate credential for confirmed GitLab issue writes.
+ * @param connectorId - Tenant-owned data source.
+ */
+export const connectorIssueCredentialKey = (connectorId: string): string =>
+  `connector:${connectorId}:issues`;
 /**
  * Separate credential namespace for administrator-authorized GitLab hook management.
  * @param connectorId - Connector whose own hooks may be managed.

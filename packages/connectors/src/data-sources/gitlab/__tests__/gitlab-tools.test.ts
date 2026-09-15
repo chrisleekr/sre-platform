@@ -20,7 +20,7 @@ function toolByName(c: IDataSourceConnector, name: string) {
 }
 
 describe('makeGitLabTools', () => {
-  it('exposes seven tools', () => {
+  it('exposes read-only investigation and issue tools', () => {
     const c = makeGitLabConnector(
       cfg({ settings: { projectId: 42 } }),
       fakeToolFetch(() => jsonRes(200, [])),
@@ -29,6 +29,8 @@ describe('makeGitLabTools', () => {
     expect(new Set(c.tools().map((t) => t.name))).toEqual(
       new Set([
         'api_get',
+        'search_issues',
+        'get_issue',
         'get_job_trace',
         'get_pipeline_jobs',
         'list_commits',

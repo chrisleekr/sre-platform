@@ -266,3 +266,37 @@ the one trusted at publish. The judge scores that assessment's summary and top h
 the published contributing causes. After publishing you can record your own verdict, correct,
 partial or incorrect, and the model judge's verdict appears beside it once it lands. Your verdict is
 the one the Reliability workspace reports; the judge's is kept so the judge itself can be scored.
+
+An unsupported request to write a repository document may offer platform
+knowledge capture instead. Only the requesting member can confirm that saved offer with **Yes**,
+within 15 minutes. **No** cancels it; other input supersedes it. Old assistant prose is not consent.
+Explicit requests to save a platform guide still run directly, without this extra confirmation.
+
+## Repository issues
+
+Open **Issues** on an incident to read, create, edit, close or reopen GitHub and GitLab issues.
+Choose a connection and repository, then load recent issues or enter an exact issue number.
+Lists contain at most 50 recent results. Permanent deletion is not supported.
+Descriptions are limited to 20,000 characters; manage longer issues in the provider directly.
+
+Changes require an administrator to enable issue management for specific repositories in the
+connection. Prepare the fields, choose **Review changes**, inspect the saved preview, then choose
+**Publish issue** or **Save changes**. Only the requesting active workspace member can confirm it.
+Check the saved connection and destination URL, especially when instances share repository paths.
+**Discard draft** makes no external change. Previews expire after 15 minutes.
+
+You can also ask in the conversation, for example, “Create a GitLab issue in team/service with
+the diagnostic findings.” Include the connection and full repository path; include the issue
+number for an update. The platform prepares a preview, not a write. Confirm using the exact
+`Confirm issue <draft ID>` command shown in its reply, or use the Issues panel. Bare “Yes” is not
+issue authorization. Newer conversation input blocks a queued confirmation.
+
+The platform rechecks membership, connection permissions and the issue's saved snapshot before
+dispatch. A changed issue needs a new preview. This check cannot prevent another editor changing
+the issue between the read and the provider's write. GitLab also checks the live project identity
+and path before writing; a concurrent transfer after that check remains a provider-side race.
+Only requested fields are sent.
+
+Each preview allows one dispatch attempt. If the outcome is **unknown**, inspect the issue in its
+provider and refresh status before preparing another change. The platform never automatically
+retries an uncertain write or a rate-limited request. Results stay in the incident conversation.

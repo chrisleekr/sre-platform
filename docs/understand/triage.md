@@ -124,8 +124,8 @@ status.
 Replies are handled one at a time per incident, so several people replying at once are answered in
 order rather than talking over each other.
 
-**Approving a recommendation does not execute it.** The platform never runs the command, never holds
-a write credential, and never changes your infrastructure. Approval records a human decision; a human
+**Approving a recommendation does not execute it.** The platform never runs the command or changes
+your infrastructure. Approval records a human decision; a human
 carries it out. The proposal and the decision are both kept as an audit trail.
 
 You can also attach a screenshot. The platform reads it, uses it as context for that turn, and
@@ -237,7 +237,8 @@ Investigations you start yourself, and replies you send, are manual. They bypass
 
 ## What it will not do
 
-- Run a command, change your infrastructure, or hold a write credential.
+- Run a command or change your infrastructure. Repository issue changes require a separate opt-in
+  and confirmation, not approval of an investigation recommendation.
 - Fall back to a second model provider.
 - Name a person as the cause of an incident.
 - Change an incident's status because of something said in conversation.

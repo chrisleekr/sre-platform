@@ -153,9 +153,12 @@ describe('GET /incidents', () => {
 
     const list = await __fixture.api.request('/incidents?state=open', auth);
     const listed = (
-      (await list.json()) as { incidents: Array<{ id: string; title: string }> }
+      (await list.json()) as {
+        incidents: Array<{ id: string; title: string; displayTitle: string }>;
+      }
     ).incidents.find((item) => item.id === incident.id);
     expect(listed?.title).toBe(publicTitle);
+    expect(listed?.displayTitle).toBe(publicTitle);
 
     const detail = await __fixture.api.request(`/incidents/${incident.id}`, auth);
     const detailBody = (await detail.json()) as {

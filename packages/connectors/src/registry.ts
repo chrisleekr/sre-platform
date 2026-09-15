@@ -1,4 +1,5 @@
 import type { TopologyReader } from '@sre/contracts';
+import type { IssueManager } from './issues';
 import type {
   ConnectorCapabilities,
   ConnectorPollEvidence,
@@ -24,6 +25,8 @@ export interface ConnectorConfig<TType extends ConnectorType = ConnectorType> {
   settings: Record<string, unknown>;
   /** Lazily resolves the connector's credential (wired to the SecretStore by the caller). */
   getCredential: () => Promise<string>;
+  /** Separate GitLab issue-write credential, never supplied to investigation read tools. */
+  getIssueCredential?: () => Promise<string>;
   /** Whether the captured connector credential can be used by this runtime generation. */
   credentialStatus?: 'available' | 'unavailable' | 'not_required';
   /** Tenant-scoped repository catalog access, supplied only to source-control connectors. */
@@ -79,6 +82,7 @@ export interface ConnectorMetadata<TType extends ConnectorType = ConnectorType> 
 
 /** Provider code supplies only the ports it supports. The constructor fills compatibility defaults. */
 export interface ConnectorImplementation {
+  issues?: IssueManager;
   snapshot?: () => Promise<NormalizedSnapshot[]>;
   pollEvidence?: () => ConnectorPollEvidence | undefined;
   fetchTriageContext?: (query: {
@@ -163,6 +167,7 @@ export function createDataSourceConnector<TType extends ConnectorType>(
         throw new Error(`${metadata.type} connector does not support triage context`);
       }),
     sourceCode: implementation.sourceCode,
+    issues: implementation.issues,
     runtimeArtifacts: implementation.runtimeArtifacts,
     topology: config.credentialStatus === 'unavailable' ? undefined : implementation.topology,
     sli: implementation.sli,

@@ -32,6 +32,9 @@ import {
 } from './client';
 import { ghGet, makeGitHubSourceCodeReader } from './source-code';
 import { makeGitHubTools, mapCommit, mapRun } from './tools';
+import { makeGitHubIssues } from './issues';
+import { issueManagement } from '../../issues';
+import { issueReadTools } from '../../issue-read-tools';
 
 const GITHUB_CONNECTOR = {
   type: 'github',
@@ -62,6 +65,7 @@ export function makeGitHubConnector(
   const auth = makeInstallationTokenProvider(config, fetchImpl, GITHUB_API);
   let lastPollEvidence: ConnectorPollEvidence | undefined;
   return createDataSourceConnector(config, GITHUB_CONNECTOR, {
+    issues: makeGitHubIssues(config, fetchImpl),
     entityCoverage: repositoryEntityCoverage(config.repositories),
     sourceCode: makeGitHubSourceCodeReader(config, fetchImpl, auth),
     topology: repositoryTopology(config, () => {
@@ -296,7 +300,10 @@ export function makeGitHubConnector(
         },
       };
     },
-    tools: () => makeGitHubTools(config, fetchImpl, auth, lookup),
+    tools: () => [
+      ...makeGitHubTools(config, fetchImpl, auth, lookup),
+      ...issueReadTools(makeGitHubIssues(config, fetchImpl)),
+    ],
     async probe(): Promise<ProbeResult> {
       const startedAt = Date.now();
       const warnings: string[] = [];
@@ -392,6 +399,9 @@ export function makeGitHubConnector(
       }
       const granted = minted.grantedPermissions;
       checks.readOnlyApp = minted.writePermissions.length === 0;
+      checks.allowedPermissions = minted.writePermissions.every(
+        (name) => name === 'issues' && issueManagement(config.settings).enabled,
+      );
       checks.canReadContents = granted.contents === 'read' || granted.contents === 'write';
       checks.canReadPullRequests =
         granted.pull_requests === 'read' || granted.pull_requests === 'write';
@@ -409,7 +419,7 @@ export function makeGitHubConnector(
       if (!checks.canReadActions) warnings.push('optional Actions read permission is missing');
       if (!checks.canReadDeployments)
         warnings.push('optional Deployments read permission is missing');
-      if (!checks.readOnlyApp)
+      if (!checks.allowedPermissions)
         warnings.push(
           `GitHub App has write permissions that SRE Platform does not require: ${minted.writePermissions.join(', ')}`,
         );
@@ -418,7 +428,7 @@ export function makeGitHubConnector(
         checks.hasRepositories &&
         checks.canReadContents &&
         checks.webhookSecretConfigured &&
-        checks.readOnlyApp;
+        checks.allowedPermissions;
       return {
         status: enabled ? 'healthy' : 'unhealthy',
         reachable: true,

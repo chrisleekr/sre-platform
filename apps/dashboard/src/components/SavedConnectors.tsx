@@ -229,7 +229,15 @@ export function SavedConnectors({
                       <div className="min-w-0">
                         <dt className="font-medium text-ink-secondary">Investigation access</dt>
                         <dd>On-demand, read-only tools</dd>
-                        <dd>No background polling</dd>
+                        <dd>
+                          {c.capabilities?.topology === 'inventory' ? (
+                            <a href="/w/topology" className="text-info underline">
+                              Scheduled topology discovery, review coverage
+                            </a>
+                          ) : (
+                            'No background snapshot polling'
+                          )}
+                        </dd>
                       </div>
                     )}
                   </dl>
