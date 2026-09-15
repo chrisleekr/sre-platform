@@ -1,3 +1,4 @@
+import { seedMembership } from '@sre/db/test-support';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
@@ -8,6 +9,7 @@ import {
   services,
   serviceRuntimeBindings,
   tenants,
+  users,
   upsertDeployments,
   type DbHandle,
 } from '@sre/db';
@@ -22,6 +24,7 @@ import {
 let admin: DbHandle;
 let app: DbHandle;
 let tenantId: string;
+let ownerUserId: string;
 let foreignTenantId: string;
 let kubernetesId: string;
 let connectorId: string;
@@ -46,6 +49,12 @@ beforeAll(async () => {
     { id: tenantId, name: 'Observation resolvers' },
     { id: foreignTenantId, name: 'Foreign observations' },
   ]);
+  ownerUserId = await seedMembership(
+    admin.db,
+    { issuer: 'https://observation.test', subject: randomUUID() },
+    tenantId,
+    'owner',
+  );
   const configs = await admin.db
     .insert(connectorConfigs)
     .values([
@@ -122,7 +131,7 @@ beforeAll(async () => {
     connectorId: kubernetesId,
     namespace: 'argocd',
     environment: 'test',
-    confirmedByUserId: randomUUID(),
+    confirmedByUserId: ownerUserId,
     rationale: 'Confirmed fixture runtime',
   });
 }, 30_000);
@@ -138,6 +147,7 @@ afterAll(async () => {
       .delete(connectorConfigs)
       .where(sql`tenant_id in (${tenantId}, ${foreignTenantId})`);
     await admin.db.delete(tenants).where(sql`id in (${tenantId}, ${foreignTenantId})`);
+    if (ownerUserId) await admin.db.delete(users).where(sql`id = ${ownerUserId}`);
     await admin.close();
   }
   if (app) await app.close();

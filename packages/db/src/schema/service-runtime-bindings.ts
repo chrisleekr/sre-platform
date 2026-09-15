@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { check, foreignKey, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
-import { tenants } from './control-plane';
+import { memberships, tenants } from './control-plane';
 import { connectorConfigs } from './connectors';
 import { services } from './topology';
 import { tenantIsolation } from './rls';
@@ -42,6 +42,11 @@ export const serviceRuntimeBindings = pgTable(
       foreignColumns: [connectorConfigs.tenantId, connectorConfigs.id],
       name: 'runtime_binding_connector_fk',
     }).onDelete('cascade'),
+    foreignKey({
+      columns: [t.confirmedByUserId, t.tenantId],
+      foreignColumns: [memberships.userId, memberships.tenantId],
+      name: 'runtime_binding_membership_fk',
+    }),
     check(
       'runtime_binding_nonempty',
       sql`btrim(namespace) <> '' and btrim(environment) <> '' and btrim(rationale) <> ''`,

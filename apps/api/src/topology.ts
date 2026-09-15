@@ -149,7 +149,14 @@ export function topologyRoutes(deps: TopologyRoutesDeps): Hono<{ Variables: Tena
     const at = c.req.query('at');
     if (at && (!Number.isFinite(Date.parse(at)) || Date.parse(at) > Date.now()))
       return c.json({ error: 'Select a valid past time for declaration history.' }, 400);
-    if (at) return c.json(await readTopologyDeclarationSnapshot(deps.db, tenantId, at));
+    if (at)
+      return c.json(
+        await readTopologyDeclarationSnapshot(
+          deps.db,
+          tenantId,
+          new Date(Date.parse(at)).toISOString(),
+        ),
+      );
     const [
       svcs,
       dependencies,
@@ -196,7 +203,7 @@ export function topologyRoutes(deps: TopologyRoutesDeps): Hono<{ Variables: Tena
     const infrastructure = collections.flatMap(({ dataSource, snapshots }) =>
       snapshots
         .filter((snapshot) => snapshot.metadata.kind !== 'collection')
-        .map((snapshot) => toInfraSnapshot(snapshot, dataSource)),
+        .flatMap((snapshot) => toInfraSnapshot(snapshot, dataSource) ?? []),
     );
     const incidentServices = new Set(incidentMappings.flatMap((mapping) => mapping.services));
     const kubernetesServices = new Set(runtimeBindings.map((binding) => binding.serviceName));
@@ -439,16 +446,21 @@ export function topologyRoutes(deps: TopologyRoutesDeps): Hono<{ Variables: Tena
       !('protocol' in body) &&
       !('rationale' in body)
     ) {
-      return c.json({ error: 'provide at least one of syncType, circuitBreaker, protocol' }, 400);
+      return c.json(
+        { error: 'provide at least one of syncType, circuitBreaker, protocol, rationale' },
+        400,
+      );
     }
     const patch = {
       ...('syncType' in body ? { syncType: body.syncType } : {}),
       ...('circuitBreaker' in body ? { circuitBreaker: body.circuitBreaker } : {}),
       ...('protocol' in body ? { protocol: body.protocol } : {}),
       ...('rationale' in body
-        ? { rationale: body.rationale ? scrubSecrets(body.rationale) : null }
+        ? {
+            rationale: body.rationale ? scrubSecrets(body.rationale) : null,
+            confirmedByUserId: body.rationale?.trim() ? c.get('tenant').userId : null,
+          }
         : {}),
-      confirmedByUserId: body.rationale?.trim() ? c.get('tenant').userId : null,
     };
     const dependency = await updateDependency(
       deps.db,
@@ -470,13 +482,14 @@ export function topologyRoutes(deps: TopologyRoutesDeps): Hono<{ Variables: Tena
     if (!body.upstream || !body.downstream) {
       return c.json({ error: 'upstream and downstream are required' }, 400);
     }
-    await removeDependency(
+    const removed = await removeDependency(
       deps.db,
       tenantId,
       body.upstream,
       body.downstream,
       body.environment?.trim() ?? '',
     );
+    if (!removed) return c.json({ error: 'dependency not found' }, 404);
     return c.json({ ok: true });
   });
 

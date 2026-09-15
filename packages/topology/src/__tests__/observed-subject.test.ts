@@ -122,3 +122,52 @@ test('stale, conflicting, inferred, wrong-source and wrong-namespace evidence ca
   discovery.entities.find((item) => item.key === topologyRefKey(pod.ref))!.stale = true;
   expect(observedTopologySubject(candidate, discovery, operational).status).toBe('needs_evidence');
 });
+
+test.each(['stale', 'conflicted'] as const)(
+  'no eligible %s operational subject needs more evidence',
+  (excluded) => {
+    const discovery = graph();
+    const projected = discoveredOperationalTopology(discovery);
+    const operational = {
+      ...projected,
+      subjects: projected.subjects.map((subject) => ({
+        ...subject,
+        ...(excluded === 'stale' ? { stale: true } : { identityConflict: true }),
+      })),
+    };
+    expect(observedTopologySubject(candidate, discovery, operational)).toEqual({
+      candidateKey: candidate.key,
+      status: 'needs_evidence',
+      candidateSubjectKeys: [],
+    });
+  },
+);
+
+test.each(['retired', 'expired', 'future', 'invalid', 'fresh'] as const)(
+  'a %s scoped source cannot borrow freshness from another connector',
+  (state) => {
+    const discovery = graph();
+    const operational = discoveredOperationalTopology(discovery);
+    for (const resource of discovery.entities) {
+      const original = resource.sources[0]!;
+      resource.sources = [
+        { ...original, connectorId: 'other' },
+        {
+          ...original,
+          retired: state === 'retired',
+          observedAt:
+            state === 'expired'
+              ? new Date(Date.now() - 700_000).toISOString()
+              : state === 'future'
+                ? new Date(Date.now() + 60_000).toISOString()
+                : state === 'invalid'
+                  ? 'invalid'
+                  : original.observedAt,
+        },
+      ];
+    }
+    expect(observedTopologySubject(candidate, discovery, operational).status).toBe(
+      state === 'fresh' ? 'resolved' : 'needs_evidence',
+    );
+  },
+);

@@ -30,7 +30,7 @@ export async function resolveSourceRepository(
     fullName: entry.fullName,
     defaultBranch: entry.defaultBranch,
     webUrl: entry.htmlUrl,
-    pathPrefix: entry.path ?? null,
+    pathPrefix: entry.path?.replace(/^\/+|\/+$/g, '') || null,
     mappingSource: 'topology_identity',
     role: entry.role ?? 'application_source',
     resolution: 'discovered_mapping',

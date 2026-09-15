@@ -1,3 +1,4 @@
+import { TopologyCoverage } from '../TopologyCoverage';
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -106,9 +107,23 @@ test('saved selectors remain editable when current pod inventory is missing; rem
     replaceExisting: true,
     environment: 'staging',
   });
+  await screen.findByText('Runtime mapping saved.');
+  expect((screen.getByLabelText('Service name') as HTMLInputElement).value).toBe('');
+  expect((screen.getByLabelText('Connection and namespace') as HTMLSelectElement).disabled).toBe(
+    false,
+  );
+  change('Service name', 'another-service');
+  change('Connection and namespace', JSON.stringify(['cluster', 'apps']));
+  change('Pods to associate', JSON.stringify(['app', 'web']));
+  change('Environment', 'production');
+  change('Why these resources belong to this service', 'New explicit confirmation');
+  fireEvent.click(screen.getByRole('button', { name: 'Register service and map runtime' }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  expect(JSON.parse(fetchMock.mock.calls[1]![1].body).replaceExisting).toBe(false);
+  await screen.findByText('Runtime mapping saved.');
   fireEvent.click(screen.getByRole('button', { name: 'Remove mapping' }));
   fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-  expect(fetchMock).toHaveBeenCalledOnce();
+  expect(fetchMock).toHaveBeenCalledTimes(2);
 });
 
 test('incident linking requires an explicit service and rationale, and offers provider restoration', async () => {
@@ -189,3 +204,30 @@ test('reliability shows the supporting query, stale evaluation and failure rathe
   expect(screen.getByText(/Evaluation is stale/)).toBeDefined();
   expect(screen.getByText('Evaluation failed: Connection unavailable')).toBeDefined();
 });
+
+test.each(['partial', 'unknown', 'unavailable', 'complete'] as const)(
+  'stale inventory retains its %s collection state',
+  (state) => {
+    render(
+      <TopologyCoverage
+        sources={[
+          {
+            dataSourceId: 'cluster',
+            dataSourceName: 'Cluster',
+            state,
+            observedAt: new Date(Date.now() - 3600_000).toISOString(),
+            lastSucceededAt: null,
+          },
+        ]}
+      />,
+    );
+    const label = {
+      partial: 'Partial inventory',
+      unknown: 'Collection completeness unknown',
+      unavailable: 'Current inventory unavailable',
+      complete: 'Complete pod inventory',
+    }[state];
+    expect(screen.getByText(new RegExp(label)).textContent).toContain('Inventory is stale');
+    expect(screen.getByText(/1 of 1 sources need attention/)).toBeTruthy();
+  },
+);

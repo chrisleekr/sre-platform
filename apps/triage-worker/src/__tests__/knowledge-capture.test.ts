@@ -180,7 +180,7 @@ test.each([
   'other incident',
   'unlinked',
 ] as const)('does not capture a %s offer confirmation', async (scenario) => {
-  const { incident, job, worker } = await setup(true, true);
+  const { incident, job, worker, resume } = await setup(true, true);
   await worker.handle(job, { signal: new AbortController().signal });
   const [offer] = await withTenant(fixture.app.db, fixture.tenantId, (tx) =>
     tx
@@ -235,6 +235,7 @@ test.each([
           })
         ).id
       : incident.id;
+  resume.mockClear();
   const confirmation = await fixture.hub.append(fixture.tenantId, target, {
     author: 'human',
     authorUserId: actor,
@@ -245,6 +246,8 @@ test.each([
     { ...job, id: randomUUID(), payload: { incidentId: target, humanMessageId: confirmation.id } },
     { signal: new AbortController().signal },
   );
+  expect(resume).toHaveBeenCalledTimes(1);
+  expect(resume.mock.calls[0]![0].humanMessage).toContain('Yes');
   expect(
     await fixture.admin.db
       .select()

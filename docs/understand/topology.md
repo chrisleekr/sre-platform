@@ -80,8 +80,8 @@ an inventory limit without dropping facts does not. Retention keeps whole facts,
 sightings. Authentication, TLS verification and destination restrictions still apply.
 
 Paginated sources retain progress by tenant and connection generation. Continuations read only
-collections whose cursor advanced without a read failure; they do not restart completed collections.
-Independent healthy collections can continue after an optional read fails. Rate limits pause
+available collections whose cursor advanced; they do not restart completed collections.
+Partial child-read failures retain coverage gaps without blocking progress. Rate limits pause
 immediate continuation. The next periodic pass includes every collection again; Argo CD keeps a
 cursor for each configured project.
 

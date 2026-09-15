@@ -74,7 +74,7 @@ test('excludes monitoring, stale and inferred links from service-call exposure',
     }),
   ]);
   expect(result.dependents.direct).toEqual([]);
-  expect(result.note).toContain('2 stale, inferred or ambiguous');
+  expect(result.note).toContain('2 stale, inferred, ambiguous or non-service');
   expect(discoveredBlastRadius(graph, api, none).suspects).toEqual([
     expect.objectContaining({ subjectKey: queue.key, syncType: 'unknown' }),
   ]);
@@ -164,7 +164,7 @@ test('a catalog declaration cannot bridge an ambiguous same-name identity', () =
     ],
   });
   expect(Object.values(result.dependents).flat()).toEqual([]);
-  expect(result.note).toContain('1 stale, inferred or ambiguous');
+  expect(result.note).toContain('1 stale, inferred, ambiguous or non-service');
 });
 
 test('bounds cyclic traversal and reports only genuinely missing paths at the depth boundary', () => {
@@ -180,4 +180,52 @@ test('bounds cyclic traversal and reports only genuinely missing paths at the de
       .truncated,
   ).toBe(false);
   expect(discoveredBlastRadius(graph, c, none, 10).dependents.unclassified).toHaveLength(2);
+});
+
+test.each([false, true])(
+  'discovered catalog services retain metadata with declared edges: %s',
+  (withDeclaration) => {
+    const api = service('api'),
+      database = service('database');
+    const graph = { subjects: [api, database], relations: [call(api, database)] };
+    const declared = {
+      services: [
+        { name: 'api', team: 'payments', criticality: 'tier1' },
+        { name: 'database', team: 'storage', criticality: 'tier0' },
+      ],
+      edges: withDeclaration
+        ? [
+            {
+              id: 'edge',
+              upstream: 'api',
+              downstream: 'database',
+              environment: 'production',
+              syncType: 'sync',
+              circuitBreaker: false,
+            },
+          ]
+        : [],
+    };
+    const result = discoveredBlastRadius(graph, database, declared);
+    expect(Object.values(result.dependents).flat()).toEqual([
+      expect.objectContaining({ subjectKey: api.key, team: 'payments', criticality: 'tier1' }),
+    ]);
+    expect(discoveredBlastRadius(graph, api, declared).suspects).toEqual([
+      expect.objectContaining({ subjectKey: database.key, criticality: 'tier0' }),
+    ]);
+  },
+);
+
+test('the omission note includes fresh calls to non-service subjects', () => {
+  const api = service('api');
+  const endpoint = { ...service('endpoint'), kind: 'endpoint' as const };
+  const result = discoveredBlastRadius(
+    { subjects: [api, endpoint], relations: [call(api, endpoint)] },
+    api,
+    none,
+  );
+  expect(result.suspects).toEqual([]);
+  expect(result.note).toContain(
+    '1 stale, inferred, ambiguous or non-service dependency relationships were excluded',
+  );
 });

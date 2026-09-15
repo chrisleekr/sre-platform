@@ -41,6 +41,8 @@ export function makeGitLabIssues(
       throw new IssueRequestError(
         'GitLab quick actions are not supported in issue descriptions. Remove or escape slash-leading lines and prepare a new draft.',
       );
+    if (changes.labels?.some((label) => label.includes(',')))
+      throw new IssueRequestError('GitLab issue labels cannot contain commas.');
     if (
       changes.assignees?.some((id) => !/^[1-9]\d*$/.test(id) || !Number.isSafeInteger(Number(id)))
     )
@@ -145,7 +147,14 @@ export function makeGitLabIssues(
       );
       if (!Array.isArray(result))
         throw new IssueRequestError('GitLab returned an invalid issue list.');
-      return result.slice(0, 50).map((raw) => map(raw, target.web, target.repository.fullName));
+      return result.slice(0, 50).flatMap((raw) => {
+        try {
+          return [map(raw, target.web, target.repository.fullName)];
+        } catch (error) {
+          if (error instanceof IssueRequestError) return [];
+          throw error;
+        }
+      });
     },
     async get(reference, number) {
       issueNumber.parse(number);

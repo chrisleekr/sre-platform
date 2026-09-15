@@ -164,7 +164,7 @@ export function NodeDetail({
                 ) : (
                   <ul>
                     {edges.map((edge) => (
-                      <li key={`${edge[endpoint]}/${edge.environment ?? ''}`}>
+                      <li key={JSON.stringify([edge[endpoint], edge.environment ?? ''])}>
                         <button
                           type="button"
                           className="sre-hit-target break-all text-info underline"

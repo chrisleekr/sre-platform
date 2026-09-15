@@ -291,6 +291,18 @@ export function GitLabConnectWizard({
     }
 
     if (!discovery) return;
+    if (issueManagement.enabled && !issueManagement.repositories.some((value) => value.trim())) {
+      setError('Select at least one repository for issue management.');
+      return;
+    }
+    if (
+      issueManagement.enabled &&
+      !issueCredential.trim() &&
+      !initialSettings?.issueManagement?.enabled
+    ) {
+      setError('Enter an issue-write access token before enabling issue management.');
+      return;
+    }
     setBusy(true);
     setSubmitted(true);
     setError('');

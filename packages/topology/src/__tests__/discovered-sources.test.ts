@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import { topologyRefKey, type TopologyEntity, type TopologyRelation } from '@sre/contracts';
 import { discoveredSourceEvidence } from '../discovered-sources';
+import { discoveredOperationalTopology } from '../operational';
 import { resolveDiscoveredTopology } from '../discovery';
 
 const entity = (
@@ -165,4 +166,17 @@ test('preserves multiple configuration components and requires exact subject sel
     'apps/shared',
   ]);
   expect(discoveredSourceEvidence(graph(), { name: 'not-a-subject' }).status).toBe('unavailable');
+});
+
+test('source evidence reuses the shared operational subjects', () => {
+  const discovery = graph();
+  const operational = discoveredOperationalTopology(discovery);
+  const result = discoveredSourceEvidence(
+    { ...discovery, operational },
+    { key: topologyRefKey(api.ref) },
+  );
+  expect(result.subject).toBe(
+    operational.subjects.find((subject) => subject.key === topologyRefKey(api.ref)),
+  );
+  expect(result.repositories).toHaveLength(2);
 });

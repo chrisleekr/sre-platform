@@ -1,5 +1,5 @@
 {
-  "id": "041457b6-d30a-44a4-b4cf-5267f5936d17",
+  "id": "e9a07631-5a7b-4777-bf1b-4caf43c71436",
   "prevId": "b6c4e0c5-1a5f-4070-943d-d2d18427c609",
   "version": "7",
   "dialect": "postgresql",
@@ -9314,224 +9314,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.knowledge_capture_proposals": {
-      "name": "knowledge_capture_proposals",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "tenant_id": {
-          "name": "tenant_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "incident_id": {
-          "name": "incident_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "requested_by": {
-          "name": "requested_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_message_id": {
-          "name": "source_message_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "offer_message_id": {
-          "name": "offer_message_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "fence_message_id": {
-          "name": "fence_message_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "consumed_message_id": {
-          "name": "consumed_message_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now() + interval '15 minutes'"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "knowledge_capture_proposals_pending_idx": {
-          "name": "knowledge_capture_proposals_pending_idx",
-          "columns": [
-            {
-              "expression": "tenant_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "incident_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "knowledge_capture_proposals_tenant_id_tenants_id_fk": {
-          "name": "knowledge_capture_proposals_tenant_id_tenants_id_fk",
-          "tableFrom": "knowledge_capture_proposals",
-          "tableTo": "tenants",
-          "columnsFrom": [
-            "tenant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "knowledge_capture_proposals_requested_by_users_id_fk": {
-          "name": "knowledge_capture_proposals_requested_by_users_id_fk",
-          "tableFrom": "knowledge_capture_proposals",
-          "tableTo": "users",
-          "columnsFrom": [
-            "requested_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "knowledge_capture_proposals_incident_fk": {
-          "name": "knowledge_capture_proposals_incident_fk",
-          "tableFrom": "knowledge_capture_proposals",
-          "tableTo": "incidents",
-          "columnsFrom": [
-            "tenant_id",
-            "incident_id"
-          ],
-          "columnsTo": [
-            "tenant_id",
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "knowledge_capture_proposals_source_fk": {
-          "name": "knowledge_capture_proposals_source_fk",
-          "tableFrom": "knowledge_capture_proposals",
-          "tableTo": "incident_messages",
-          "columnsFrom": [
-            "tenant_id",
-            "source_message_id"
-          ],
-          "columnsTo": [
-            "tenant_id",
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "knowledge_capture_proposals_offer_fk": {
-          "name": "knowledge_capture_proposals_offer_fk",
-          "tableFrom": "knowledge_capture_proposals",
-          "tableTo": "incident_messages",
-          "columnsFrom": [
-            "tenant_id",
-            "offer_message_id"
-          ],
-          "columnsTo": [
-            "tenant_id",
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "knowledge_capture_proposals_fence_fk": {
-          "name": "knowledge_capture_proposals_fence_fk",
-          "tableFrom": "knowledge_capture_proposals",
-          "tableTo": "incident_messages",
-          "columnsFrom": [
-            "tenant_id",
-            "fence_message_id"
-          ],
-          "columnsTo": [
-            "tenant_id",
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "knowledge_capture_proposals_source_uq": {
-          "name": "knowledge_capture_proposals_source_uq",
-          "nullsNotDistinct": false,
-          "columns": [
-            "tenant_id",
-            "source_message_id"
-          ]
-        }
-      },
-      "policies": {
-        "tenant_isolation": {
-          "name": "tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "public"
-          ],
-          "using": "tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid",
-          "withCheck": "tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid"
-        }
-      },
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.llm_invocations": {
       "name": "llm_invocations",
       "schema": "",
@@ -13866,6 +13648,21 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "runtime_binding_membership_fk": {
+          "name": "runtime_binding_membership_fk",
+          "tableFrom": "service_runtime_bindings",
+          "tableTo": "memberships",
+          "columnsFrom": [
+            "confirmed_by_user_id",
+            "tenant_id"
+          ],
+          "columnsTo": [
+            "user_id",
+            "tenant_id"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },

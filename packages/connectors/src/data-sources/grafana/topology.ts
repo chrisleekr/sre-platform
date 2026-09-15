@@ -7,6 +7,14 @@ import { obj, str } from '../../values';
 import { deduplicateTopology, topologyEndpoint } from '../../topology-projection';
 import { connect, gget, validateUid, type FetchLike, type GrafanaConnectorOptions } from './client';
 
+function readIssue(error: unknown): TopologyCollection['issue'] {
+  const status = (error as { status?: number } | null)?.status;
+  return (
+    topologyReadIssue(error) ??
+    (status === 401 || status === 403 ? 'permission_denied' : 'unreachable')
+  );
+}
+
 /** Read dashboard references to configured backends without proxying queries or claiming trace access.
  * @param config - Tenant-owned Grafana connection and credential scope.
  * @param fetchImpl - Existing guarded Grafana transport.
@@ -77,11 +85,7 @@ export function grafanaTopology(
           }
         } catch (error) {
           backends.completeness = 'unavailable';
-          backends.issue =
-            topologyReadIssue(error) ??
-            ((error as { status?: number } | null)?.status === 403
-              ? 'permission_denied'
-              : 'unreachable');
+          backends.issue = readIssue(error);
         }
         collections.push(
           finishTopologyPage(deduplicateTopology(backends), nextBackend, backendScan),
@@ -169,16 +173,12 @@ export function grafanaTopology(
               }
             } catch (error) {
               dashboards.completeness = 'partial';
-              dashboards.issue = topologyReadIssue(error) ?? 'unreachable';
+              dashboards.issue = readIssue(error);
             }
           }
         } catch (error) {
           dashboards.completeness = 'unavailable';
-          dashboards.issue =
-            topologyReadIssue(error) ??
-            ((error as { status?: number } | null)?.status === 403
-              ? 'permission_denied'
-              : 'unreachable');
+          dashboards.issue = readIssue(error);
         }
         collections.push(finishTopologyPage(deduplicateTopology(dashboards), nextPage, previous));
       }

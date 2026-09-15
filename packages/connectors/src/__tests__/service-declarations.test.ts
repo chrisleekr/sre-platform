@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest';
+import { topologyRelationKey } from '@sre/contracts';
 import { serviceDeclarations } from '../service-declarations';
 
 const repo = { authority: 'repository:git.example', kind: 'repository', id: 'team/app' };
@@ -76,4 +77,18 @@ test('does not follow locations, substitutions, or promote libraries to services
     entities: [],
     relations: [],
   });
+});
+
+test('normalizes repeated dependency references without duplicate relation identities', () => {
+  const result = serviceDeclarations(
+    repo,
+    'catalog-info.yaml',
+    revision,
+    descriptor('checkout', '  dependsOn: [component:commerce/db, db, db, COMPONENT:COMMERCE/DB]'),
+  );
+  expect(result.relations).toHaveLength(2);
+  expect(new Set(result.relations.map(topologyRelationKey)).size).toBe(result.relations.length);
+  expect(result.relations.filter((edge) => edge.kind === 'depends_on')).toEqual([
+    expect.objectContaining({ to: expect.objectContaining({ id: '["commerce","db"]' }) }),
+  ]);
 });

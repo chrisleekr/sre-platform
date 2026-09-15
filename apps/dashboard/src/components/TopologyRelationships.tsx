@@ -51,6 +51,11 @@ export function TopologyRelationships({
       setCircuitBreaker(edge.circuitBreaker);
       setProtocol(edge.protocol ?? '');
       setRationale(edge.rationale ?? '');
+    } else if (existing) {
+      setSyncType('sync');
+      setCircuitBreaker(false);
+      setProtocol('');
+      setRationale('');
     }
   };
   const fieldClass =

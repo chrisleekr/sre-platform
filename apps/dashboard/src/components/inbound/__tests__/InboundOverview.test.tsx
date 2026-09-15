@@ -8,6 +8,7 @@ import { InboundOverview } from '../InboundOverview';
 import { inboundOutcomePresentation } from '../outcome';
 
 const h = vi.hoisted(() => ({
+  role: 'admin' as string | undefined,
   surfaces: [] as SurfaceSummary[],
   error: false,
   channels: vi.fn(async (): Promise<SlackChannel[]> => []),
@@ -16,6 +17,7 @@ const h = vi.hoisted(() => ({
   refetch: vi.fn(),
   credentials: async () => ({ kind: 'bearer' as const, token: 'test' }),
 }));
+vi.mock('../../../lib/me-store', () => ({ useMe: () => ({ data: { tenant: { role: h.role } } }) }));
 vi.mock('../../../auth', () => ({ useSession: () => ({ getCredentials: h.credentials }) }));
 vi.mock('../../../lib/useSurfaces', () => ({
   useSurfaces: () => ({ surfaces: h.surfaces, loading: false, error: h.error, refetch: h.refetch }),
@@ -25,6 +27,7 @@ vi.mock('../../../lib/useSurfaces', () => ({
 }));
 let dialog: ReturnType<typeof installDialogMethods>;
 beforeEach(() => {
+  h.role = 'admin';
   dialog = installDialogMethods();
   h.surfaces = [
     { id: 'slack', surface: 'slack', hasAppToken: true, hasBotToken: true, botUserId: 'UBOT' },
@@ -139,4 +142,21 @@ test('search and status filters work without querying Slack again', async () => 
     within(screen.getByRole('region', { name: 'Channel subscriptions' })).getByText('#dev'),
   ).toBeDefined();
   expect(h.available).not.toHaveBeenCalled();
+});
+
+test('members can search subscriptions but cannot add or change them', async () => {
+  h.role = 'member';
+  h.channels.mockResolvedValue([{ channel: 'COPS', name: 'ops', enabled: true }]);
+  mount();
+  expect(await screen.findByRole('checkbox', { name: 'Subscribe #ops' })).toHaveProperty(
+    'disabled',
+    true,
+  );
+  expect(screen.getByRole('button', { name: 'Add channel' })).toHaveProperty('disabled', true);
+  fireEvent.change(screen.getByRole('searchbox', { name: 'Search subscriptions' }), {
+    target: { value: 'ops' },
+  });
+  expect(screen.getByText('#ops')).toBeDefined();
+  expect(screen.getByRole('link', { name: 'View Slack connection' })).toBeDefined();
+  expect(h.update).not.toHaveBeenCalled();
 });

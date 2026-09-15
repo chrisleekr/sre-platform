@@ -17,6 +17,7 @@ export function meaningfulIncidentTitle(value: string | null | undefined): strin
     .replace(/<![^>]+>/g, '')
     .replace(/<https?:\/\/[^>|]+\|([^>]+)>/g, '$1')
     .replace(/<[^>]*>/g, '')
+    .replace(/[<>]/g, '')
     .split('\n')
     .filter(
       (line) =>

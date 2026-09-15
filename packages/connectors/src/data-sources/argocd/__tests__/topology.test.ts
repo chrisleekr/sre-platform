@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { conn, fakeFetch, multiCfg } from './test-helpers';
 
 const application = {
@@ -24,7 +24,11 @@ test('multi-project continuation preserves the selected project cursor without r
     },
   }));
   const { impl, calls } = fakeFetch((url) => ({
-    json: url.includes('resource-tree') ? { nodes: [] } : { items: applications },
+    json: url.includes('resource-tree')
+      ? { nodes: [] }
+      : new URL(url).pathname.endsWith('/applications')
+        ? { items: applications }
+        : applications.find((app) => new URL(url).pathname.endsWith(`/${app.metadata.name}`)),
   }));
   const config = multiCfg();
   config.settings.projects = [
@@ -35,7 +39,8 @@ test('multi-project continuation preserves the selected project cursor without r
   const selected = ['payments/applications'];
   const first = (await source.discover({ collections: selected })).collections[0]!;
   expect(first.entities.filter((item) => item.kind === 'deployment')).toHaveLength(25);
-  const second = await source.discover({
+  applications.shift();
+  const second = await conn(impl, config).topology!.discover({
     collections: selected,
     scans: { 'payments/applications': first.scan! },
   });
@@ -47,6 +52,9 @@ test('multi-project continuation preserves the selected project cursor without r
   ).toEqual(['app-25']);
   expect(second.collections[0]!.completeness).toBe('complete');
   expect(calls.filter((call) => call.url.includes('resource-tree'))).toHaveLength(26);
+  expect(calls.filter((call) => new URL(call.url).pathname.endsWith('/applications'))).toHaveLength(
+    1,
+  );
   expect(calls.every((call) => call.authorization === 'Bearer payments-token')).toBe(true);
 });
 
@@ -56,7 +64,11 @@ test('application discovery continues beyond twenty-five managed applications wi
     metadata: { ...application.metadata, uid: String(i).padStart(4, '0'), name: `app-${i}` },
   }));
   const { impl, calls } = fakeFetch((url) => ({
-    json: url.includes('resource-tree') ? { nodes: [] } : { items: applications },
+    json: url.includes('resource-tree')
+      ? { nodes: [] }
+      : new URL(url).pathname.endsWith('/applications')
+        ? { items: applications }
+        : applications.find((app) => new URL(url).pathname.endsWith(`/${app.metadata.name}`)),
   }));
   const source = conn(impl, {
     settings: { applications: [{ project: 'payments', name: '*' }] },
@@ -160,3 +172,95 @@ test('named destinations are not guessed to be the cluster of a similarly named 
   expect(result.collections[0]?.relations.some((r) => r.kind === 'manages')).toBe(false);
   expect(calls).toHaveLength(1);
 });
+
+test('multi-project discovery preserves the bounded initial-list failure', async () => {
+  const impl = (async (_input: string | URL | Request) =>
+    new Response('', {
+      headers: { 'content-length': String(2 * 1024 * 1024 + 1) },
+    })) as typeof fetch;
+  const result = await conn(impl, multiCfg()).topology!.discover();
+  expect(result.collections.length).toBeGreaterThan(0);
+  expect(
+    result.collections.every(
+      (item) => item.issue === 'limit' && item.completeness === 'unavailable',
+    ),
+  ).toBe(true);
+});
+
+test('tree failure preserves partial coverage while the fixed application inventory advances', async () => {
+  const applications = Array.from({ length: 26 }, (_, i) => ({
+    ...application,
+    metadata: { ...application.metadata, uid: String(i).padStart(4, '0'), name: `app-${i}` },
+  }));
+  const { impl } = fakeFetch((url) => ({
+    status: url.includes('/app-0/resource-tree') ? 403 : 200,
+    json: url.includes('resource-tree')
+      ? { nodes: [] }
+      : new URL(url).pathname.endsWith('/applications')
+        ? { items: applications }
+        : applications.find((app) => new URL(url).pathname.endsWith(`/${app.metadata.name}`)),
+  }));
+  const config = { settings: { applications: [{ project: 'payments', name: '*' }] } };
+  const first = (await conn(impl, config).topology!.discover()).collections[0]!;
+  expect(first).toMatchObject({
+    completeness: 'partial',
+    issue: 'permission_denied',
+    scan: { cursor: '25', incomplete: true },
+  });
+  const second = (
+    await conn(impl, config).topology!.discover({ scans: { applications: first.scan! } })
+  ).collections[0]!;
+  expect(second.entities.some((item) => item.name === 'app-25')).toBe(true);
+  expect(second).toMatchObject({
+    completeness: 'partial',
+    scan: { cursor: null, incomplete: true },
+  });
+});
+
+test.each([false, true])(
+  'a deadline resumes unread applications with oversized response %s',
+  async (oversized) => {
+    vi.useFakeTimers();
+    try {
+      const applications = Array.from({ length: 4 }, (_, i) => ({
+        ...application,
+        metadata: { ...application.metadata, uid: `uid-${i}`, name: `app-${i}` },
+      }));
+      const inventory = applications.map((app) => ({
+        id: app.metadata.uid,
+        name: app.metadata.name,
+        namespace: app.metadata.namespace,
+      }));
+      const config = { settings: { applications: [{ project: 'payments', name: '*' }] } };
+      let delayed = true;
+      const impl = (async (input: string | URL | Request) => {
+        const path = new URL(String(input)).pathname;
+        if (path.endsWith('/app-0/resource-tree') && delayed) vi.setSystemTime(Date.now() + 46_000);
+        if (oversized && path.endsWith('/app-1'))
+          return new Response('', { headers: { 'content-length': String(2 * 1024 * 1024 + 1) } });
+        return Response.json(
+          path.includes('resource-tree')
+            ? { nodes: [] }
+            : applications.find((app) => path.endsWith(`/${app.metadata.name}`)),
+        );
+      }) as typeof fetch;
+      const first = (
+        await conn(impl, config).topology!.discover({
+          scans: { applications: { inventory, cursor: '0', incomplete: false } },
+        })
+      ).collections[0]!;
+      expect(first.scan).toMatchObject({ cursor: '1', incomplete: false });
+      expect(first.entities.some((item) => item.name === 'app-0')).toBe(true);
+      delayed = false;
+      const second = (
+        await conn(impl, config).topology!.discover({ scans: { applications: first.scan! } })
+      ).collections[0]!;
+      expect(second.scan).toMatchObject({ cursor: null, incomplete: oversized });
+      expect(
+        second.entities.filter((item) => item.kind === 'deployment').map((item) => item.name),
+      ).toEqual(oversized ? ['app-2', 'app-3'] : ['app-1', 'app-2', 'app-3']);
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);

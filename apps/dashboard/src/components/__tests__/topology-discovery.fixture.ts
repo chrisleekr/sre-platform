@@ -1,3 +1,4 @@
+import type { TopologyGraph } from '../../lib/topology';
 import type { TopologyDiscoveryGraph } from '../../lib/topology';
 import type { TopologyFactSource, TopologySubject } from '@sre/contracts';
 
@@ -126,3 +127,25 @@ export function discoveryFixture(): TopologyDiscoveryGraph {
     },
   };
 }
+
+export const catalogGraph: TopologyGraph = {
+  nodes: [
+    {
+      name: 'checkout',
+      team: null,
+      criticality: null,
+      lastDeployAt: null,
+      recentDeploys: [],
+    },
+    {
+      name: 'payments',
+      team: null,
+      criticality: null,
+      lastDeployAt: null,
+      recentDeploys: [],
+    },
+  ],
+  edges: [
+    { upstream: 'checkout', downstream: 'payments', syncType: 'sync', circuitBreaker: false },
+  ],
+};

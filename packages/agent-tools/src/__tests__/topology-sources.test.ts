@@ -164,7 +164,7 @@ test.each(['removed', 'rotated', 'catalog-removed', 'association-removed'])(
         .mockResolvedValue(null);
     if (change === 'association-removed')
       mocks.read
-        .mockResolvedValueOnce({ repositories: [source] })
+        .mockResolvedValueOnce({ status: 'partial', repositories: [source] })
         .mockResolvedValue({ repositories: [] });
     expect(await runTool(fixture.tool, fixture.ctx, input)).toMatchObject({
       available: true,
@@ -264,5 +264,47 @@ test.each(['scope', 'identity'])(
     });
     expect(fixture.read).toHaveBeenCalledOnce();
     expect(JSON.stringify(fixture.audit.records)).not.toContain('safe source');
+  },
+);
+
+test.each(['status', 'role', 'completeness'] as const)(
+  'rejects ineligible source %s before provider reads and after changes',
+  async (field) => {
+    const changed = {
+      status: field === 'status' ? 'unavailable' : 'partial',
+      subject: null,
+      note: '',
+      repositories: [
+        {
+          ...source,
+          role: field === 'role' ? 'unknown' : source.role,
+          sources: source.sources.map((item) => ({
+            ...item,
+            completeness: field === 'completeness' ? 'unavailable' : item.completeness,
+          })),
+        },
+      ],
+    };
+    const first = setup();
+    mocks.read.mockResolvedValue(changed);
+    expect(
+      await readTopologySourceFile(
+        { db: {} as Db, tenantId: 'tenant', resolveConnectors: first.ctx.resolveConnectors },
+        input,
+      ),
+    ).toMatchObject({ status: 'unavailable' });
+    expect(first.verifyRevision).not.toHaveBeenCalled();
+    expect(first.read).not.toHaveBeenCalled();
+    const second = setup();
+    mocks.read
+      .mockResolvedValueOnce({ status: 'partial', subject: null, repositories: [source], note: '' })
+      .mockResolvedValue(changed);
+    expect(
+      await readTopologySourceFile(
+        { db: {} as Db, tenantId: 'tenant', resolveConnectors: second.ctx.resolveConnectors },
+        input,
+      ),
+    ).toMatchObject({ status: 'unavailable' });
+    expect(second.read).toHaveBeenCalledTimes(1);
   },
 );

@@ -1,5 +1,10 @@
 import { expect, test } from 'vitest';
-import { topologyRefKey, type TopologyEntity, type TopologyRelation } from '@sre/contracts';
+import {
+  topologyRelationKey,
+  topologyRefKey,
+  type TopologyEntity,
+  type TopologyRelation,
+} from '@sre/contracts';
 import { resolveDiscoveredTopology } from '../discovery';
 import { discoveredOperationalTopology } from '../operational';
 import { discoveredBlastRadius } from '../discovered-impact';
@@ -230,7 +235,7 @@ test.each(['entity', 'relation'])(
       { services: [], edges: [] },
     );
     expect(impact.dependents.unclassified).toEqual([]);
-    expect(impact.note).toContain('1 stale, inferred or ambiguous');
+    expect(impact.note).toContain('1 stale, inferred, ambiguous or non-service');
   },
 );
 
@@ -245,4 +250,90 @@ test('a fresh name-only locator cannot refresh a stale UID-backed resource incar
   expect(graph.entities).toHaveLength(2);
   expect(graph.entities.find((e) => e.attributes.uid === 'uid')?.stale).toBe(true);
   expect(graph.conflicts).toHaveLength(1);
+});
+
+test.each([false, true])(
+  'traffic endpoints use the canonical alias identity in either collection order: %s',
+  (reverse) => {
+    const locator = { authority: 'inventory', kind: 'Pod', id: 'pod-locator' };
+    const pod: TopologyEntity = {
+      ref: { authority: 'cluster', kind: 'Pod', id: 'pod-uid' },
+      aliases: [locator],
+      kind: 'workload',
+      name: 'pod',
+      scope: { cluster: 'kubernetes-cluster:one', namespace: 'apps' },
+      attributes: { uid: 'pod-uid' },
+      network: { addresses: ['10.0.0.1'], ports: [8080] },
+    };
+    const alias = { ...pod, ref: locator, aliases: [] };
+    const target = entity('target');
+    const traffic: TopologyRelation = {
+      from: { authority: 'kubernetes-traffic:one', kind: 'pod_address', id: '["10.0.0.1"]' },
+      to: target.ref,
+      kind: 'calls',
+      evidence: 'observed',
+      description: 'Observed traffic',
+    };
+    const inventory = collection('canonical', [pod, target]);
+    const sampled = {
+      ...collection('sampled', [alias], [traffic]),
+      entities: [
+        { value: alias, observedAt: at, firstObservedAt: new Date(now - 1000).toISOString() },
+      ],
+    };
+    const graph = resolveDiscoveredTopology(
+      reverse ? [sampled, inventory] : [inventory, sampled],
+      now,
+    );
+    expect(graph.entities.map((e) => e.key)).not.toContain(topologyRefKey(locator));
+    expect(graph.relations[0]).toMatchObject({
+      fromKey: topologyRefKey(pod.ref),
+      toKey: topologyRefKey(target.ref),
+      stale: false,
+    });
+    expect(discoveredOperationalTopology(graph).relations).toEqual([
+      expect.objectContaining({
+        from: topologyRefKey(pod.ref),
+        to: topologyRefKey(target.ref),
+        kind: 'calls',
+      }),
+    ]);
+  },
+);
+
+test('relation identities use code-unit scope ordering independent of insertion order', () => {
+  const from = entity('from'),
+    to = entity('to');
+  const scopes = [
+    { componentid: 'one', 'component-id': 'two', Zone: 'three', zone: 'four' },
+    { zone: 'four', Zone: 'three', 'component-id': 'two', componentid: 'one' },
+  ];
+  const edges = scopes.map((scope) => ({
+    from: from.ref,
+    to: to.ref,
+    kind: 'calls' as const,
+    evidence: 'observed' as const,
+    description: '',
+    scope,
+  }));
+  const ordered = [
+    ['Zone', 'three'],
+    ['component-id', 'two'],
+    ['componentid', 'one'],
+    ['zone', 'four'],
+  ];
+  const expected = JSON.stringify([
+    topologyRefKey(from.ref),
+    'calls',
+    topologyRefKey(to.ref),
+    'observed',
+    ordered,
+  ]);
+  expect(edges.map(topologyRelationKey)).toEqual([expected, expected]);
+  const resolved = resolveDiscoveredTopology(
+    [collection('source', [from, to], edges)],
+    now,
+  ).relations;
+  expect(resolved).toHaveLength(1);
+  expect(JSON.parse(resolved[0]!.key).at(-1)).toEqual(ordered);
 });

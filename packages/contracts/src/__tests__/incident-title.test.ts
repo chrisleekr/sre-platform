@@ -47,3 +47,10 @@ test.each([
     expect(openingIncidentTitle('<@U123>', thread).displayTitle).toBe(expected);
   },
 );
+
+test.each(['<script<script>>Check latency', '<img src=x onerror=bad', 'Check < latency > now'])(
+  'does not retain markup delimiters in a title: %s',
+  (value) => {
+    expect(meaningfulIncidentTitle(value)).not.toMatch(/[<>]/);
+  },
+);

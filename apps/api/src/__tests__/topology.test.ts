@@ -158,7 +158,7 @@ describe('topology CRUD API', () => {
       ),
     ).toBe(false);
   });
-  test.each([null, [], { team: 7 }, { criticality: false }])(
+  test.each([[null], [[]], [{ team: 7 }], [{ criticality: false }]])(
     'rejects malformed service fields without a server error: %j',
     async (body) => {
       const response = await api.request('/topology/services/invalid-input', {
@@ -361,4 +361,123 @@ describe('topology CRUD API', () => {
     });
     expect(res.status).toBe(404);
   });
+});
+
+test('dependency mutations preserve exact scope and return 404 for missing or foreign edges', async () => {
+  const headers = bearer(await sign(orgA, ['admin']));
+  for (const name of ['scoped-caller', 'scoped-target']) {
+    expect(
+      (await api.request(`/topology/services/${name}`, { method: 'PUT', headers, body: '{}' }))
+        .status,
+    ).toBe(200);
+  }
+  const edge = { upstream: 'scoped-caller', downstream: 'scoped-target' };
+  const request = (method: string, body: object, auth = headers) =>
+    api.request('/topology/dependencies', { method, headers: auth, body: JSON.stringify(body) });
+  for (const environment of ['', 'production', 'staging']) {
+    const result = await request('PUT', { ...edge, environment });
+    expect(result.status).toBe(200);
+    expect(
+      ((await result.json()) as { dependency: { environment: string } }).dependency.environment,
+    ).toBe(environment);
+  }
+  const graph = await api.request('/topology/graph', { headers });
+  expect(graph.status).toBe(200);
+  const graphBody = (await graph.json()) as {
+    edges: Array<{ upstream: string; environment?: string }>;
+  };
+  expect(
+    graphBody.edges
+      .filter((row) => row.upstream === edge.upstream)
+      .map((row) => row.environment ?? '')
+      .sort(),
+  ).toEqual(['', 'production', 'staging']);
+  const updated = await request('PATCH', { ...edge, environment: 'production', syncType: 'async' });
+  expect(updated.status).toBe(200);
+  expect(
+    ((await updated.json()) as { dependency: { environment: string; syncType: string } })
+      .dependency,
+  ).toMatchObject({
+    environment: 'production',
+    syncType: 'async',
+  });
+  const foreign = bearer(await sign(orgB, ['admin']));
+  expect(
+    (await request('PATCH', { ...edge, environment: 'production', syncType: 'sync' }, foreign))
+      .status,
+  ).toBe(404);
+  expect((await request('DELETE', { ...edge, environment: 'production' }, foreign)).status).toBe(
+    404,
+  );
+  expect((await request('DELETE', { ...edge, environment: 'production' })).status).toBe(200);
+  expect((await request('DELETE', { ...edge, environment: 'production' })).status).toBe(404);
+  const remaining = await api.request('/topology/dependencies', { headers });
+  expect(
+    (
+      (await remaining.json()) as { dependencies: Array<{ upstream: string; environment: string }> }
+    ).dependencies
+      .filter((row: { upstream: string }) => row.upstream === edge.upstream)
+      .map((row: { environment: string }) => row.environment)
+      .sort(),
+  ).toEqual(['', 'staging']);
+  expect((await request('DELETE', edge)).status).toBe(200);
+  expect((await request('DELETE', edge)).status).toBe(404);
+});
+
+test.each(['PUT', 'PATCH', 'DELETE'])(
+  'dependency %s rejects non-string environment',
+  async (method) => {
+    const response = await api.request('/topology/dependencies', {
+      method,
+      headers: bearer(await sign(orgA, ['admin'])),
+      body: JSON.stringify({
+        upstream: 'caller',
+        downstream: 'target',
+        environment: 123,
+        syncType: 'sync',
+      }),
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: expect.stringContaining('environment') });
+  },
+);
+
+test('dependency PATCH preserves omitted confirmation and clears it only on an explicit empty rationale', async () => {
+  const headers = bearer(await sign(orgA, ['admin']));
+  for (const name of ['confirmed-caller', 'confirmed-target'])
+    await api.request(`/topology/services/${name}`, { method: 'PUT', headers, body: '{}' });
+  const edge = { upstream: 'confirmed-caller', downstream: 'confirmed-target' };
+  const request = (method: string, fields: object) =>
+    api.request('/topology/dependencies', {
+      method,
+      headers,
+      body: JSON.stringify({ ...edge, ...fields }),
+    });
+  const created = await request('PUT', { rationale: 'Verified configuration' });
+  expect(created.status).toBe(200);
+  const { dependency } = (await created.json()) as {
+    dependency: { confirmedByUserId: string; lastConfirmedAt: string };
+  };
+  expect(dependency.confirmedByUserId).toBeTruthy();
+  const updated = await request('PATCH', { syncType: 'async' });
+  expect(updated.status).toBe(200);
+  expect(await updated.json()).toMatchObject({
+    dependency: {
+      confirmedByUserId: dependency.confirmedByUserId,
+      lastConfirmedAt: dependency.lastConfirmedAt,
+      rationale: 'Verified configuration',
+      syncType: 'async',
+    },
+  });
+  const invalid = await request('PATCH', {});
+  expect(invalid.status).toBe(400);
+  expect(await invalid.json()).toEqual({
+    error: 'provide at least one of syncType, circuitBreaker, protocol, rationale',
+  });
+  const cleared = await request('PATCH', { rationale: null });
+  expect(cleared.status).toBe(200);
+  expect(await cleared.json()).toMatchObject({
+    dependency: { confirmedByUserId: null, lastConfirmedAt: null, rationale: null },
+  });
+  await request('DELETE', {});
 });

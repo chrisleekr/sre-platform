@@ -8,7 +8,12 @@ import {
   type StaffProviderInput,
   type StaffProviderResult,
 } from './identity-provider-staff-repo';
-import { grantPlatformOperator, insertAdminInvitation, upsertIdentity } from './identity-repo';
+import {
+  grantPlatformOperator,
+  insertAdminInvitation,
+  upsertIdentity,
+  InactiveIdentityError,
+} from './identity-repo';
 import { makePlatformSecretStore } from './platform-secret-store';
 import { identityProviders } from './schema';
 import { eq } from 'drizzle-orm';
@@ -22,6 +27,7 @@ export interface BootstrapInput {
 }
 
 export type BootstrapAdminReport =
+  | { kind: 'unusable'; subject: string; reason: 'inactive account' }
   | {
       kind: 'granted';
       subject: string;
@@ -326,11 +332,18 @@ async function applyBootstrap(
   const admins: BootstrapAdminReport[] = [];
   for (const admin of input.admins) {
     if ('subject' in admin) {
-      const userId = await upsertIdentity(db, {
-        issuer: provider.issuer,
-        subject: admin.subject,
-        ...(admin.email ? { email: admin.email } : {}),
-      });
+      let userId: string;
+      try {
+        userId = await upsertIdentity(db, {
+          issuer: provider.issuer,
+          subject: admin.subject,
+          ...(admin.email ? { email: admin.email } : {}),
+        });
+      } catch (error) {
+        if (!(error instanceof InactiveIdentityError)) throw error;
+        admins.push({ kind: 'unusable', subject: admin.subject, reason: 'inactive account' });
+        continue;
+      }
       const granted = await grantPlatformOperator(db, userId);
       admins.push({
         kind: 'granted',
@@ -406,9 +419,11 @@ export function formatBootstrapReport(report: BootstrapReport): string {
   ];
   for (const admin of report.admins) {
     lines.push(
-      admin.kind === 'granted'
-        ? `Platform administrator ${admin.subject} (${admin.userId}): ${admin.operator}`
-        : `Platform administrator ${admin.email}: invitation ${admin.invitation}`,
+      admin.kind === 'unusable'
+        ? `Platform administrator ${admin.subject}: unusable (${admin.reason})`
+        : admin.kind === 'granted'
+          ? `Platform administrator ${admin.subject} (${admin.userId}): ${admin.operator}`
+          : `Platform administrator ${admin.email}: invitation ${admin.invitation}`,
     );
   }
   return lines.join('\n');

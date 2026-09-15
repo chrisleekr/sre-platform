@@ -1,3 +1,4 @@
+import { useState } from 'react';
 // @vitest-environment jsdom
 import { afterEach, expect, test, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
@@ -117,4 +118,31 @@ test('expands a scope, inspects exact identities, and exposes the relationships 
   expect(screen.getByRole('heading', { name: 'Topology overview' })).toBeTruthy();
   fireEvent.click(await screen.findByRole('button', { name: 'Zoom in' }));
   fireEvent.click(screen.getByRole('button', { name: 'Fit all' }));
+});
+
+test('returning from a resource inspector restores the expanded group', async () => {
+  const graph = discoveryFixture();
+  function Explorer() {
+    const [selected, setSelected] = useState<string | null>(null);
+    return (
+      <DiscoveredTopologyMap
+        subjects={graph.operational.subjects}
+        relations={graph.operational.relations}
+        selected={selected}
+        onSelect={setSelected}
+        onClear={() => setSelected(null)}
+        inspector={
+          selected ? <button onClick={() => setSelected(null)}>Back to group</button> : undefined
+        }
+      />
+    );
+  }
+  render(<Explorer />);
+  fireEvent.click(
+    await screen.findByRole('button', { name: /Open group production.*cluster: cluster-one/ }),
+  );
+  const heading = screen.getByRole('heading', { name: /resource relationships/ }).textContent;
+  fireEvent.click(await screen.findByRole('button', { name: /Inspect checkout-api/ }));
+  fireEvent.click(screen.getByRole('button', { name: 'Back to group' }));
+  expect(screen.getByRole('heading', { name: /resource relationships/ }).textContent).toBe(heading);
 });

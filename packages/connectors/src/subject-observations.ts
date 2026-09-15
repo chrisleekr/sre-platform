@@ -321,7 +321,12 @@ export function normalizeDiscoveredRuntimeObservation(
     coverage: evidence.status,
     resources: evidence.observations.length,
     unhealthyResources: unhealthy.length,
-    summaries: unhealthy.slice(0, 20).map((observation) => text(observation.name, 200, scrub)),
+    summaries: strings(
+      unhealthy.map((observation) => observation.name),
+      20,
+      200,
+      scrub,
+    ),
   };
   const latest = evidence.observations.reduce(
     (at, observation) => Math.max(at, Date.parse(observation.observedAt) || 0),

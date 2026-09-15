@@ -354,7 +354,7 @@ describe('subject.sync worker', () => {
       connectorId: config!.id,
       namespace: serviceName,
       environment: 'test',
-      confirmedByUserId: randomUUID(),
+      confirmedByUserId: __fixture.ownerUserId,
       rationale: 'Confirmed fixture runtime',
     });
     const coverage: NormalizedSnapshot = {

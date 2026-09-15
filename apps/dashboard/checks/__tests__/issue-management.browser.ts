@@ -10,6 +10,7 @@ test.each(['github', 'gitlab'] as const)(
   async (provider) => {
     f.configure(provider);
     f.fail(null);
+    f.setLabels(provider === 'github' ? ['needs, review'] : ['ops']);
     f.writes.length = 0;
     const incidentId = await f.incident();
     const root = process.cwd();
@@ -80,6 +81,25 @@ test.each(['github', 'gitlab'] as const)(
       await page.getByRole('button', { name: 'team/service', exact: true }).click();
       await page.getByRole('button', { name: 'Load issues' }).click();
       await page.getByRole('button', { name: 'Edit issue #12' }).waitFor();
+      await page.getByRole('button', { name: 'Edit issue #12' }).click();
+      const review = page.getByRole('button', { name: 'Review changes' });
+      expect(await review.isDisabled()).toBe(true);
+      const existingTitle = await page.getByLabel('Title', { exact: true }).inputValue();
+      await page.getByLabel('Title', { exact: true }).fill('Changed title');
+      expect(await review.isEnabled()).toBe(true);
+      await page.getByLabel('Title', { exact: true }).fill(existingTitle);
+      expect(await review.isDisabled()).toBe(true);
+      await page.getByLabel('Title', { exact: true }).fill('Title-only change');
+      const draftRequest = page.waitForRequest(
+        (request) => request.url().endsWith('/drafts') && request.method() === 'POST',
+      );
+      await review.click();
+      expect((await draftRequest).postDataJSON().draft.changes).toEqual({
+        title: 'Title-only change',
+      });
+      await page.getByRole('button', { name: 'Discard draft' }).click();
+      await page.getByText('team/service #12 · cancelled', { exact: true }).waitFor();
+      expect(f.writes).toHaveLength(0);
       await page.getByRole('button', { name: 'New issue', exact: true }).click();
       await page.getByLabel('Title', { exact: true }).fill('Investigate worker saturation');
       await page
@@ -88,6 +108,8 @@ test.each(['github', 'gitlab'] as const)(
       await page.getByRole('button', { name: 'Review changes' }).click();
       await page.getByRole('button', { name: 'Publish issue' }).waitFor();
       await page
+        .getByRole('article')
+        .filter({ has: page.getByRole('button', { name: 'Publish issue' }) })
         .getByText(
           `https://${provider === 'github' ? 'github.com' : 'gitlab.example.com'}/team/service`,
           {

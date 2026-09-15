@@ -160,3 +160,54 @@ describe('confirmed runtime identity', () => {
     expect(focused.edges).toHaveLength(2);
   });
 });
+
+test('overlapping namespace and label bindings count a pod once and exclude other scopes', () => {
+  const result = operationalTopologyGraph(
+    {
+      ...graph,
+      runtimeBindings: [
+        binding('prod-cluster', 'production'),
+        {
+          ...binding('prod-cluster', 'production'),
+          id: 'whole-namespace',
+          labelKey: '',
+          labelValue: '',
+        },
+      ],
+      infrastructure: [
+        pod('prod-cluster', 'checkout', 1),
+        pod('stage-cluster', 'checkout', 0),
+        { ...pod('prod-cluster', 'checkout', 0), namespace: 'other' },
+        { ...pod('prod-cluster', 'checkout', 0), kind: 'node' },
+      ],
+    },
+    [],
+    now,
+  );
+  expect(result.nodes[0]?.runtime).toMatchObject({
+    pods: 1,
+    healthy: 1,
+    attention: 0,
+    scopes: [{ dataSourceId: 'prod-cluster', namespace: 'apps', environment: 'production' }],
+  });
+  expect(result.nodes[0]?.status).toBe('healthy');
+});
+
+test('every confirmed selector must match pods before a service is healthy', () => {
+  for (const missing of [
+    binding('stage-cluster', 'staging'),
+    { ...binding('prod-cluster', 'production'), id: 'missing-app', labelValue: 'missing' },
+  ]) {
+    const result = operationalTopologyGraph(
+      {
+        ...graph,
+        runtimeBindings: [binding('prod-cluster', 'production'), missing],
+        infrastructure: [pod('prod-cluster', 'checkout', 1)],
+      },
+      [],
+      now,
+    );
+    expect(result.nodes[0]?.status).toBe('unknown');
+    expect(result.nodes[0]?.runtime?.pods).toBe(1);
+  }
+});

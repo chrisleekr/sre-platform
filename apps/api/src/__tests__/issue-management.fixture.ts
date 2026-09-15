@@ -286,6 +286,9 @@ export function issueFixture() {
     fail(value: typeof failure) {
       failure = value;
     },
+    setLabels(labels: string[]) {
+      issue = { ...issue, labels };
+    },
     changeIssue() {
       issue = { ...issue, title: 'Changed elsewhere', updatedAt: new Date().toISOString() };
     },

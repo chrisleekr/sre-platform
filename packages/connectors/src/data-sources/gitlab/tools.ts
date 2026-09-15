@@ -126,7 +126,7 @@ export function makeGitLabTools(
         run: ({ query, limit }) =>
           config.repositories?.search(
             query.trim() === '*' ? '' : query.trim(),
-            Math.min(Math.max(1, limit ?? 20), 50),
+            Math.min(Math.max(1, Math.floor(limit ?? 20)), 50),
           ) ?? Promise.resolve([]),
       }),
       gtool({

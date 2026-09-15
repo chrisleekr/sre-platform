@@ -311,3 +311,65 @@ test('permission failure retains precise status instead of being classified as a
     ),
   ).toBe(true);
 });
+
+test('Datadog APM preserves a provider cooldown longer than the default', async () => {
+  const { fetchImpl, calls } = transport(
+    () =>
+      new Response('', {
+        status: 429,
+        headers: { 'retry-after': '900' },
+      }),
+  );
+  const result = await makeDatadogConnector(config('datadog'), fetchImpl).topology!.discover();
+  expect(result.collections[0]).toMatchObject({
+    key: 'apm',
+    issue: 'rate_limited',
+    retryAfterMs: 900_000,
+  });
+  expect(calls).toHaveLength(1);
+});
+
+test.each([401, 403])('Grafana classifies HTTP %s at every collection read', async (status) => {
+  for (const path of ['/api/datasources', '/api/search', '/api/dashboards/uid/api']) {
+    const { fetchImpl } = transport((url) => {
+      if (url.pathname === path) return new Response('', { status });
+      if (url.pathname === '/api/search') return [{ uid: 'api', title: 'API' }];
+      return [];
+    });
+    const result = await makeGrafanaConnector(
+      config('grafana', { baseUrl: 'https://grafana.example' }),
+      fetchImpl,
+      lookup,
+    ).topology!.discover();
+    expect(
+      result.collections.find(
+        (c) => c.key === (path === '/api/datasources' ? 'datasources' : 'dashboards'),
+      ),
+    ).toMatchObject({
+      issue: 'permission_denied',
+      completeness: path.includes('/uid/') ? 'partial' : 'unavailable',
+    });
+  }
+});
+
+test.each([
+  {},
+  { status: 'success', data: { activeTargets: {} } },
+  { status: 'error', data: { activeTargets: [] } },
+])('Prometheus reports malformed targets as invalid evidence: %j', async (payload) => {
+  const { fetchImpl } = transport(() => payload);
+  const result = await makePrometheusConnector(
+    config('prometheus', { baseUrl: 'https://prom.example' }),
+    fetchImpl,
+    lookup,
+  ).topology!.discover();
+  expect(result.collections).toEqual([
+    {
+      key: 'targets',
+      completeness: 'unavailable',
+      issue: 'invalid_response',
+      entities: [],
+      relations: [],
+    },
+  ]);
+});

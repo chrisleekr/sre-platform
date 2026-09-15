@@ -74,7 +74,7 @@ export async function sloStatusForService(
   db: Db,
   tenantId: string,
   service: string,
-): Promise<SloStatusView[]> {
+): Promise<Array<SloStatusView & { metricQuery: string; connectorType: string }>> {
   const definitions = await listSlosByService(db, tenantId, service);
   // One windowed read for the latest event of every objective, instead of N per-objective queries.
   const byId = await recentBurnEventsForSlos(
@@ -84,6 +84,8 @@ export async function sloStatusForService(
     1,
   );
   return definitions.map((slo) => ({
+    metricQuery: slo.metricQuery,
+    connectorType: slo.connectorType,
     name: slo.name,
     service: slo.service,
     sliType: slo.sliType,

@@ -87,3 +87,28 @@ export function TopologyOverview({
     </div>
   );
 }
+
+/** Keep map and list controls consistent across catalog views. */
+export function TopologyRepresentation({
+  value,
+  onChange,
+}: {
+  value: 'map' | 'list';
+  onChange: (value: 'map' | 'list') => void;
+}) {
+  return (
+    <div className="flex gap-2" aria-label="Topology representation">
+      {(['map', 'list'] as const).map((option) => (
+        <button
+          key={option}
+          type="button"
+          aria-pressed={value === option}
+          onClick={() => onChange(option)}
+          className="rounded border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-ink-secondary hover:bg-surface-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus aria-pressed:border-line-strong aria-pressed:bg-line"
+        >
+          {option === 'map' ? 'Map' : 'List'}
+        </button>
+      ))}
+    </div>
+  );
+}

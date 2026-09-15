@@ -1,3 +1,4 @@
+import { useMe } from '../lib/me-store';
 import type { CredentialGetter } from '../lib/request-credentials';
 import { useCallback, useRef, useState } from 'react';
 import { useSession } from '../auth';
@@ -21,6 +22,7 @@ import { ChannelManager } from './InboundChannelManager';
 
 function SlackConfiguration({
   surface,
+  canConfigure,
   getCredentials,
   onEdit,
   onDisconnect,
@@ -28,6 +30,7 @@ function SlackConfiguration({
   disconnectError,
 }: {
   surface: SurfaceSummary;
+  canConfigure: boolean;
   getCredentials: CredentialGetter;
   onEdit: (trigger: HTMLButtonElement) => void;
   onDisconnect: () => void;
@@ -109,14 +112,15 @@ function SlackConfiguration({
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
+            disabled={!canConfigure}
             onClick={(event) => onEdit(event.currentTarget)}
-            className="rounded border border-line-strong px-2 py-1 text-xs font-medium hover:bg-surface-subtle"
+            className="rounded border border-line-strong px-2 py-1 text-xs font-medium hover:bg-surface-subtle disabled:opacity-50"
           >
             Edit Slack
           </button>
           <button
             type="button"
-            disabled={disconnecting}
+            disabled={!canConfigure || disconnecting}
             onClick={onDisconnect}
             className="rounded border border-critical-line px-2 py-1 text-xs font-medium text-critical hover:bg-critical-soft disabled:opacity-50"
           >
@@ -131,7 +135,7 @@ function SlackConfiguration({
       </section>
       <div className="min-w-0">
         {surface.hasBotToken ? (
-          <ChannelManager getCredentials={getCredentials} />
+          <ChannelManager getCredentials={getCredentials} canConfigure={canConfigure} />
         ) : (
           <p className="text-xs text-ink-muted">
             Add a bot token before choosing inbound channels.
@@ -157,7 +161,12 @@ function SlackConnectionSettings({
   embedded?: boolean;
   onChange?: () => void;
 }) {
-  const { getCredentials } = useSession();
+  const session = useSession();
+  const { getCredentials } = session;
+  const me = useMe(getCredentials, session.status === 'authenticated', session.sessionKey);
+  const canConfigure =
+    !me.data?.tenant?.impersonation &&
+    (me.data?.tenant?.role === 'owner' || me.data?.tenant?.role === 'admin');
   const { surfaces, loading, error, refetch } = useSurfaces({
     apiBaseUrl: config.apiBaseUrl,
     getCredentials,
@@ -206,7 +215,7 @@ function SlackConnectionSettings({
         headingLevel={embedded ? 2 : 1}
         title={embedded ? 'Chat access and subscriptions' : 'Inbound'}
         action={
-          !connected && !loading ? (
+          canConfigure && !connected && !loading ? (
             <button
               ref={connectButtonRef}
               type="button"
@@ -223,6 +232,11 @@ function SlackConnectionSettings({
         }
       />
 
+      {!canConfigure && (
+        <p className="mb-4 text-sm text-ink-muted">
+          Only workspace owners and admins can change Slack configuration and subscriptions.
+        </p>
+      )}
       {connected && (
         <p role="status" aria-live="polite" className="sr-only">
           {loading ? 'Refreshing inbound connection…' : ''}
@@ -254,6 +268,7 @@ function SlackConnectionSettings({
             <SlackConfiguration
               key={s.id}
               surface={s}
+              canConfigure={canConfigure}
               getCredentials={getCredentials}
               onEdit={(trigger) => {
                 setWizardMode('edit');
@@ -268,7 +283,7 @@ function SlackConnectionSettings({
         </ul>
       )}
 
-      {wizardOpen && (
+      {canConfigure && wizardOpen && (
         <SlackConnectWizard
           mode={wizardMode}
           onSave={(input) => saveSlackSurface(config.apiBaseUrl, getCredentials, input)}

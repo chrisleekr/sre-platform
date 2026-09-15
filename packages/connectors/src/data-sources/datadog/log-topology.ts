@@ -190,17 +190,16 @@ export async function datadogLogTopology(
     entities: [],
     relations: [],
   };
-  const admitted = [
+  const eligible = [
     ...new Map(
       scopes
         .filter((scope) => UUID.test(scope.clusterId) && name(scope.namespace))
         .map((scope) => [JSON.stringify(scope), scope]),
     ).values(),
-  ]
-    .sort(
-      (a, b) => a.clusterId.localeCompare(b.clusterId) || a.namespace.localeCompare(b.namespace),
-    )
-    .slice(0, 64);
+  ].sort(
+    (a, b) => a.clusterId.localeCompare(b.clusterId) || a.namespace.localeCompare(b.namespace),
+  );
+  const admitted = eligible.slice(0, 64);
   if (!admitted.length) return { ...collection, issue: 'missing_scope' };
   const from = new Date(now - 600_000).toISOString(),
     to = new Date(now).toISOString();
@@ -222,7 +221,8 @@ export async function datadogLogTopology(
       );
       if (!Array.isArray(response.data))
         return deduplicateTopology({ ...collection, issue: 'invalid_response' });
-      if (obj(obj(response.meta).page).after || scopes.length > 64) collection.issue = 'limit';
+      if (obj(obj(response.meta).page).after || eligible.length > admitted.length)
+        collection.issue = 'limit';
       for (const raw of response.data.slice(0, 200)) {
         const id = str(obj(raw).id);
         if (!id || seen.has(id)) continue;

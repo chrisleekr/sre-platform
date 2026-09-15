@@ -140,3 +140,54 @@ test.each([false, true])(
     ).toBe(false);
   },
 );
+
+test.each([false, true])(
+  'newer attribute-free evidence retains its time regardless of input order: %s',
+  (reverse) => {
+    const latest = { ...relation('caller', 'target', 'calls'), attributes: undefined };
+    const samples = [relation('caller', 'target', 'calls', older), latest];
+    const graph: DiscoveredTopologyGraph = {
+      entities: [node('caller'), node('target')],
+      relations: reverse ? samples.reverse() : samples,
+      coverage: [],
+      conflicts: [],
+    };
+    const [edge] = discoveredOperationalTopology(graph).relations;
+    expect(edge?.observedAt).toBe(at);
+    expect(edge?.attributes).toBeUndefined();
+  },
+);
+
+test.each(['stale', 'inferred', 'future', 'expired', 'ambiguous'] as const)(
+  'service call projection rejects %s runtime bindings',
+  (invalid) => {
+    const binding = relation('caller-service', 'caller', 'runs_on');
+    if (invalid === 'stale') binding.stale = true;
+    if (invalid === 'inferred') binding.evidence = 'inferred';
+    if (invalid === 'future')
+      binding.sources = [{ ...source(), validFrom: '2026-09-13T00:06:00.000Z' }];
+    if (invalid === 'expired') binding.sources = [source(older)];
+    const graph: DiscoveredTopologyGraph = {
+      entities: [
+        node('caller'),
+        node('target'),
+        node('caller-service', 'service'),
+        node('target-service', 'service'),
+        node('other-service', 'service'),
+      ],
+      relations: [
+        relation('caller', 'target', 'calls'),
+        binding,
+        relation('target-service', 'target', 'runs_on'),
+        ...(invalid === 'ambiguous' ? [relation('other-service', 'caller', 'runs_on')] : []),
+      ],
+      coverage: [],
+      conflicts: [],
+    };
+    expect(
+      discoveredOperationalTopology(graph)
+        .relations.filter((edge) => edge.kind === 'calls')
+        .map((edge) => edge.from),
+    ).toEqual(['caller']);
+  },
+);

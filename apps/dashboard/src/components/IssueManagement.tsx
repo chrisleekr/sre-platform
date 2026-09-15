@@ -138,28 +138,32 @@ export function IssueManagementDialog({
     setRequestId(crypto.randomUUID());
   };
   const changed = () => setRequestId(crypto.randomUUID());
+  const values: IssueChanges = {
+    title: title.trim(),
+    body,
+    labels:
+      editing && editing !== 'new' && labels === editing.labels.join(', ')
+        ? editing.labels
+        : labels
+            .split(',')
+            .map((value) => value.trim())
+            .filter(Boolean),
+    assignees: assignees
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean),
+    ...(editing !== 'new' ? { state: issueState } : {}),
+  };
+  const changes = Object.fromEntries(
+    Object.entries(values).filter(
+      ([key, value]) =>
+        !editing ||
+        editing === 'new' ||
+        JSON.stringify(value) !== JSON.stringify(editing[key as keyof RepositoryIssue]),
+    ),
+  ) as IssueChanges;
   const draft = async () => {
-    if (!editing) return;
-    const values: IssueChanges = {
-      title: title.trim(),
-      body,
-      labels: labels
-        .split(',')
-        .map((value) => value.trim())
-        .filter(Boolean),
-      assignees: assignees
-        .split(',')
-        .map((value) => value.trim())
-        .filter(Boolean),
-      ...(editing !== 'new' ? { state: issueState } : {}),
-    };
-    const changes = Object.fromEntries(
-      Object.entries(values).filter(
-        ([key, value]) =>
-          editing === 'new' ||
-          JSON.stringify(value) !== JSON.stringify(editing[key as keyof RepositoryIssue]),
-      ),
-    ) as IssueChanges;
+    if (!editing || Object.keys(changes).length === 0) return;
     await request('drafts', {
       requestId,
       draft: {
@@ -410,7 +414,7 @@ export function IssueManagementDialog({
             )}
             <button
               type="button"
-              disabled={!title.trim()}
+              disabled={!title.trim() || Object.keys(changes).length === 0}
               onClick={() => void run(draft)}
               className="rounded bg-strong px-3 py-2 text-sm font-medium text-on-strong"
             >

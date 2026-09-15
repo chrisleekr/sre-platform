@@ -195,3 +195,40 @@ describe('NodeDetail via node click', () => {
     expect(screen.getByRole('heading', { name }).className).toMatch(/break-words|break-all/);
   });
 });
+
+test('relationship keys distinguish endpoint and environment tuples containing slashes', () => {
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    render(
+      <NodeDetail
+        node={checkout}
+        incidents={[]}
+        onClose={() => {}}
+        graph={{
+          ...graph,
+          edges: [
+            {
+              upstream: 'checkout',
+              downstream: 'a/b',
+              environment: 'c',
+              syncType: 'sync',
+              circuitBreaker: false,
+            },
+            {
+              upstream: 'checkout',
+              downstream: 'a',
+              environment: 'b/c',
+              syncType: 'sync',
+              circuitBreaker: false,
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText('a/b')).toBeTruthy();
+    expect(screen.getByText('a')).toBeTruthy();
+    expect(error.mock.calls.flat().join(' ')).not.toMatch(/same key/);
+  } finally {
+    error.mockRestore();
+  }
+});

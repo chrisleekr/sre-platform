@@ -211,13 +211,29 @@ export function operationalTopologyGraph(
     ...activeIncidents(incidents).flatMap((incident) => topologyIncidentServices(graph, incident)),
     ...graph.nodes.filter((node) => node.sources?.includes('incident')).map((node) => node.name),
   ]);
+  const podsByScope = new Map<string, InfraSnapshot[]>();
+  for (const pod of graph.infrastructure ?? []) {
+    if (pod.kind !== 'pod') continue;
+    const key = JSON.stringify([pod.dataSourceId, pod.namespace]);
+    const scoped = podsByScope.get(key) ?? [];
+    scoped.push(pod);
+    podsByScope.set(key, scoped);
+  }
+  const bindingsByService = new Map<string, RuntimeBinding[]>();
+  for (const binding of graph.runtimeBindings ?? []) {
+    const bindings = bindingsByService.get(binding.serviceName) ?? [];
+    bindings.push(binding);
+    bindingsByService.set(binding.serviceName, bindings);
+  }
   const nodes = graph.nodes
     .map((node) => {
-      const bindings =
-        graph.runtimeBindings?.filter((binding) => binding.serviceName === node.name) ?? [];
-      const pods = (graph.infrastructure ?? []).filter((pod) =>
-        bindings.some((binding) => bindingMatchesPod(binding, pod)),
+      const bindings = bindingsByService.get(node.name) ?? [];
+      const matches = bindings.map((binding) =>
+        (podsByScope.get(JSON.stringify([binding.connectorId, binding.namespace])) ?? []).filter(
+          (pod) => bindingMatchesPod(binding, pod),
+        ),
       );
+      const pods = new Set(matches.flat());
       const counts = { healthy: 0, attention: 0, stale: 0, error: 0 };
       let observedAtMs = 0;
       let restarts = 0;
@@ -230,15 +246,22 @@ export function operationalTopologyGraph(
         if ((pod.metrics.oomKilled ?? 0) > 0) oomKilled += 1;
       }
       const runtime: ServiceRuntime | undefined =
-        pods.length > 0
+        pods.size > 0
           ? {
               namespace: [...new Set(bindings.map((binding) => binding.namespace))].join(', '),
-              scopes: bindings.map((binding) => ({
-                dataSourceId: binding.connectorId,
-                namespace: binding.namespace,
-                environment: binding.environment,
-              })),
-              pods: pods.length,
+              scopes: [
+                ...new Map(
+                  bindings.map((binding) => [
+                    JSON.stringify([binding.connectorId, binding.namespace, binding.environment]),
+                    {
+                      dataSourceId: binding.connectorId,
+                      namespace: binding.namespace,
+                      environment: binding.environment,
+                    },
+                  ]),
+                ).values(),
+              ],
+              pods: pods.size,
               healthy: counts.healthy,
               attention: counts.attention,
               stale: counts.stale,
@@ -254,7 +277,8 @@ export function operationalTopologyGraph(
           ? 'attention'
           : counts.stale > 0
             ? 'stale'
-            : pods.length > 0 &&
+            : pods.size > 0 &&
+                matches.every((matched) => matched.length > 0) &&
                 bindings.every((binding) =>
                   graph.coverage?.some(
                     (source) =>
@@ -314,8 +338,8 @@ export function filterTopologyGraph(
 export type BlastHighlight = 'affected' | 'direct' | 'indirect' | 'insulated' | 'unclassified';
 
 /**
- * Map service name -> blast-radius highlight. The affected service wins over direct, direct over
- * indirect (a node can appear at multiple hop distances; the closest tier is the strongest signal).
+ * Map service name to potential exposure. Precedence is affected, direct, unclassified,
+ * indirect, insulated.
  * Pure so the overlay can be tested without rendering.
  */
 export function blastHighlights(

@@ -58,7 +58,12 @@ describe('DeploymentGraph', () => {
         graph={{
           ...graph,
           edges: [
-            { ...graph.edges[0]!, environment: 'production', syncType: 'sync' },
+            {
+              ...graph.edges[0]!,
+              environment: 'production',
+              syncType: 'sync',
+              circuitBreaker: true,
+            },
             { ...graph.edges[0]!, environment: 'staging' },
           ],
         }}
@@ -67,6 +72,10 @@ describe('DeploymentGraph', () => {
     const edges = container.querySelectorAll('[data-edge="checkout->orders"]');
     expect(edges).toHaveLength(1);
     expect(edges[0]?.getAttribute('data-sync')).toBe('mixed');
+    expect(edges[0]?.getAttribute('data-circuit-breaker')).toBe('mixed');
+    expect(edges[0]?.getAttribute('stroke')).toBe(ORANGE);
+    expect(edges[0]?.textContent).toContain('mixed circuit-breaker declarations');
+    expect(screen.getByText('Mixed circuit-breaker declarations')).toBeTruthy();
     expect(edges[0]?.textContent).toContain('production');
     expect(edges[0]?.textContent).toContain('staging');
   });

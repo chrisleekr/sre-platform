@@ -72,10 +72,19 @@ export function datadogTopology(
             });
           } else collections.push(projectSpans(config, response, observedAt));
         } catch (error) {
+          const issue = datadogTopologyIssue(error);
+          const delay = Number(obj(error).retryAfterMs);
           collections.push({
             key: 'apm',
             completeness: 'unavailable',
-            issue: datadogTopologyIssue(error),
+            issue,
+            ...(issue === 'rate_limited'
+              ? {
+                  retryAfterMs: Number.isFinite(delay)
+                    ? Math.max(300_000, Math.min(delay, 86_400_000))
+                    : 300_000,
+                }
+              : {}),
             entities: [],
             relations: [],
           });

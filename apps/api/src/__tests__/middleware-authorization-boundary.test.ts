@@ -11,7 +11,7 @@ const FORBIDDEN_BODY = {
 };
 
 const MUTATING_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'] as const;
-const PREFLIGHT_METHODS = ['OPTIONS', 'HEAD'] as const;
+const PREFLIGHT_METHODS = ['OPTIONS', 'HEAD', 'TRACE'] as const;
 
 const IMPERSONATION: TenantContext['impersonation'] = {
   sessionId: '5f1b3c8e-5a3d-4c2f-9f2b-1a2b3c4d5e6f',
@@ -40,7 +40,7 @@ function tenantContext(overrides: Partial<TenantContext> = {}): TenantContext {
  * say cannot happen.
  */
 function syntheticContext(method: string, tenant: TenantContext | undefined): Context {
-  const raw = new Request('https://api.boundary.test/connectors/prometheus', { method });
+  const raw = new Request('https://api.boundary.test/connectors/prometheus');
   return {
     req: {
       method,

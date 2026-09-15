@@ -136,6 +136,7 @@ function renderPanel(
     email: string;
     role: 'owner' | 'admin' | 'member';
     status: string;
+    userStatus?: string;
   }> = MEMBERS,
   invitations: Array<{
     id: string;
@@ -348,6 +349,23 @@ describe('MembersPanel', () => {
 
     const row = screen.getByRole('row', { name: /removed@example\.test/i });
     expect(within(row).queryAllByRole('button')).toHaveLength(0);
+  });
+
+  test('labels only the active last owner, excluding removed ex-owners', () => {
+    renderPanel('owner', [
+      ...MEMBERS,
+      {
+        userId: 'ex-owner',
+        email: 'former@example.test',
+        role: 'owner',
+        status: 'removed',
+        userStatus: 'active',
+      },
+    ]);
+    expect(screen.getAllByText('Last owner')).toHaveLength(1);
+    expect(
+      within(screen.getByRole('row', { name: /former@example.test/ })).queryByText('Last owner'),
+    ).toBeNull();
   });
 
   test('explains immediate access loss and preserves attribution before removal', () => {

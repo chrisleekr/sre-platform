@@ -142,16 +142,15 @@ describe('workspace ownership across account changes', () => {
         .delete(memberships)
         .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, memberId)));
       await db.db.update(users).set({ status }).where(eq(users.id, memberId));
-      const outcome = await Promise.allSettled([
+      await expect(
         resolveTenantByBinding(db.db, { providerId, claimValue: null, userId: memberId }),
-      ]);
+      ).resolves.toEqual({ status: 'unaffiliated' });
       expect(
         await db.db
           .select()
           .from(memberships)
           .where(and(eq(memberships.tenantId, tenantId), eq(memberships.userId, memberId))),
       ).toHaveLength(0);
-      expect(outcome[0]).not.toMatchObject({ status: 'fulfilled', value: { status: 'ok' } });
     },
   );
 });

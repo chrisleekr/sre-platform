@@ -41,7 +41,6 @@
     "test:modal-layout": "bun apps/dashboard/checks/verify-modal-layout.ts",
     "test:topology-e2e": "bun scripts/topology/verify.ts",
     "test:issue-management-e2e": "node -e \"if(process.versions.bun) throw new Error('This test requires real Node, not the Bun shim')\" && node node_modules/vitest/vitest.mjs run --config apps/dashboard/checks/issue-integration.config.ts",
-    "test:ownership-e2e": "node -e \"if(process.versions.bun) throw new Error('This test requires real Node, not the Bun shim')\" && node node_modules/vitest/vitest.mjs run --config apps/dashboard/checks/ownership-integration.config.ts",
     "test:gitlab-connector-e2e": "node -e \"if(process.versions.bun) throw new Error('This test requires real Node, not the Bun shim')\" && node node_modules/vitest/vitest.mjs run --config apps/dashboard/checks/gitlab-integration.config.ts",
     "lint": "oxlint && bun run check:public-jsdoc && prettier --check .",
     "lint:fix": "oxlint --fix && bun run check:public-jsdoc && prettier --write .",
@@ -58,7 +57,8 @@
     "prepare": "husky",
     "docs:lint": "bun scripts/docs/check-prose.ts",
     "docs:screenshots": "bun scripts/docs/screenshots/capture.ts",
-    "typecheck:scripts": "tsc -p tsconfig.scripts.json"
+    "typecheck:scripts": "tsc -p tsconfig.scripts.json",
+    "test:ownership-e2e": "node -e \"if(process.versions.bun) throw new Error('This test requires real Node, not the Bun shim')\" && node node_modules/vitest/vitest.mjs run --config apps/dashboard/checks/ownership-integration.config.ts"
   },
   "lint-staged": {
     "*.{ts,tsx}": [

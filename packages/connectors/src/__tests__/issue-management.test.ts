@@ -98,7 +98,7 @@ describe.each(['github', 'gitlab'] as const)('%s issue management', (provider) =
         : makeGitLabConnector(config, transport as unknown as typeof fetch, async () => [
             '93.184.216.34',
           ]);
-    return { connector, calls, transport, project };
+    return { connector, calls, transport, project, issue };
   }
 
   test('reads, creates, updates, closes and reopens only admitted issues', async () => {
@@ -140,6 +140,27 @@ describe.each(['github', 'gitlab'] as const)('%s issue management', (provider) =
     }
   });
 
+  test('lists usable issues when another row is malformed or too large', async () => {
+    const { connector, transport, issue } = setup();
+    const original = transport.getMockImplementation()!;
+    transport.mockImplementation(async (input, init) => {
+      const response = await original(input, init);
+      if (!/\/issues\?/.test(String(input))) return response;
+      const [valid] = (await response.json()) as Record<string, unknown>[];
+      const oversized = {
+        ...valid,
+        [provider === 'github' ? 'body' : 'description']: 'x'.repeat(20_001),
+      };
+      return Response.json([null, { invalid: true }, oversized, valid]);
+    });
+    expect(await connector.issues!.list('team/service')).toMatchObject([{ number: 12 }]);
+    issue.body = 'x'.repeat(20_001);
+    await expect(connector.issues!.get('team/service', 12)).rejects.toThrow(/20,000/);
+    await expect(
+      connector.issues!.create('team/service', { title: 'Exact response required' }),
+    ).rejects.toThrow(/20,000/);
+  });
+
   test('rejects disabled writes and out-of-scope targets before sending a request', async () => {
     const { connector, calls } = setup(false);
     expect(connector.issues).toBeDefined();
@@ -163,6 +184,23 @@ describe.each(['github', 'gitlab'] as const)('%s issue management', (provider) =
   });
 
   if (provider === 'gitlab') {
+    test('rejects comma-containing labels before any provider request', async () => {
+      const { connector, calls } = setup();
+      expect(() => connector.issues!.validateChanges({ labels: ['needs,review'] })).toThrow(
+        /commas/,
+      );
+      await expect(
+        connector.issues!.create('team/service', { title: 'Test', labels: ['needs,review'] }),
+      ).rejects.toThrow(/commas/);
+      await expect(
+        connector.issues!.update('team/service', 12, { labels: ['needs,review'] }),
+      ).rejects.toThrow(/commas/);
+      expect(calls).toHaveLength(0);
+      expect(() =>
+        connector.issues!.validateChanges({ labels: ['needs review', 'ops'] }),
+      ).not.toThrow();
+    });
+
     test.each([{ id: 72 }, { path_with_namespace: 'outside/service' }, { archived: true }])(
       'rejects live project changes despite an unchanged catalog: %j',
       async (change) => {

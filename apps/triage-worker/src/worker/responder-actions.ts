@@ -78,7 +78,9 @@ export async function processResponderActions(
     }
     const confirmation = /^(yes|no)[.!]?$/i.exec(message.content.trim())?.[1]?.toLowerCase();
     if (confirmation) {
-      if (!(await hasPendingKnowledgeCapture(runtime, job.tenantId, incidentId))) {
+      if (
+        !(await hasPendingKnowledgeCapture(runtime, job.tenantId, incidentId, message.authorUserId))
+      ) {
         pendingQuestions = [message];
         await checkpoint(message.id);
         continue;

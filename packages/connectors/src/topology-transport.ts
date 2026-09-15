@@ -5,7 +5,10 @@ const REQUEST_MS = 8000;
 const COLLECTION_MS = 45000;
 
 export class TopologyReadError extends Error {
-  constructor(readonly issue: 'limit' | 'unreachable') {
+  constructor(
+    readonly issue: 'limit' | 'unreachable',
+    readonly deadlineExceeded = false,
+  ) {
     super(
       issue === 'limit'
         ? 'Topology collection limit reached'
@@ -28,7 +31,7 @@ export function topologyFetch(fetchImpl: typeof fetch): typeof fetch {
   const deadline = Date.now() + COLLECTION_MS;
   return (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     const remaining = deadline - Date.now();
-    if (remaining <= 0) throw new TopologyReadError('limit');
+    if (remaining <= 0) throw new TopologyReadError('limit', true);
     const controller = new AbortController();
     const parent = init?.signal ?? (input instanceof Request ? input.signal : undefined);
     const cancel = () => controller.abort(new TopologyReadError('unreachable'));
@@ -36,7 +39,12 @@ export function topologyFetch(fetchImpl: typeof fetch): typeof fetch {
     else parent?.addEventListener('abort', cancel, { once: true });
     const timer = setTimeout(
       () =>
-        controller.abort(new TopologyReadError(remaining < REQUEST_MS ? 'limit' : 'unreachable')),
+        controller.abort(
+          new TopologyReadError(
+            remaining < REQUEST_MS ? 'limit' : 'unreachable',
+            remaining < REQUEST_MS,
+          ),
+        ),
       Math.min(remaining, REQUEST_MS),
     );
     let onAbort: () => void = () => {};

@@ -8,19 +8,22 @@ import {
   type HumanMessage,
 } from '@sre/db';
 import { RetryableError } from '@sre/queue';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, gt, sql } from 'drizzle-orm';
 import type { WorkerRuntime } from './runtime';
 
-/** A bare answer is capture-related only while this incident has durable pending capture context.
+/** A bare answer is capture-related only while the speaker has an unexpired pending offer.
  * @param runtime - Existing worker dependencies.
  * @param tenantId - Current workspace.
  * @param incidentId - Current incident.
+ * @param userId - Authenticated speaker, if linked.
  */
 export async function hasPendingKnowledgeCapture(
   runtime: WorkerRuntime,
   tenantId: string,
   incidentId: string,
+  userId: string | null,
 ): Promise<boolean> {
+  if (!userId) return false;
   return withTenant(runtime.deps.appDb, tenantId, async (tx) => {
     const [proposal] = await tx
       .select({ id: knowledgeCaptureProposals.id })
@@ -29,6 +32,8 @@ export async function hasPendingKnowledgeCapture(
         and(
           eq(knowledgeCaptureProposals.incidentId, incidentId),
           eq(knowledgeCaptureProposals.status, 'pending'),
+          eq(knowledgeCaptureProposals.requestedBy, userId),
+          gt(knowledgeCaptureProposals.expiresAt, sql`now()`),
         ),
       )
       .limit(1);

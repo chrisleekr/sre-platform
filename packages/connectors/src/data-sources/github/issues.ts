@@ -121,7 +121,14 @@ export function makeGitHubIssues(config: ConnectorConfig, transport: typeof fetc
         throw new IssueRequestError('GitHub returned an invalid issue list.');
       return result
         .filter((raw) => !raw?.pull_request)
-        .map((raw) => map(raw, target.repository.fullName))
+        .flatMap((raw) => {
+          try {
+            return [map(raw, target.repository.fullName)];
+          } catch (error) {
+            if (error instanceof IssueRequestError) return [];
+            throw error;
+          }
+        })
         .filter((row) => `${row.title}\n${row.body}`.toLowerCase().includes(query.toLowerCase()))
         .slice(0, 50);
     },

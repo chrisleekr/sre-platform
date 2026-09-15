@@ -1,3 +1,4 @@
+import { resolveIncidentTopologyContext as resolveIncidentEntityContext } from '@sre/topology';
 import {
   IncidentFeedbackRateLimitError,
   connectorConfigs,
@@ -26,7 +27,6 @@ import {
   upsertServiceRepositories,
   withTenant,
 } from '@sre/db';
-import { resolveIncidentTopologyContext as resolveIncidentEntityContext } from '@sre/topology';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { entityCapabilityGaps, scrubSecrets } from '@sre/agent-tools';
 import { Hono } from 'hono';
@@ -275,8 +275,8 @@ export function registerIncidentDetailRoutes(
         : null,
       feedback,
       feedbackEligibleFindingRunIds: findingRows.map((row) => row.runId).sort(),
-      attention: operatorState.attention,
       serviceTeams: owners,
+      attention: operatorState.attention,
       automation: {
         nextAction: operatorState.automation,
         currentBudget,

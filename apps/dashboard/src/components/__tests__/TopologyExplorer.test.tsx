@@ -247,3 +247,105 @@ test('a scoped deep link selects the correct result page without preventing late
   expect(list().getByRole('button', { name: /^service-20 / })).toBeTruthy();
   expect(detail().getByRole('heading', { name: 'service-44' })).toBeTruthy();
 });
+
+test('filtering preserves the chosen relationship view and expanded resource group', async () => {
+  window.history.replaceState({}, '', '/');
+  render(<TopologyExplorer {...props()} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Resource context' }));
+  fireEvent.click(
+    await screen.findByRole('button', { name: /Open group production.*cluster: cluster-one/ }),
+  );
+  expect(screen.getByRole('button', { name: 'All groups' })).toBeTruthy();
+  const search = screen.getByRole('searchbox', { name: /Search discovered/ });
+  fireEvent.change(search, { target: { value: 'checkout' } });
+  expect(
+    screen.getByRole('button', { name: 'Resource context' }).getAttribute('aria-pressed'),
+  ).toBe('true');
+  expect(screen.getByRole('button', { name: 'All groups' })).toBeTruthy();
+  fireEvent.change(search, { target: { value: 'no-matching-resource' } });
+  expect(screen.queryByRole('button', { name: 'All groups' })).toBeNull();
+  fireEvent.change(search, { target: { value: '' } });
+  expect(screen.queryByRole('button', { name: 'All groups' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Runtime traffic' }));
+  fireEvent.change(search, { target: { value: 'checkout' } });
+  expect(screen.getByRole('button', { name: 'Runtime traffic' }).getAttribute('aria-pressed')).toBe(
+    'true',
+  );
+});
+
+test('filtering keeps the expanded connected-resource limit', () => {
+  window.history.replaceState({}, '', '/');
+  const input = props();
+  const service = input.graph.operational.subjects.find((subject) => subject.kind === 'service')!;
+  input.graph.operational.subjects = Array.from({ length: 30 }, (_, index) => ({
+    ...service,
+    key: `service-${index}`,
+    name: `checkout-${index}`,
+  }));
+  input.graph.operational.relations = Array.from({ length: 29 }, (_, index) => ({
+    from: `service-${index}`,
+    to: `service-${index + 1}`,
+    kind: 'calls',
+    evidence: 'observed',
+    evidenceKeys: [],
+    stale: false,
+  }));
+  render(<TopologyExplorer {...input} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Show more connected resources' }));
+  expect(screen.queryByRole('button', { name: 'Show more connected resources' })).toBeNull();
+  fireEvent.change(screen.getByRole('searchbox', { name: /Search discovered/ }), {
+    target: { value: 'checkout' },
+  });
+  expect(screen.queryByRole('button', { name: 'Show more connected resources' })).toBeNull();
+});
+
+test('an incident deep link opens discovery incident scope and its affected-service editor', async () => {
+  window.history.replaceState({}, '', '/w/topology?incident=selected');
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () =>
+      Response.json({
+        incidentId: 'selected',
+        assignedServices: [],
+        topology: { resolutions: [], subjects: [], relations: [] },
+      }),
+    ),
+  );
+  try {
+    const input = props();
+    render(
+      <TopologyExplorer
+        {...input}
+        access={{
+          apiBaseUrl: '/api',
+          getCredentials: async () => ({ kind: 'bearer', token: 'test' }),
+        }}
+        incidentGraph={{
+          nodes: [],
+          edges: [],
+          discovery: input.graph,
+          incidents: [
+            {
+              id: 'selected',
+              alertSource: 'slack',
+              service: 'checkout',
+              title: 'Checkout errors',
+              severity: 'sev3',
+              status: 'open',
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText('Incident overlay').closest('details')?.open).toBe(true);
+    expect(
+      (screen.getByRole('combobox', { name: 'Incident scope' }) as HTMLSelectElement).value,
+    ).toBe('selected');
+    fireEvent.click(await screen.findByText('Catalog correction'));
+    fireEvent.click(screen.getByRole('button', { name: 'Link affected service' }));
+    expect(screen.getByRole('button', { name: 'Save affected services' })).toBeTruthy();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

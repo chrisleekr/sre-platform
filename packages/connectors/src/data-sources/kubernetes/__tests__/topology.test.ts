@@ -423,3 +423,28 @@ test('keeps pod application source declarations separate from verified image pro
   expect(JSON.stringify(result)).not.toContain('must-not-retain');
   expect(paths.every((path) => path.startsWith('/api'))).toBe(true);
 });
+
+test('recreated connectors reuse the persisted cluster authority through an identity-read outage', async () => {
+  const firstTransport = transport({
+    '/api/v1/pods': { items: [resource('api', 'pod-uid', 'production')] },
+  });
+  const first = await kubernetesTopology(cfg(), firstTransport.fetchImpl, lookup).discover({
+    collections: ['pods'],
+  });
+  const identity = first.collections[0]!.entities[0]!.ref;
+  const failedTransport = transport({
+    '/api/v1/namespaces/kube-system': new Response('', { status: 503 }),
+    '/api/v1/pods': { items: [resource('api', 'pod-uid', 'production')] },
+  });
+  const second = await kubernetesTopology(cfg(), failedTransport.fetchImpl, lookup).discover({
+    collections: ['pods'],
+    clusterAuthority: identity.authority,
+  });
+  expect(second.collections[0]!.entities[0]!.ref).toEqual(identity);
+  expect(failedTransport.paths.some((path) => path.endsWith('/kube-system'))).toBe(false);
+  await expect(
+    kubernetesTopology(cfg(), failedTransport.fetchImpl, lookup).discover({
+      collections: ['pods'],
+    }),
+  ).rejects.toMatchObject({ status: 503 });
+});

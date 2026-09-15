@@ -121,3 +121,21 @@ describe('makeFetchBlastRadiusTool', () => {
     expect(audit.records[0]!.outcome).toBe('data');
   });
 });
+
+it('rejects environment-only input before querying a conversation identifier', async () => {
+  const audit = makeInMemoryAuditSink();
+  await expect(
+    runTool(
+      tool,
+      { ...makeCtx(audit), service: 'slack:C-TOPOLOGY' },
+      { environment: 'production' },
+    ),
+  ).rejects.toThrow('environment requires service or subjectKey');
+  expect(audit.records).toEqual([]);
+  expect(
+    tool.inputSchema.safeParse({ service: 'checkout', environment: 'production' }).success,
+  ).toBe(true);
+  expect(
+    tool.inputSchema.safeParse({ subjectKey: 'service-key', environment: 'production' }).success,
+  ).toBe(true);
+});

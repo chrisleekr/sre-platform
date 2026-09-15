@@ -15,6 +15,7 @@ const chat = vi.hoisted(() => ({
 vi.mock('../../../lib/useSurfaces', () => ({ useSurfaces: () => chat }));
 vi.mock('../../InboundPanel', () => ({ InboundPanel: () => <p>Chat access and subscriptions</p> }));
 const props: ComponentProps<typeof ConnectionsContent> = {
+  canConfigure: true,
   connectors: [],
   loading: false,
   error: false,

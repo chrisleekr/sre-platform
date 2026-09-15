@@ -1,6 +1,6 @@
 {
-  "id": "95c8996f-e881-42a5-9949-b1dccbc0d579",
-  "prevId": "041457b6-d30a-44a4-b4cf-5267f5936d17",
+  "id": "2018a113-7958-4949-9784-e69d9ab57c6c",
+  "prevId": "e9a07631-5a7b-4777-bf1b-4caf43c71436",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -13867,6 +13867,21 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "runtime_binding_membership_fk": {
+          "name": "runtime_binding_membership_fk",
+          "tableFrom": "service_runtime_bindings",
+          "tableTo": "memberships",
+          "columnsFrom": [
+            "confirmed_by_user_id",
+            "tenant_id"
+          ],
+          "columnsTo": [
+            "user_id",
+            "tenant_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -14144,221 +14159,6 @@
         }
       },
       "uniqueConstraints": {},
-      "policies": {
-        "tenant_isolation": {
-          "name": "tenant_isolation",
-          "as": "PERMISSIVE",
-          "for": "ALL",
-          "to": [
-            "public"
-          ],
-          "using": "tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid",
-          "withCheck": "tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid"
-        }
-      },
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.issue_actions": {
-      "name": "issue_actions",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "tenant_id": {
-          "name": "tenant_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "incident_id": {
-          "name": "incident_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "connector_id": {
-          "name": "connector_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "connector_version": {
-          "name": "connector_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "repository": {
-          "name": "repository",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "repository_id": {
-          "name": "repository_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "destination": {
-          "name": "destination",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "number": {
-          "name": "number",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "requested_by": {
-          "name": "requested_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "request_key": {
-          "name": "request_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "changes": {
-          "name": "changes",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "before": {
-          "name": "before",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'draft'"
-        },
-        "result": {
-          "name": "result",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "error": {
-          "name": "error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "issue_actions_incident_idx": {
-          "name": "issue_actions_incident_idx",
-          "columns": [
-            {
-              "expression": "tenant_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "incident_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "issue_actions_tenant_id_tenants_id_fk": {
-          "name": "issue_actions_tenant_id_tenants_id_fk",
-          "tableFrom": "issue_actions",
-          "tableTo": "tenants",
-          "columnsFrom": [
-            "tenant_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "issue_actions_requested_by_users_id_fk": {
-          "name": "issue_actions_requested_by_users_id_fk",
-          "tableFrom": "issue_actions",
-          "tableTo": "users",
-          "columnsFrom": [
-            "requested_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "issue_actions_incident_fk": {
-          "name": "issue_actions_incident_fk",
-          "tableFrom": "issue_actions",
-          "tableTo": "incidents",
-          "columnsFrom": [
-            "tenant_id",
-            "incident_id"
-          ],
-          "columnsTo": [
-            "tenant_id",
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "issue_actions_request_uq": {
-          "name": "issue_actions_request_uq",
-          "nullsNotDistinct": false,
-          "columns": [
-            "tenant_id",
-            "incident_id",
-            "request_key"
-          ]
-        }
-      },
       "policies": {
         "tenant_isolation": {
           "name": "tenant_isolation",

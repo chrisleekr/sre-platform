@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import type { TopologySubject } from '@sre/contracts';
 import type { TopologyDiscoveryGraph } from '../lib/topology';
 import type { CredentialGetter } from '../lib/request-credentials';
@@ -21,10 +22,11 @@ export function TopologySubjectImpact({
   access: TopologyAccess;
   onSelect: (key: string) => void;
 }) {
+  const impactGraph = useMemo(() => ({ nodes: [], edges: [], discovery: graph }), [graph]);
   const impact = useTopologyImpact(
     access.apiBaseUrl,
     access.getCredentials,
-    { nodes: [], edges: [], discovery: graph },
+    impactGraph,
     subject.kind === 'service' ? subject.name : null,
     subject.scope.environment,
     subject.key,

@@ -113,8 +113,9 @@ The server cannot choose a sign-in method for an old client address.
 ```
 
 Use the address that serves your API. The address names two things: the sign-in method that issued
-your token, and the incident. Any active sign-in method qualifies, including an installation
-sign-in method, which is the usual case for a staff token. The access token must have been issued
+your token, and the incident. Any active OIDC sign-in method qualifies, including an installation
+sign-in method, which is the usual case for a staff token. Local password sign-in methods cannot
+address this resource. The access token must have been issued
 by that same sign-in method, belong to a current member of the tenant, carry the `mcp` scope, and be
 able to see that specific incident. A token from a different sign-in method is refused exactly as an
 invalid one is, so naming a sign-in method in the address never grants access the token does not

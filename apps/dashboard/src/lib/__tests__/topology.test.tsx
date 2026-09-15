@@ -279,6 +279,20 @@ describe('blastHighlights', () => {
     expect(blastHighlights(overlap).get('checkout')).toBe('affected');
   });
 
+  test('keeps unknown exposure distinct without overriding stronger highlights', () => {
+    const result = blastHighlights({
+      ...blast,
+      dependents: {
+        ...blast.dependents,
+        unclassified: [dep('unknown'), dep('orders'), dep('shipping'), dep('checkout')],
+      },
+    });
+    expect(result.get('unknown')).toBe('unclassified');
+    expect(result.get('orders')).toBe('direct');
+    expect(result.get('shipping')).toBe('unclassified');
+    expect(result.get('checkout')).toBe('affected');
+  });
+
   test('returns an empty map for null', () => {
     expect(blastHighlights(null).size).toBe(0);
   });

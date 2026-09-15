@@ -36,7 +36,18 @@ export function prometheusTopology(
       );
       const targets = obj(response.data).activeTargets;
       if (response.status !== 'success' || !Array.isArray(targets))
-        throw new Error('Invalid Prometheus targets response');
+        return {
+          observedAt,
+          collections: [
+            {
+              key: 'targets',
+              completeness: 'unavailable',
+              issue: 'invalid_response',
+              entities: [],
+              relations: [],
+            },
+          ],
+        };
       targets.sort((a, b) =>
         JSON.stringify([obj(a).scrapePool, obj(a).scrapeUrl]).localeCompare(
           JSON.stringify([obj(b).scrapePool, obj(b).scrapeUrl]),

@@ -101,13 +101,23 @@ export function discoveredOperationalTopology(graph: DiscoveredTopologyGraph): O
       stale: (existing?.stale ?? true) && relation.stale,
       ...(existing?.observedAt && observedAt && existing.observedAt > observedAt
         ? { observedAt: existing.observedAt, attributes: existing.attributes }
-        : relation.attributes
-          ? {
-              observedAt,
-              attributes: relation.attributes,
-            }
-          : {}),
+        : { observedAt, ...(relation.attributes ? { attributes: relation.attributes } : {}) }),
     });
+  }
+  const runtimeBindings = new Map<string, DiscoveredTopologyGraph['relations']>();
+  for (const relation of graph.relations) {
+    if (
+      relation.kind !== 'runs_on' ||
+      !relation.toKey ||
+      !relation.fromKey ||
+      relation.stale ||
+      relation.evidence === 'inferred' ||
+      subjects.get(relation.fromKey)?.kind !== 'service'
+    )
+      continue;
+    const bucket = runtimeBindings.get(relation.toKey) ?? [];
+    bucket.push(relation);
+    runtimeBindings.set(relation.toKey, bucket);
   }
   for (const call of graph.relations.filter(
     (relation) =>
@@ -119,20 +129,13 @@ export function discoveredOperationalTopology(graph: DiscoveredTopologyGraph): O
   )) {
     const at = Math.max(...call.sources.map((source) => Date.parse(source.observedAt)));
     const bindings = (resource: string) =>
-      graph.relations.filter(
-        (relation) =>
-          relation.kind === 'runs_on' &&
-          relation.toKey === resource &&
-          relation.fromKey &&
-          !relation.stale &&
-          relation.evidence !== 'inferred' &&
-          subjects.get(relation.fromKey)?.kind === 'service' &&
-          relation.sources.some(
-            (source) =>
-              source.validFrom &&
-              Date.parse(source.validFrom) <= at &&
-              at <= Date.parse(source.observedAt),
-          ),
+      (runtimeBindings.get(resource) ?? []).filter((relation) =>
+        relation.sources.some(
+          (source) =>
+            source.validFrom &&
+            Date.parse(source.validFrom) <= at &&
+            at <= Date.parse(source.observedAt),
+        ),
       );
     const fromBindings = bindings(call.fromKey!),
       toBindings = bindings(call.toKey!);

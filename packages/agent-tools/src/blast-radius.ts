@@ -4,13 +4,18 @@ import * as z from 'zod';
 import type { ToolDefinition } from './types';
 import { topologyReferences, type TopologyToolEvidence } from './topology-references';
 
-const fetchBlastRadiusInput = z.object({
-  // Optional: defaults to the incident's primary service. The engine may pass a different service to
-  // re-scope onto a dependency it starts to suspect.
-  service: z.string().min(1).optional(),
-  environment: z.string().min(1).optional(),
-  subjectKey: z.string().min(1).optional(),
-});
+const fetchBlastRadiusInput = z
+  .object({
+    // Optional: defaults to the incident's primary service. The engine may pass a different service to
+    // re-scope onto a dependency it starts to suspect.
+    service: z.string().min(1).optional(),
+    environment: z.string().min(1).optional(),
+    subjectKey: z.string().min(1).optional(),
+  })
+  .refine((input) => !input.environment || Boolean(input.service || input.subjectKey), {
+    message: 'environment requires service or subjectKey',
+    path: ['environment'],
+  });
 
 export type FetchBlastRadiusInput = z.infer<typeof fetchBlastRadiusInput>;
 
@@ -25,7 +30,7 @@ export function makeFetchBlastRadiusTool(deps: {
   return {
     name: 'fetch_blast_radius',
     description:
-      'Return potential caller exposure from discovered calls and catalog declarations, plus dependencies to investigate. This does not prove outages, delayed impact or circuit-breaker protection. Unknown call semantics and ambiguous service identities are explicit. Defaults to the incident service; specify environment or pass a subjectRef returned by topology resolution as subjectKey when scope is ambiguous.',
+      'Return potential caller exposure from discovered calls and catalog declarations, plus dependencies to investigate. This does not prove outages, delayed impact or circuit-breaker protection. Unknown call semantics and ambiguous service identities are explicit. Defaults to the incident service; To re-scope, supply service with environment, or pass a subjectRef returned by topology resolution as subjectKey. Environment alone is not accepted.',
     inputSchema: fetchBlastRadiusInput,
     async handler(ctx, input) {
       const data =

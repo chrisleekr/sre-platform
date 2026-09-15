@@ -47,10 +47,12 @@ test('paged inventory reaches beyond the first hundred without crossing tenant o
   ]);
   const first = await listGitLabProjects(app.db, tenantA, source, {
     afterRepositoryId: '',
+    query: 'repo',
     limit: 100,
   });
   const second = await listGitLabProjects(app.db, tenantA, source, {
     afterRepositoryId: first.at(-1)!.repositoryId,
+    query: 'repo',
     limit: 100,
   });
   expect(first).toHaveLength(100);
