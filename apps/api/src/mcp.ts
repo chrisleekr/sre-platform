@@ -96,6 +96,21 @@ export function mcpRoutes(deps: {
   // authorization server that can mint a token for it, instead of every provider the deployment has.
   const RESOURCE_PATH = '/mcp/providers/:providerId/incidents/:incidentId';
 
+  for (const path of [
+    '/mcp/incidents/:incidentId',
+    '/.well-known/oauth-protected-resource/mcp/incidents/:incidentId',
+  ]) {
+    router.all(path, (c) =>
+      c.json(
+        {
+          error:
+            'This MCP address has been retired. Update your client to /mcp/providers/{providerId}/incidents/{incidentId}, using the sign-in method that issued your token.',
+        },
+        410,
+      ),
+    );
+  }
+
   /** Resolves the addressed provider, or null for anything a client must not be able to tell apart. */
   async function addressedProvider(providerId: string, incidentId: string) {
     if (!UUID_RE.test(providerId) || !UUID_RE.test(incidentId)) return null;
