@@ -35,15 +35,20 @@ export async function getWorkspaceOwnership(db: Db | Tx, tenantId: string) {
 /** Locks workspace decisions before any account or membership row.
  * @param tx - Owning transaction.
  * @param tenantIds - Workspace identifiers, sorted internally to prevent lock inversions.
+ * @param mode - Shared admission lock or exclusive ownership mutation lock.
  */
-export async function lockOwnershipWorkspaces(tx: Tx, tenantIds: string[]) {
+export async function lockOwnershipWorkspaces(
+  tx: Tx,
+  tenantIds: string[],
+  mode: 'share' | 'update' = 'update',
+) {
   if (!tenantIds.length) return;
   await tx
     .select({ id: tenants.id })
     .from(tenants)
     .where(inArray(tenants.id, tenantIds))
     .orderBy(asc(tenants.id))
-    .for('update');
+    .for(mode);
 }
 
 /** Freezes account status while a workspace ownership decision is made.

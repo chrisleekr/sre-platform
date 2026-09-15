@@ -192,6 +192,24 @@ describe('grantPlatformOperator', () => {
 });
 
 describe('bootstrap identity helpers', () => {
+  test.each(['disabled', 'deleted'] as const)(
+    'refuses provisioning an existing %s identity',
+    async (status) => {
+      const identity = ident(`inactive-${randomUUID()}`, 'old@example.invalid');
+      const userId = await upsertIdentity(admin.db, identity);
+      await admin.db.update(users).set({ status, email: null }).where(eq(users.id, userId));
+      await expect(
+        upsertIdentity(admin.db, { ...identity, email: 'new@example.invalid' }),
+      ).rejects.toThrow('cannot upsert an inactive account');
+      expect(
+        await admin.db
+          .select({ status: users.status, email: users.email })
+          .from(users)
+          .where(eq(users.id, userId)),
+      ).toEqual([{ status, email: null }]);
+      expect(await isPlatformOperator(admin.db, userId)).toBe(false);
+    },
+  );
   test('upserts one canonical identity without clobbering its stored email', async () => {
     const identity = ident(`sub|bootstrap-${randomUUID()}`, 'bootstrap-admin@example.invalid');
 

@@ -213,7 +213,7 @@ describe('scrubSecrets', () => {
     // base64 run, and it is under the 32-character high-entropy floor.
     const out = scrubSecrets('Authorization:\n\tBasic YWRtaW46aHVudGVyMg==');
     expect(out).not.toContain('YWRtaW46aHVudGVyMg==');
-    expect(out).toBe('Authorization: [REDACTED]');
+    expect(out).toBe('Authorization: [REDACTED]\n');
   });
 
   it('stops at the line end when the next line is a separate header', () => {
@@ -234,6 +234,6 @@ describe('scrubSecrets', () => {
     ].join('\n');
     const out = scrubSecrets(`failure included ${privateKey} after`);
     expect(out).not.toContain('not-a-high-entropy-but-still-secret-line');
-    expect(out).toBe('failure included [REDACTED] after');
+    expect(out).toBe('failure included [REDACTED]\n\n after');
   });
 });

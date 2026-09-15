@@ -25,11 +25,12 @@ test('a deleted external identity cannot re-register from its still-valid signed
     .from(users)
     .where(eq(users.id, f.actorId));
   const identity = { issuer: actor!.issuer, subject: 'member', email: 'resupplied@example.test' };
-  const attachedId = await upsertIdentity(f.db.db, identity);
+  await expect(upsertIdentity(f.db.db, identity)).rejects.toThrow(
+    'cannot upsert an inactive account',
+  );
   const signIn = await upsertUserForSignIn(f.appDb.db, identity);
   const response = await f.request('/tenant/members', undefined, f.memberToken);
   expect(response.status).toBe(401);
-  expect(attachedId).toBe(f.memberId);
   expect(signIn).toMatchObject({ userId: f.memberId, status: 'deleted' });
   const [deleted] = await f.db.db.select().from(users).where(eq(users.id, f.memberId));
   expect(deleted).toMatchObject({ status: 'deleted', email: null });
