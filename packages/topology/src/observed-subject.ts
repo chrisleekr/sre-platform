@@ -65,6 +65,7 @@ export function observedTopologySubject(
   const candidates = services.length
     ? services
     : subjects.filter((subject) => subject.kind !== 'service');
+  if (!candidates.length) return unresolved;
   const conflict = discovery.conflicts.some(
     (item) => topologyRefKey(item.ref) === reference || resourceKeys.has(topologyRefKey(item.ref)),
   );

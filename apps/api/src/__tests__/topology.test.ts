@@ -288,6 +288,17 @@ test('dependency mutations preserve exact scope and return 404 for missing or fo
       ((await result.json()) as { dependency: { environment: string } }).dependency.environment,
     ).toBe(environment);
   }
+  const graph = await api.request('/topology/graph', { headers });
+  expect(graph.status).toBe(200);
+  const graphBody = (await graph.json()) as {
+    edges: Array<{ upstream: string; environment: string }>;
+  };
+  expect(
+    graphBody.edges
+      .filter((row) => row.upstream === edge.upstream)
+      .map((row) => row.environment)
+      .sort(),
+  ).toEqual(['', 'production', 'staging']);
   const updated = await request('PATCH', { ...edge, environment: 'production', syncType: 'async' });
   expect(updated.status).toBe(200);
   expect(

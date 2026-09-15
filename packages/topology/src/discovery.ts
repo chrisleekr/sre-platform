@@ -162,10 +162,11 @@ export function resolveDiscoveredTopology(
   for (const collection of collections)
     for (const fact of collection.relations) {
       const relation = fact.value;
-      const resolve = (ref: TopologyRef) =>
-        ref.authority.startsWith('kubernetes-traffic:')
-          ? resolveTrafficReference(ref, fact.observedAt, resolvableTrafficEntities)
-          : canonical(ref);
+      const resolve = (ref: TopologyRef) => {
+        if (!ref.authority.startsWith('kubernetes-traffic:')) return canonical(ref);
+        const key = resolveTrafficReference(ref, fact.observedAt, resolvableTrafficEntities);
+        return key ? canonical(entities.get(key)!.ref) : null;
+      };
       const fromKey = resolve(relation.from),
         toKey = resolve(relation.to);
       const key = JSON.stringify([

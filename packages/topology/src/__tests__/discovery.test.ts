@@ -246,3 +246,52 @@ test('a fresh name-only locator cannot refresh a stale UID-backed resource incar
   expect(graph.entities.find((e) => e.attributes.uid === 'uid')?.stale).toBe(true);
   expect(graph.conflicts).toHaveLength(1);
 });
+
+test.each([false, true])(
+  'traffic endpoints use the canonical alias identity in either collection order: %s',
+  (reverse) => {
+    const locator = { authority: 'inventory', kind: 'Pod', id: 'pod-locator' };
+    const pod: TopologyEntity = {
+      ref: { authority: 'cluster', kind: 'Pod', id: 'pod-uid' },
+      aliases: [locator],
+      kind: 'workload',
+      name: 'pod',
+      scope: { cluster: 'kubernetes-cluster:one', namespace: 'apps' },
+      attributes: { uid: 'pod-uid' },
+      network: { addresses: ['10.0.0.1'], ports: [8080] },
+    };
+    const alias = { ...pod, ref: locator, aliases: [] };
+    const target = entity('target');
+    const traffic: TopologyRelation = {
+      from: { authority: 'kubernetes-traffic:one', kind: 'pod_address', id: '["10.0.0.1"]' },
+      to: target.ref,
+      kind: 'calls',
+      evidence: 'observed',
+      description: 'Observed traffic',
+    };
+    const inventory = collection('canonical', [pod, target]);
+    const sampled = {
+      ...collection('sampled', [alias], [traffic]),
+      entities: [
+        { value: alias, observedAt: at, firstObservedAt: new Date(now - 1000).toISOString() },
+      ],
+    };
+    const graph = resolveDiscoveredTopology(
+      reverse ? [sampled, inventory] : [inventory, sampled],
+      now,
+    );
+    expect(graph.entities.map((e) => e.key)).not.toContain(topologyRefKey(locator));
+    expect(graph.relations[0]).toMatchObject({
+      fromKey: topologyRefKey(pod.ref),
+      toKey: topologyRefKey(target.ref),
+      stale: false,
+    });
+    expect(discoveredOperationalTopology(graph).relations).toEqual([
+      expect.objectContaining({
+        from: topologyRefKey(pod.ref),
+        to: topologyRefKey(target.ref),
+        kind: 'calls',
+      }),
+    ]);
+  },
+);

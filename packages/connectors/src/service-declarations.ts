@@ -1,6 +1,7 @@
 import { parseAllDocuments } from 'yaml';
 import {
   topologyRefKey,
+  topologyRelationKey,
   type TopologyEntity,
   type TopologyRef,
   type TopologyRelation,
@@ -97,5 +98,10 @@ export function serviceDeclarations(
     if (seen.has(key)) throw new Error('Duplicate service declaration');
     seen.add(key);
   }
-  return { entities, relations };
+  return {
+    entities,
+    relations: [
+      ...new Map(relations.map((relation) => [topologyRelationKey(relation), relation])).values(),
+    ],
+  };
 }

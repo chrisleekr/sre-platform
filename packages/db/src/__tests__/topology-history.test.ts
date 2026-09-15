@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from 'vitest';
+import { afterAll, beforeAll, expect, test, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { makeDb, type DbHandle } from '../client';
@@ -46,7 +46,29 @@ test('edit, delete and recreate close only the exact environment with half-open 
     rationale: 'Application config',
     confirmedByUserId: randomUUID(),
   };
+  const first = await addDependency(app.db, tenantId, {
+    upstream: input.upstream,
+    downstream: input.downstream,
+    environment: 'production',
+  });
+  const initialHistory = await versions();
+  await addDependency(app.db, tenantId, {
+    upstream: input.upstream,
+    downstream: input.downstream,
+    environment: 'production',
+  });
+  expect(await versions()).toEqual(initialHistory);
+  await updateDependency(
+    app.db,
+    tenantId,
+    'caller',
+    'database',
+    { syncType: first.syncType },
+    'production',
+  );
+  expect(await versions()).toEqual(initialHistory);
   await addDependency(app.db, tenantId, { ...input, environment: 'production' });
+  expect(await versions()).toHaveLength(2);
   await addDependency(app.db, tenantId, { ...input, environment: 'staging' });
   await updateDependency(
     app.db,
@@ -57,7 +79,12 @@ test('edit, delete and recreate close only the exact environment with half-open 
     'production',
   );
   const updated = await versions();
-  const original = updated.find((row) => row.environment === 'production' && row.validUntil)!;
+  const original = updated.find(
+    (row) =>
+      row.environment === 'production' &&
+      row.validUntil &&
+      row.declaration.confirmedByUserId === input.confirmedByUserId,
+  )!;
   const replacement = updated.find((row) => row.environment === 'production' && !row.validUntil)!;
   expect(original.validUntil).toEqual(replacement.validFrom);
   expect(
@@ -80,4 +107,33 @@ test('edit, delete and recreate close only the exact environment with half-open 
   expect(
     await withTenant(app.db, randomUUID(), (tx) => tx.select().from(serviceDependencyHistory)),
   ).toEqual([]);
+});
+
+test('reconfirmation by the same actor retains a new evidence time without changing the declaration', async () => {
+  const input = {
+    upstream: 'caller',
+    downstream: 'database',
+    environment: 'reconfirmation',
+    rationale: 'Application config',
+    confirmedByUserId: randomUUID(),
+  };
+  vi.useFakeTimers({ toFake: ['Date'] });
+  try {
+    vi.setSystemTime(new Date('2026-09-15T00:00:00.000Z'));
+    const first = await addDependency(app.db, tenantId, input);
+    const original = (await versions()).find((row) => row.environment === input.environment)!;
+    vi.setSystemTime(new Date('2026-09-15T00:01:00.000Z'));
+    const next = await addDependency(app.db, tenantId, input);
+    const history = (await versions()).filter((row) => row.environment === input.environment);
+    expect(history).toHaveLength(2);
+    expect(next.lastConfirmedAt!.getTime()).toBeGreaterThan(first.lastConfirmedAt!.getTime());
+    expect(history[0]).toEqual({ ...original, validUntil: history[1]!.validFrom });
+    expect(history[1]!.declaration).toEqual({
+      ...original.declaration,
+      lastConfirmedAt: next.lastConfirmedAt!.toISOString(),
+    });
+    expect(history[1]!.validUntil).toBeNull();
+  } finally {
+    vi.useRealTimers();
+  }
 });

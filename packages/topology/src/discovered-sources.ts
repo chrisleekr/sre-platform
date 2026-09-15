@@ -1,6 +1,7 @@
 import {
   topologyRefKey,
   type DiscoveredTopologyGraph,
+  type OperationalTopology,
   type TopologySourceEvidence,
 } from '@sre/contracts';
 import type { Db } from '@sre/db';
@@ -13,10 +14,13 @@ import { selectTopologySubject, type TopologySelection } from './selection';
  * @param selection - Exact subject or unambiguous scoped identity.
  */
 export function discoveredSourceEvidence(
-  graph: DiscoveredTopologyGraph,
+  graph: DiscoveredTopologyGraph & { operational?: OperationalTopology },
   selection: TopologySelection,
 ): TopologySourceEvidence {
-  const selected = selectTopologySubject(discoveredOperationalTopology(graph), selection);
+  const selected = selectTopologySubject(
+    graph.operational ?? discoveredOperationalTopology(graph),
+    selection,
+  );
   if (selected.status !== 'resolved')
     return {
       status: selected.status === 'ambiguous' ? 'ambiguous' : 'unavailable',

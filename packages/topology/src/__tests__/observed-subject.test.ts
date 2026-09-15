@@ -122,3 +122,23 @@ test('stale, conflicting, inferred, wrong-source and wrong-namespace evidence ca
   discovery.entities.find((item) => item.key === topologyRefKey(pod.ref))!.stale = true;
   expect(observedTopologySubject(candidate, discovery, operational).status).toBe('needs_evidence');
 });
+
+test.each(['stale', 'conflicted'] as const)(
+  'no eligible %s operational subject needs more evidence',
+  (excluded) => {
+    const discovery = graph();
+    const projected = discoveredOperationalTopology(discovery);
+    const operational = {
+      ...projected,
+      subjects: projected.subjects.map((subject) => ({
+        ...subject,
+        ...(excluded === 'stale' ? { stale: true } : { identityConflict: true }),
+      })),
+    };
+    expect(observedTopologySubject(candidate, discovery, operational)).toEqual({
+      candidateKey: candidate.key,
+      status: 'needs_evidence',
+      candidateSubjectKeys: [],
+    });
+  },
+);

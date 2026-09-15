@@ -149,6 +149,7 @@ export function topologyRoutes(deps: TopologyRoutesDeps): Hono<{ Variables: Tena
     const edges = dependencies.map((d) => ({
       upstream: d.upstream,
       downstream: d.downstream,
+      environment: d.environment,
       syncType: d.syncType,
       circuitBreaker: d.circuitBreaker,
     }));
