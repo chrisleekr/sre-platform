@@ -423,9 +423,10 @@ export async function completeOidcFoundingOnce<T>(
         .onConflictDoUpdate({
           target: [users.issuer, users.subject],
           set: { email: completed.identity.email },
+          setWhere: eq(users.status, 'active'),
         })
         .returning({ id: users.id });
-      if (!founder) throw new Error('founder identity insert returned no row');
+      if (!founder) throw new FoundingStateError('founder account is not active');
       const [updated] = await tx
         .update(workspaceFoundings)
         .set({

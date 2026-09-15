@@ -331,6 +331,14 @@ export class WorkerDisposition {
   ): Promise<boolean> {
     result = restrictEvidenceToReceipts(result);
     const { deps } = this.runtime;
+    if (result.outcome === 'inconclusive' && result.disposition === 'reply') {
+      return persistConversationResult(this.runtime, tenantId, incidentId, result, {
+        runId,
+        resumeMessageId,
+        priorInvestigationStatus,
+        humanMessageFence,
+      });
+    }
     if (result.outcome !== 'conclusive') {
       return persistNonPromotingRun({
         runtime: this.runtime,

@@ -33,6 +33,7 @@ import {
   requirePlatformAdmin,
   type AuthDeps,
   type TenantAuthVariables,
+  refuseImpersonatedChange,
 } from './auth';
 
 interface SignalRouteDeps {
@@ -133,6 +134,14 @@ async function signalPolicyState(deps: SignalRouteDeps, tenantId: string) {
 export function signalRoutes(deps: SignalRouteDeps): Hono<{ Variables: TenantAuthVariables }> {
   const app = new Hono<{ Variables: TenantAuthVariables }>();
   app.use('*', authMiddleware(deps.auth));
+  // Reviewing and promoting a signal is member work on the workspace's own backlog, and promoting
+  // one opens an incident, so a support session does neither. The policy and tag-link routes are
+  // exempt: they already require platform-operator rights, and impersonation is the only way an
+  // operator reaches a tenant context at all, so refusing them would leave them unreachable.
+  app.use(
+    '*',
+    refuseImpersonatedChange({ except: /^\/signals\/(policy|evaluations|tag-link-rules)(\/|$)/ }),
+  );
   app.get('/policy', async (c) => c.json(await signalPolicyState(deps, c.get('tenant').tenantId)));
   app.put('/policy', requirePlatformAdmin(deps.auth), async (c) => {
     const tenant = c.get('tenant');

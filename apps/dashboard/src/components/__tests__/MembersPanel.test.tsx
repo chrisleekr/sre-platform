@@ -27,6 +27,96 @@ vi.mock('../../auth', () => ({
 
 import { MembersPage, MembersPanel } from '../MembersPanel';
 
+test.each(['missing_owner', 'inactive_owners'] as const)(
+  'loads the %s warning through the members page',
+  async (state) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async (input: RequestInfo | URL) =>
+          new Response(
+            JSON.stringify(
+              String(input).endsWith('/me')
+                ? { user: { id: 'member' }, tenant: { role: 'member' } }
+                : {
+                    members: [],
+                    ownership: {
+                      state,
+                      activeOwnerCount: 0,
+                      inactiveOwnerCount: state === 'inactive_owners' ? 1 : 0,
+                    },
+                  },
+            ),
+            { headers: { 'content-type': 'application/json' } },
+          ),
+      ),
+    );
+    render(
+      <MemoryRouter>
+        <MembersPage />
+      </MemoryRouter>,
+    );
+    expect(
+      await screen.findByText(
+        state === 'missing_owner' ? /This workspace has no owner/ : /their accounts are inactive/,
+      ),
+    ).toBeDefined();
+  },
+);
+
+test.each(['missing_owner', 'inactive_owners'] as const)(
+  'shows server ownership state %s even to ordinary members',
+  (state) => {
+    render(
+      <MembersPanel
+        viewer={{ userId: 'member', role: 'member' }}
+        members={[]}
+        ownership={{
+          state,
+          activeOwnerCount: 0,
+          inactiveOwnerCount: state === 'inactive_owners' ? 1 : 0,
+        }}
+        onInvite={vi.fn()}
+        onRemove={vi.fn()}
+        onRoleChange={vi.fn()}
+        onTransferOwnership={vi.fn()}
+        onResendInvitation={vi.fn()}
+        onRevokeInvitation={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('status').textContent).toContain(
+      state === 'missing_owner' ? 'This workspace has no owner.' : 'their accounts are inactive.',
+    );
+    expect(screen.queryByRole('button', { name: 'Invite member' })).toBeNull();
+  },
+);
+
+test('does not offer ownership transfer to disabled accounts', () => {
+  render(
+    <MembersPanel
+      viewer={{ userId: 'owner', role: 'owner' }}
+      members={[
+        {
+          userId: 'member',
+          email: 'disabled@example.test',
+          role: 'member',
+          status: 'active',
+          userStatus: 'disabled',
+        },
+      ]}
+      ownership={{ state: 'owned', activeOwnerCount: 1, inactiveOwnerCount: 0 }}
+      onInvite={vi.fn()}
+      onRemove={vi.fn()}
+      onRoleChange={vi.fn()}
+      onTransferOwnership={vi.fn()}
+      onResendInvitation={vi.fn()}
+      onRevokeInvitation={vi.fn()}
+    />,
+  );
+  expect(screen.queryByRole('button', { name: /Transfer ownership/i })).toBeNull();
+  expect(screen.getByText('active · account disabled')).toBeDefined();
+});
+
 const MEMBERS = [
   { userId: 'owner-1', email: 'owner@example.test', role: 'owner' as const, status: 'active' },
   { userId: 'member-1', email: 'member@example.test', role: 'member' as const, status: 'active' },
@@ -46,6 +136,7 @@ function renderPanel(
     email: string;
     role: 'owner' | 'admin' | 'member';
     status: string;
+    userStatus?: string;
   }> = MEMBERS,
   invitations: Array<{
     id: string;
@@ -258,6 +349,23 @@ describe('MembersPanel', () => {
 
     const row = screen.getByRole('row', { name: /removed@example\.test/i });
     expect(within(row).queryAllByRole('button')).toHaveLength(0);
+  });
+
+  test('labels only the active last owner, excluding removed ex-owners', () => {
+    renderPanel('owner', [
+      ...MEMBERS,
+      {
+        userId: 'ex-owner',
+        email: 'former@example.test',
+        role: 'owner',
+        status: 'removed',
+        userStatus: 'active',
+      },
+    ]);
+    expect(screen.getAllByText('Last owner')).toHaveLength(1);
+    expect(
+      within(screen.getByRole('row', { name: /former@example.test/ })).queryByText('Last owner'),
+    ).toBeNull();
   });
 
   test('explains immediate access loss and preserves attribution before removal', () => {

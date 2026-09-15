@@ -294,6 +294,13 @@ export function provisionFounding(
     if (founding.status !== 'provisioning' || !founding.providerId || !founding.founderUserId) {
       throw new FoundingStateError('founding is not ready to provision');
     }
+    // The workspace does not exist yet, so no other transaction can lock it before this account.
+    const [founder] = await tx
+      .select({ status: users.status })
+      .from(users)
+      .where(eq(users.id, founding.founderUserId))
+      .for('no key update');
+    if (founder?.status !== 'active') throw new FoundingStateError('founder account is not active');
 
     const tenantRows = await tx
       .insert(tenants)

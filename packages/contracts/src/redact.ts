@@ -50,28 +50,38 @@ const SECRET_PATTERNS: RegExp[] = [
 ];
 const KEY_VALUE_ASSIGNMENT =
   /\b([A-Za-z][A-Za-z0-9_.-]{1,80})(\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/g;
-const SENSITIVE_HEADER = /^(Authorization|Proxy-Authorization|Cookie|Set-Cookie)\s*:\s*.*$/gim;
+// Matches the header line plus any RFC 9112 5.2 obs-fold continuation, which must begin with a
+// space or tab. Folding is deprecated but this scrubs pasted logs, not parsed HTTP, so a value
+// living entirely on the next line has to be redacted with its header. Every repetition here is
+// separated from its neighbour by a character the neighbour cannot match, so the scan is linear.
+// Over-redacting an indented following line is the safe direction for a credential scrubber.
+const SENSITIVE_HEADER =
+  /^(Authorization|Proxy-Authorization|Cookie|Set-Cookie)[^\S\r\n]*:[^\r\n]*(?:\r?\n[ \t][^\r\n]*)*/gim;
 const CONNECTION_URL_USERINFO = /\b([a-z][a-z0-9+.-]*:\/\/)([^\s/:@]+):([^\s@]+)@/gi;
 const HIGH_ENTROPY = /\b[A-Za-z0-9]{32,}\b/g;
 const looksLikeToken = (run: string): boolean =>
   /[a-z]/.test(run) && /[A-Z]/.test(run) && /[0-9]/.test(run);
 
 /**
- * Removes recognized credentials and high-entropy tokens from free text.
+ * Removes recognized credentials and high-entropy tokens without shifting source line numbers.
  * @param value - Untrusted text that may contain a credential.
  */
 export function scrubSecrets(value: string): string {
-  let scrubbed = value.replace(
-    SENSITIVE_HEADER,
-    (_match, header: string) => `${header}: ${REDACTED}`,
+  const replace = (match: string, replacement: string) =>
+    replacement +
+    '\n'.repeat(
+      Math.max(0, (match.match(/\n/g)?.length ?? 0) - (replacement.match(/\n/g)?.length ?? 0)),
+    );
+  let scrubbed = value.replace(SENSITIVE_HEADER, (match, header: string) =>
+    replace(match, `${header}: ${REDACTED}`),
   );
-  for (const pattern of SECRET_PATTERNS) scrubbed = scrubbed.replace(pattern, REDACTED);
+  for (const pattern of SECRET_PATTERNS)
+    scrubbed = scrubbed.replace(pattern, (match) => replace(match, REDACTED));
   scrubbed = scrubbed.replace(KEY_VALUE_ASSIGNMENT, (match, key: string, separator: string) =>
-    isSensitiveKey(key) ? `${key}${separator}${REDACTED}` : match,
+    isSensitiveKey(key) ? replace(match, `${key}${separator}${REDACTED}`) : match,
   );
-  scrubbed = scrubbed.replace(
-    CONNECTION_URL_USERINFO,
-    (_match, scheme: string, username: string) => `${scheme}${username}:${REDACTED}@`,
+  scrubbed = scrubbed.replace(CONNECTION_URL_USERINFO, (match, scheme: string, username: string) =>
+    replace(match, `${scheme}${username}:${REDACTED}@`),
   );
   return scrubbed.replace(HIGH_ENTROPY, (match) => (looksLikeToken(match) ? REDACTED : match));
 }

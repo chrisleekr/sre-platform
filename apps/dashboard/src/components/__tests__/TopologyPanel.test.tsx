@@ -31,6 +31,8 @@ const graph: TopologyGraph = {
 };
 
 const h = vi.hoisted(() => ({
+  role: 'admin' as string | undefined,
+  impersonation: null as object | null,
   incidents: [] as Incident[],
   fetchBlastRadius: vi.fn(),
   graph: null as TopologyGraph | null,
@@ -42,6 +44,10 @@ const h = vi.hoisted(() => ({
 }));
 
 // The shared auth boundary is a hard dependency of the panel; stub it so the hook wiring doesn't run.
+vi.mock('../../lib/me-store', () => ({
+  useMe: () => ({ data: { tenant: { role: h.role, impersonation: h.impersonation } } }),
+}));
+
 vi.mock('../../auth', () => ({
   useSession: () => ({ getCredentials: async () => ({ kind: 'bearer' as const, token: 'tok' }) }),
 }));
@@ -123,6 +129,8 @@ function installMatchMedia(initialMatches: boolean) {
 }
 
 beforeEach(() => {
+  h.role = 'admin';
+  h.impersonation = null;
   installMatchMedia(false);
 });
 
@@ -519,3 +527,15 @@ describe('TopologyPanel representations and detail selection', () => {
     expect(document.activeElement).toBe(checkout);
   });
 });
+
+test.each(['member', undefined, 'support'])(
+  'shows topology without catalog editing for %s',
+  (role) => {
+    h.role = role === 'support' ? 'owner' : role;
+    h.impersonation = role === 'support' ? { sessionId: 'support' } : null;
+    render(<TopologyPanel />);
+    expect(screen.getByRole('heading', { name: 'Service topology' })).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Edit catalog' })).toBeNull();
+    expect(screen.getByText(/Only workspace owners and admins/)).toBeDefined();
+  },
+);

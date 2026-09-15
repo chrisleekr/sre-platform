@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
+import { lockOwnershipWorkspaces } from './ownership';
 import {
   identityProviders,
   identityProviderDomains,
@@ -275,6 +276,13 @@ export async function ensureLocalProviderBinding(
   input: { issuer: string; audience: string; tenantId: string; userId: string },
 ): Promise<string> {
   return db.transaction(async (tx) => {
+    await lockOwnershipWorkspaces(tx, [input.tenantId]);
+    const [user] = await tx
+      .select({ status: users.status })
+      .from(users)
+      .where(eq(users.id, input.userId))
+      .for('no key update');
+    if (user?.status !== 'active') throw new Error('local account is not active');
     const existing = await tx
       .select({
         id: identityProviders.id,
@@ -332,7 +340,13 @@ export async function ensureLocalProviderBinding(
     const updated = await tx
       .update(memberships)
       .set({ role: 'owner' })
-      .where(and(eq(memberships.userId, input.userId), eq(memberships.tenantId, input.tenantId)))
+      .where(
+        and(
+          eq(memberships.userId, input.userId),
+          eq(memberships.tenantId, input.tenantId),
+          eq(memberships.status, 'active'),
+        ),
+      )
       .returning({ userId: memberships.userId });
     if (!updated[0]) throw new Error('local login membership disappeared');
     return providerId;

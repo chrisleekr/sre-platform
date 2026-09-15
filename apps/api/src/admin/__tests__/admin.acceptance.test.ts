@@ -383,13 +383,11 @@ describe('platform administration API', () => {
       expect.objectContaining({ state: 'ended' }),
       expect.anything(),
     );
-    expect(
-      (
-        await api.request('/me', {
-          headers: { authorization: `Bearer ${adminToken}`, 'x-impersonation-session': session.id },
-        })
-      ).status,
-    ).toBe(403);
+    const endedResponse = await api.request('/me', {
+      headers: { authorization: `Bearer ${adminToken}`, 'x-impersonation-session': session.id },
+    });
+    expect(endedResponse.status).toBe(403);
+    expect(await endedResponse.json()).toMatchObject({ code: 'support_session_unavailable' });
     await admin.db
       .update(tenants)
       .set({ status: 'deleting', deleteAfter: new Date(Date.now() + 86_400_000) })
@@ -589,7 +587,7 @@ describe('platform administration API', () => {
         .select({ status: users.status, email: users.email, subject: users.subject })
         .from(users)
         .where(eq(users.id, ids.target)),
-    ).toEqual([{ status: 'deleted', email: null, subject: expect.stringMatching(/^deleted:/) }]);
+    ).toEqual([{ status: 'deleted', email: null, subject: 'target' }]);
     expect(
       await admin.db
         .select({ authorUserId: incidentMessages.authorUserId })

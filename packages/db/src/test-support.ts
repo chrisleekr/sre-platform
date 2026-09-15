@@ -8,6 +8,7 @@
 // turns instead of colliding. All role-DDL test sites must use the SAME key or the guard is porous.
 import type { Sql } from 'postgres';
 import { attachMembership, type Identity } from './identity-repo';
+import type { MembershipRole } from './schema';
 import type { Db } from './client';
 
 // Arbitrary fixed key shared by every role/DB-ACL DDL site in the test suite.
@@ -38,6 +39,7 @@ export async function seedMembership(
   db: Db,
   identity: Identity,
   tenantId: string,
+  role?: MembershipRole,
 ): Promise<string> {
-  return (await attachMembership(db, identity, tenantId)).userId;
+  return (await attachMembership(db, identity, tenantId, role)).userId;
 }

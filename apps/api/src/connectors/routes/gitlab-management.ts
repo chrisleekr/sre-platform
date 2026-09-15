@@ -94,12 +94,9 @@ export function registerGitLabManagementRoutes(
   for (const action of ['preview', 'authorize', 'revoke'] as const) {
     r.post(`/gitlab/:id/management/${action}`, async (c) => {
       c.header('Cache-Control', 'no-store');
+      // The router's configuration change tier already refused a member and an impersonated
+      // session before this handler ran, so there is no second check to keep in step here.
       const tenant = c.get('tenant');
-      if (!['owner', 'admin'].includes(tenant.role) || tenant.impersonation)
-        return c.json(
-          { error: 'A workspace owner or administrator must authorize webhook management.' },
-          403,
-        );
       const id = connectorInstanceId(c.req.param('id'));
       if (!id) return c.json({ error: 'invalid data source ID' }, 400);
       const body = requestObject(await c.req.json().catch(() => null));

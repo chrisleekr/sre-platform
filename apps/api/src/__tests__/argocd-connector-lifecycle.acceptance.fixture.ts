@@ -133,7 +133,7 @@ export function createFixture() {
     subject = `argocd-${randomUUID()}`;
     tenantId = randomUUID();
     await admin.db.insert(tenants).values({ id: tenantId, name: 'ArgoCD acceptance' });
-    await seedMembership(admin.db, { issuer: ISSUER, subject }, tenantId);
+    await seedMembership(admin.db, { issuer: ISSUER, subject }, tenantId, 'admin');
     auth = await makeTestAuth({
       adminDb: admin.db,
       appDb: app.db,

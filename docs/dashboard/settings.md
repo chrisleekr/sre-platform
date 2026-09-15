@@ -2,9 +2,10 @@
 
 **Workspace settings** opens from **Settings** in the sidebar's Configure group and has three tabs.
 Owners and admins also reach the Members tab through **Manage members** in the account menu. Every
-member can read them. Owners and admins can rename the workspace. Only owners can change authentication or delete
-the workspace. For the step-by-step tasks, see [Workspace settings](../use/workspace-settings.md)
-and [Members](../use/members.md).
+member can read them. Owners and admins can rename the workspace and change connections and the
+Slack connection. Only owners can change authentication or delete the workspace. For the
+step-by-step tasks, see [Workspace settings](../use/workspace-settings.md) and
+[Members](../use/members.md).
 
 ## Workspace
 

@@ -92,12 +92,18 @@ capped.
 You can point an external client at a single incident and get the same read-only, redacted, audited
 tools the platform uses itself.
 
+After upgrading, replace existing `/mcp/incidents/<incident-uuid>` client addresses with
+`/mcp/providers/<sign-in-method-uuid>/incidents/<incident-uuid>`. The old address and its
+OAuth discovery address return `410 Gone` with migration instructions. Select the sign-in
+method that issued your token, then reconnect the client so it discovers the new address.
+The server cannot choose a sign-in method for an old client address.
+
 ```json
 {
   "mcpServers": {
     "sre-incident": {
       "type": "http",
-      "url": "https://api.example.com/mcp/incidents/<incident-uuid>",
+      "url": "https://api.example.com/mcp/providers/<sign-in-method-uuid>/incidents/<incident-uuid>",
       "headers": {
         "Authorization": "Bearer <access-token-with-mcp-scope>"
       }
@@ -106,10 +112,28 @@ tools the platform uses itself.
 }
 ```
 
-Use the address that serves your API. The access token must belong to a current member of the
-tenant, carry the `mcp` scope, and be able to see that specific incident. Access is deliberately
-scoped to one incident at a time.
+Use the address that serves your API. The address names two things: the sign-in method that issued
+your token, and the incident. Any active OIDC sign-in method qualifies, including an installation
+sign-in method, which is the usual case for a staff token. Local password sign-in methods cannot
+address this resource. The access token must have been issued
+by that same sign-in method, belong to a current member of the tenant, carry the `mcp` scope, and be
+able to see that specific incident. A token from a different sign-in method is refused exactly as an
+invalid one is, so naming a sign-in method in the address never grants access the token does not
+already carry. Access is deliberately scoped to one incident at a time.
+
+Both identifiers are ones the platform already uses. The incident identifier is the last part of the
+incident's address in the dashboard. The sign-in method identifier is the provider ID the platform
+embeds in the per-method addresses it generates on the **Authentication** tab of **Workspace
+settings**, such as the [back-channel logout URL](auth.md#ending-sessions-from-the-directory) or
+the [SCIM base URL](auth.md#provisioning-people-with-scim). For an installation sign-in method, ask
+a platform administrator for it.
+
+A client that supports OAuth discovery still needs the complete address, because discovery starts
+from it. What discovery saves you is naming an authorization server by hand: the address publishes
+its own protected-resource metadata, and that metadata advertises exactly the one authorization
+server able to mint a token for it.
 
 Every call through this endpoint is redacted and audited exactly as an internal one is. Connector
-credentials are never exposed through it. A token without the right scope, an incident in another
-tenant, and an oversized request are all refused before any connector is contacted.
+credentials are never exposed through it. A token without the right scope, a token from another
+sign-in method, an incident in another tenant, and an oversized request are all refused before any
+connector is contacted.

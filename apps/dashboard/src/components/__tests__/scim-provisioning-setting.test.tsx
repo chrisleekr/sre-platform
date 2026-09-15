@@ -84,9 +84,19 @@ test('shows the endpoint and current accounts and supports policy, rotation, and
   await waitFor(() =>
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ enabled: true }), false),
   );
+  await waitFor(() =>
+    expect(
+      (screen.getByRole('button', { name: 'Rotate token' }) as HTMLButtonElement).disabled,
+    ).toBe(false),
+  );
   fireEvent.click(screen.getByRole('button', { name: 'Rotate token' }));
   await waitFor(() =>
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ enabled: true }), true),
+  );
+  await waitFor(() =>
+    expect(
+      (screen.getByRole('button', { name: 'Disable SCIM' }) as HTMLButtonElement).disabled,
+    ).toBe(false),
   );
   fireEvent.click(screen.getByRole('button', { name: 'Disable SCIM' }));
   await waitFor(() =>

@@ -215,7 +215,9 @@ describe('workspace member API', () => {
     );
     expect(
       activeMemberDirectory.members.every(
-        (entry) => Object.keys(entry).sort().join(',') === 'email,role,userId',
+        (entry) =>
+          Object.keys(entry).sort().join(',') === 'email,role,status,userId' &&
+          entry.status === 'active',
       ),
     ).toBe(true);
     expect(activeMemberDirectory).not.toHaveProperty('invitations');

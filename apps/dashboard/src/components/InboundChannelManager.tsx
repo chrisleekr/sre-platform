@@ -10,7 +10,13 @@ import { SetupDialog } from './SetupDialog';
 const hashed = (name: string): string => (name.startsWith('#') ? name : '#' + name);
 
 /** Channel identity comes from Slack; a display name must never be used as an event key. */
-export function ChannelManager({ getCredentials }: { getCredentials: CredentialGetter }) {
+export function ChannelManager({
+  getCredentials,
+  canConfigure,
+}: {
+  getCredentials: CredentialGetter;
+  canConfigure: boolean;
+}) {
   const [channels, setChannels] = useState<SlackChannel[]>([]);
   const [available, setAvailable] = useState<AvailableChannel[]>([]);
   const [truncated, setTruncated] = useState(false);
@@ -139,7 +145,7 @@ export function ChannelManager({ getCredentials }: { getCredentials: CredentialG
         <button
           ref={addTrigger}
           type="button"
-          disabled={loading || error}
+          disabled={!canConfigure || loading || error}
           onClick={() => {
             setMutationError(null);
             setAdding(true);
@@ -223,7 +229,7 @@ export function ChannelManager({ getCredentials }: { getCredentials: CredentialG
                       <input
                         type="checkbox"
                         checked={ch.enabled}
-                        disabled={pending.includes(ch.channel) || loading || error}
+                        disabled={!canConfigure || pending.includes(ch.channel) || loading || error}
                         onChange={(e) => void update(ch.channel, ch.name, e.target.checked)}
                         aria-label={'Subscribe ' + (ch.name ? hashed(ch.name) : ch.channel)}
                       />
@@ -241,7 +247,7 @@ export function ChannelManager({ getCredentials }: { getCredentials: CredentialG
           )}
         </>
       )}
-      {adding && (
+      {canConfigure && adding && (
         <SetupDialog
           title="Add channel"
           size="standard"

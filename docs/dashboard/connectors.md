@@ -1,6 +1,9 @@
 # Connections
 
-Which of your systems the platform is allowed to read.
+Which of your systems the platform is allowed to read. Any member can read this page. Every action
+here that changes or re-checks saved configuration, on a connection or on the Slack connection and
+its channel subscriptions, is reserved to a workspace owner or admin, and is refused during a
+platform support session.
 
 ## Your connections
 

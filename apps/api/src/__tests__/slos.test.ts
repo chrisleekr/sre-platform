@@ -109,9 +109,9 @@ beforeAll(async () => {
     { id: tenantB, name: 'B' },
     { id: tenantCap, name: 'CAP' },
   ]);
-  await seedMembership(admin.db, { issuer: ISSUER, subject: orgA }, tenantA);
-  await seedMembership(admin.db, { issuer: ISSUER, subject: orgB }, tenantB);
-  await seedMembership(admin.db, { issuer: ISSUER, subject: orgCap }, tenantCap);
+  await seedMembership(admin.db, { issuer: ISSUER, subject: orgA }, tenantA, 'admin');
+  await seedMembership(admin.db, { issuer: ISSUER, subject: orgB }, tenantB, 'admin');
+  await seedMembership(admin.db, { issuer: ISSUER, subject: orgCap }, tenantCap, 'admin');
   api = makeApp({
     auth: await makeTestAuth({
       adminDb: admin.db,

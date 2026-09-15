@@ -61,7 +61,9 @@ describe.skipIf(!configured)('ArgoCD disposable lifecycle proof', () => {
     tenantId = randomUUID();
     subject = `argocd-live-${randomUUID()}`;
     await admin.db.insert(tenants).values({ id: tenantId, name: 'ArgoCD live proof' });
-    await seedMembership(admin.db, { issuer: ISSUER, subject }, tenantId);
+    // Connector configuration changes are reserved to an owner or administrator, and this proof
+    // saves, verifies and disconnects, so a default `member` membership would make every write 403.
+    await seedMembership(admin.db, { issuer: ISSUER, subject }, tenantId, 'admin');
     const registry = new ConnectorRegistry();
     registerTestConnector(registry, 'argocd', (config) => makeArgoCdConnector(config));
     api = new Hono();

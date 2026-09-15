@@ -2,7 +2,7 @@ import { alertmanagerSmeeUrl, gitLabSmeeUrl, githubSmeeUrl } from '@sre/connecto
 import { connectorConfigs, withTenant } from '@sre/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { Hono } from 'hono';
-import { authMiddleware, type TenantAuthVariables } from './auth';
+import { authMiddleware, requireTenantConfigurationAdmin, type TenantAuthVariables } from './auth';
 
 import {
   type ConnectorRoutesDeps,
@@ -28,6 +28,9 @@ export function connectorRoutes(
 ): Hono<{ Variables: TenantAuthVariables }> {
   const r = new Hono<{ Variables: TenantAuthVariables }>();
   r.use('*', authMiddleware(deps.auth));
+  // Every data-source route is durable workspace configuration, so the change tier is applied once
+  // here rather than re-derived per route. Reads pass through; see the Trust Boundary in CONTEXT.md.
+  r.use('*', requireTenantConfigurationAdmin());
   const mutations = new Map<string, Promise<void>>();
   const serializeMutation = <T>(
     tenantId: string,

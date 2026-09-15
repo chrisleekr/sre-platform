@@ -366,10 +366,10 @@ export function registerConnectorDiscoveryRoutes(
     }
   });
 
-  // Renders the least-privilege RBAC bundle the tenant applies to their cluster (a setup action, open
-  // to any authed tenant member). Params are validated inside the generator (segment charset), so a
-  // crafted name cannot inject YAML; on failure we return a fixed message and never echo the raw
-  // input (CWE-209).
+  // Renders the least-privilege RBAC bundle the tenant applies to their cluster. A GET, so the
+  // router's change tier lets any authed tenant member read it. Params are validated inside the
+  // generator (segment charset), so a crafted name cannot inject YAML; on failure we return a
+  // fixed message and never echo the raw input (CWE-209).
   r.get('/:type/manifest', (c) => {
     if (c.req.param('type') !== 'kubernetes')
       return c.json({ error: 'manifest is only available for the kubernetes connector' }, 400);
@@ -385,7 +385,7 @@ export function registerConnectorDiscoveryRoutes(
   // Test-connection: builds the connector and runs its probe. `healthy`/`unhealthy` flip `enabled`
   // (unconditional write so the row always equals the response — gating would leave a now-failing
   // connector stuck enabled, a fail-open). `not_applicable` (inbound-only stubs) leaves it untouched.
-  // Open to any authed tenant member: there is no admin tier to gate on (CONTEXT.md, Trust Boundary),
-  // and the comment used to claim one. All reads/writes via withTenant so a caller only ever probes its
-  // own row (RLS), which is the actual control.
+  // Because it writes, it is a configuration change, so the router's change tier restricts it to an
+  // owner or administrator (CONTEXT.md, Trust Boundary). All reads/writes via withTenant so a caller
+  // only ever probes its own row (RLS), which remains the tenant-isolation control.
 }

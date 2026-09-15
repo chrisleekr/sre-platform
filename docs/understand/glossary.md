@@ -5,7 +5,8 @@ vocabulary for behaviour that is not built yet.
 
 **Admin**
 : A workspace role. An admin can rename the workspace, invite people as member or admin, resend or
-  revoke invitations, and remove members. An admin cannot remove admins or owners, change roles,
+  revoke invitations, remove members, and change the workspace's connections, its Slack connection,
+  and which Slack channels it listens to. An admin cannot remove admins or owners, change roles,
   transfer ownership, or change sign-in methods, work email domains, or deletion. See
   [Members](../use/members.md).
 
@@ -119,8 +120,10 @@ vocabulary for behaviour that is not built yet.
 
 **Member**
 : A workspace role, and the default one. A member can do everything in the workspace that is not
-  reserved to owners and admins: investigate and respond to incidents, and read the active member
-  list. See [Members](../use/members.md).
+  reserved to owners and admins: investigate and respond to incidents, read the active member list,
+  and read the workspace's connections, its Slack connection and its channel subscriptions, with
+  their status. Changing any of that configuration is reserved to owners and admins. See
+  [Members](../use/members.md).
 
 **Owner**
 : A workspace role. An owner can do everything an admin can, and is the only role that can change
@@ -210,9 +213,13 @@ vocabulary for behaviour that is not built yet.
 
 **Trust boundary**
 : The workspace, and only the workspace. Nothing crosses between workspaces. Inside one workspace,
-  roles govern administration, not visibility: owners and admins manage members and settings, but
-  any member can see any of that workspace's incidents and evidence. The database enforces the
-  workspace boundary; it knows nothing of roles.
+  roles govern change, not visibility: owners and admins manage members, settings, connections and
+  the Slack connection, including which channels it listens to, but any member can see any of that
+  workspace's incidents, evidence and connection status. A support session acts as a platform
+  administrator rather than as a member, so it is refused every change a member would make,
+  including changes to the incident record, and keeps only the actions reserved to platform
+  administrators. The database enforces the workspace boundary; it knows nothing of
+  roles.
 
   It follows that a Slack channel is an organisational convenience, not a privacy control. The
   platform may connect a mention in a public channel to an incident born in a private one, and may

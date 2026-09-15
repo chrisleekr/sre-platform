@@ -5,7 +5,10 @@ the triage engine posts its investigation back into the thread. Connecting Slack
 that pairs a Slack app with the platform's **Connections** page. Reuse an existing App dedicated
 to this connection, or create one if needed. Do not share it with another active Socket Mode consumer.
 
-You need Slack workspace admin (or app-management) rights to create and install the app.
+Two sets of rights are needed, in two different places. In Slack, you need workspace admin (or
+app-management) rights to create and install the app. In this platform, you need the owner or admin
+role in the workspace you are connecting Slack to: a member can complete every Slack-side step and
+paste both tokens, but the save in step 4 is refused.
 
 This page is the procedure. What each control on the dashboard means once Slack is connected is in
 [Inbound](../dashboard/inbound.md); what to expect from the platform in Slack day to day is in

@@ -16,7 +16,9 @@ export const SLACK_LIFECYCLE_ACTION_PREFIX = 'incident_lifecycle:';
 
 function truncateTakeaway(text: string): string {
   if (text.length <= SLACK_TAKEAWAY_MAX) return text;
-  const sentences = text.match(/[^.!?]+[.!?](?:\s|$)/g) ?? [];
+  // Zero-width split at every sentence boundary. The previous `[^.!?]+[.!?](?:\s|$)` scan
+  // backtracked quadratically over long punctuation-free model output.
+  const sentences = text.split(/(?<=[.!?])(?=\s)/);
   let takeaway = '';
   for (const sentence of sentences) {
     if ((takeaway + sentence).trim().length > SLACK_TAKEAWAY_MAX - 40) break;

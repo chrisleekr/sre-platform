@@ -16,7 +16,12 @@ import {
 } from '@sre/db';
 import { type FetchLike } from '@sre/surfaces';
 import { Hono } from 'hono';
-import { authMiddleware, type AuthDeps, type TenantAuthVariables } from './auth';
+import {
+  authMiddleware,
+  requireTenantConfigurationAdmin,
+  type AuthDeps,
+  type TenantAuthVariables,
+} from './auth';
 import { type Logger } from './logger';
 import type { ChannelsCache } from './slack-channels-cache';
 import {
@@ -46,8 +51,8 @@ export interface SurfaceRoutesDeps {
 // connection: nothing to enable, and no channel to post to — the AI answers in the alert's own
 // thread. What we listen to is the per-channel inbound subscription. Bot and app tokens
 // live in tenant_secrets via the SecretStore, never on the row and never returned. Any authed tenant
-// member may configure (setup action, no admin gate, matching connectorRoutes). All DB access goes
-// through the repo fns, which wrap withTenant (RLS).
+// member may read the connection; only an owner or administrator may change it, matching
+// connectorRoutes. All DB access goes through the repo fns, which wrap withTenant (RLS).
 import {
   CHANNELS_CACHE_TTL_SEC,
   SLACK,
@@ -64,6 +69,9 @@ export type { AvailableChannel, AvailableChannelsResult } from './surface-config
 export function surfaceRoutes(deps: SurfaceRoutesDeps): Hono<{ Variables: TenantAuthVariables }> {
   const r = new Hono<{ Variables: TenantAuthVariables }>();
   r.use('*', authMiddleware(deps.auth));
+  // Connecting or disconnecting the workspace's Slack surface is durable configuration, so it takes
+  // the same change tier as a data source. Reads pass through; see the Trust Boundary in CONTEXT.md.
+  r.use('*', requireTenantConfigurationAdmin());
 
   const fetchImpl: FetchLike = deps.fetch ?? (globalThis.fetch as unknown as FetchLike);
   const configMutations = new Map<string, Promise<void>>();

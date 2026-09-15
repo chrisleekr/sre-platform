@@ -2,7 +2,7 @@ import { adminActions } from '../schema';
 import type { Tx } from '../rls';
 
 export type AdminMutationCode =
-  'conflict' | 'invalid_target' | 'last_admin' | 'last_owner' | 'not_found';
+  'conflict' | 'forbidden' | 'invalid_target' | 'last_admin' | 'last_owner' | 'not_found';
 
 /** Stable refusal raised by a platform-administrator mutation. */
 export class AdminMutationError extends Error {

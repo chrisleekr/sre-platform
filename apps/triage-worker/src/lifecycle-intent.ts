@@ -55,7 +55,7 @@ export async function classifyLifecycleIntent(
       JSON.stringify({
         currentResponderMessage: scrubSecrets(message),
         ...(newerMessages.length
-          ? { newerResponderMessages: newerMessages.map(scrubSecrets) }
+          ? { newerResponderMessages: newerMessages.map((value) => scrubSecrets(value)) }
           : {}),
       }),
       lifecycleIntentSchema,

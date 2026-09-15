@@ -41,7 +41,11 @@ async function setup() {
       gitLabCredentialBundle('read-token', { webhookSecret: 'test-only-hook-secret' }),
       tx,
     );
-    await tx.update(memberships).set({ role: 'member' });
+    // `memberships` is RLS-exempt, so an unscoped update would demote every other suite's member.
+    await tx
+      .update(memberships)
+      .set({ role: 'member' })
+      .where(eq(memberships.tenantId, fixture.tenantA));
   });
   const api = fixture.makeConnApp();
   const headers = fixture.bearer(await fixture.sign(fixture.orgA));
@@ -54,7 +58,10 @@ async function setup() {
     });
   const admin = () =>
     withTenant(fixture.app.db, fixture.tenantA, (tx) =>
-      tx.update(memberships).set({ role: 'admin' }),
+      tx
+        .update(memberships)
+        .set({ role: 'admin' })
+        .where(eq(memberships.tenantId, fixture.tenantA)),
     );
   return { id, api, headers, destination, post, admin };
 }

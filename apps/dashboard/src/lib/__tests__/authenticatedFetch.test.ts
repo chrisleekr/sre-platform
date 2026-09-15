@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { authenticatedFetch } from '../authenticatedFetch';
 import { setLocalSession } from '../../local-session';
 import { clearSessionFailure, getSessionFailure } from '../../session-failure';
-import { setImpersonationSession } from '../impersonation';
+import { getImpersonationSession, setImpersonationSession } from '../impersonation';
 
 afterEach(() => {
   setImpersonationSession(null);
@@ -92,7 +92,9 @@ describe('authenticatedFetch', () => {
       reason: 'Diagnose a customer-visible authentication failure',
       expiresAt: new Date(Date.now() + 60_000).toISOString(),
     });
-    const fetchMock = vi.fn(async () => new Response(null, { status: 403 }));
+    const fetchMock = vi.fn(async () =>
+      Response.json({ code: 'support_session_unavailable' }, { status: 403 }),
+    );
     vi.stubGlobal('fetch', fetchMock);
 
     await authenticatedFetch('http://api/incidents', async () => ({
@@ -145,4 +147,49 @@ describe('authenticatedFetch', () => {
     ).rejects.toMatchObject({ error: 'timeout' });
     expect(getSessionFailure()).toBeNull();
   });
+});
+
+const supportSession = (id = 'support-one') => ({
+  id,
+  tenantId: 'tenant',
+  tenantName: 'Workspace',
+  reason: 'Investigate',
+  expiresAt: new Date(Date.now() + 60_000).toISOString(),
+});
+
+test.each([
+  { error: 'A support session cannot change this workspace.' },
+  { error: 'A workspace owner or administrator must change this configuration.' },
+  { error: 'forbidden' },
+])('preserves support context for authorization refusal %j', async (body) => {
+  setImpersonationSession(supportSession());
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => Response.json(body, { status: 403 })),
+  );
+  const response = await authenticatedFetch('http://api/incidents', async () => ({
+    kind: 'cookie',
+  }));
+  expect(getImpersonationSession()?.id).toBe('support-one');
+  expect(await response.json()).toEqual(body);
+});
+
+test('a delayed unavailable-session refusal cannot clear a replacement support session', async () => {
+  let finish!: (response: Response) => void;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        }),
+    ),
+  );
+  setImpersonationSession(supportSession());
+  const request = authenticatedFetch('http://api/incidents', async () => ({ kind: 'cookie' }));
+  await vi.waitFor(() => expect(finish).toBeDefined());
+  setImpersonationSession(supportSession('support-two'));
+  finish(Response.json({ code: 'support_session_unavailable' }, { status: 403 }));
+  await request;
+  expect(getImpersonationSession()?.id).toBe('support-two');
 });

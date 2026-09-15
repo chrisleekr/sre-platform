@@ -44,6 +44,14 @@ function ident(subject: string, email?: string): Identity {
   return { issuer: ISSUER, subject, email };
 }
 
+// Reads the column back rather than trusting a return value, and stays inside one tenant.
+function storedRoles(userId: string, tenantId: string): Promise<Array<{ role: string }>> {
+  return admin.db
+    .select({ role: memberships.role })
+    .from(memberships)
+    .where(and(eq(memberships.userId, userId), eq(memberships.tenantId, tenantId)));
+}
+
 beforeAll(async () => {
   admin = makeDb(ADMIN_URL);
   app = makeDb(APP_URL);
@@ -150,6 +158,24 @@ describe('attachMembership', () => {
       .where(eq(memberships.userId, first.userId));
     expect(rows).toEqual([{ tenantId: tenantA }]);
   });
+
+  test('stores the supplied role on the first attach', async () => {
+    const id = ident('sub|attach-role-first');
+
+    const { userId } = await attachMembership(admin.db, id, tenantA, 'admin');
+
+    expect(await storedRoles(userId, tenantA)).toEqual([{ role: 'admin' }]);
+  });
+
+  test('keeps the stored role when a re-attach supplies a different one', async () => {
+    const id = ident('sub|attach-role-reattach');
+    const first = await attachMembership(admin.db, id, tenantA, 'admin');
+
+    const second = await attachMembership(admin.db, id, tenantA, 'member');
+
+    expect(second).toEqual({ userId: first.userId, created: false });
+    expect(await storedRoles(first.userId, tenantA)).toEqual([{ role: 'admin' }]);
+  });
 });
 
 describe('grantPlatformOperator', () => {
@@ -166,6 +192,24 @@ describe('grantPlatformOperator', () => {
 });
 
 describe('bootstrap identity helpers', () => {
+  test.each(['disabled', 'deleted'] as const)(
+    'refuses provisioning an existing %s identity',
+    async (status) => {
+      const identity = ident(`inactive-${randomUUID()}`, 'old@example.invalid');
+      const userId = await upsertIdentity(admin.db, identity);
+      await admin.db.update(users).set({ status, email: null }).where(eq(users.id, userId));
+      await expect(
+        upsertIdentity(admin.db, { ...identity, email: 'new@example.invalid' }),
+      ).rejects.toThrow('cannot upsert an inactive account');
+      expect(
+        await admin.db
+          .select({ status: users.status, email: users.email })
+          .from(users)
+          .where(eq(users.id, userId)),
+      ).toEqual([{ status, email: null }]);
+      expect(await isPlatformOperator(admin.db, userId)).toBe(false);
+    },
+  );
   test('upserts one canonical identity without clobbering its stored email', async () => {
     const identity = ident(`sub|bootstrap-${randomUUID()}`, 'bootstrap-admin@example.invalid');
 

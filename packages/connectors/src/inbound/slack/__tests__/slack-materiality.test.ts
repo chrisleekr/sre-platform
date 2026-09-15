@@ -57,6 +57,37 @@ describe('Slack provider materiality', () => {
     });
   });
 
+  // A provider that renders the group header and its link in separate attachment parts produces a
+  // newline before the pipe, because the parts are joined with one. The group regex tolerates it.
+  test('reads an Alertmanager group whose link is on the following line', () => {
+    const candidate = normalizedCandidate(
+      {
+        type: 'message',
+        subtype: 'bot_message',
+        channel: 'C123',
+        ts: '1787991000.000101',
+        bot_id: 'B_ALERT',
+        text: '',
+        attachments: [
+          {
+            fallback: '[FIRING:1] monitoring (checkout)',
+            pretext: '| <https://alerts.example/#/alerts?receiver=default>',
+            text: [
+              '*Alert:* Checkout latency is high.',
+              '*Severity:* `warning`',
+              '*Source:* Prometheus Alertmanager',
+            ].join(' '),
+          },
+        ],
+      },
+      ctx,
+    );
+
+    expect(candidate?.observations?.[0]?.providerGroupKey).toBe(
+      'alertmanager:https://alerts.example/|monitoring (checkout)',
+    );
+  });
+
   test('ignores volatile measurements but preserves entities and severity', () => {
     const first = normalizedCandidate(
       alertEvent({
@@ -168,3 +199,25 @@ describe('Slack provider materiality', () => {
     );
   });
 });
+
+test.each([' ', '\n', ' \n', '\n\n', '\t\r\n \r\n\t'])(
+  'preserves Alertmanager correlation across prefix whitespace %j',
+  (separator) => {
+    const candidate = normalizedCandidate({
+      type: 'message',
+      subtype: 'bot_message',
+      channel: 'C123',
+      ts: '1787991000.000100',
+      bot_id: 'B_ALERT',
+      attachments: [
+        {
+          fallback: `[FIRING:1]${separator}HighLatency | <https://alerts.example/#/alerts|Source>`,
+          text: '*Alert:* Checkout latency is high. *Severity:* warning',
+        },
+      ],
+    });
+    expect(candidate?.observations?.[0]?.providerGroupKey).toBe(
+      'alertmanager:https://alerts.example/|highlatency',
+    );
+  },
+);

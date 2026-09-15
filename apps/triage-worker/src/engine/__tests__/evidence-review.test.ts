@@ -20,6 +20,58 @@ const candidate: TriageResult = {
   evidenceReceipts: [{ evidenceId, tool: 'logs', outcome: 'complete' }],
 };
 
+test.each(['x', '\\"\n'])(
+  'budgets repeated context and escaped evidence slices for %j',
+  async (text) => {
+    const prompts: string[] = [];
+    const generator = makeFakeGenerator((prompt) => {
+      prompts.push(prompt);
+      return { supported: true, summary: 'Checked', reason: 'Covered', evidenceIds: [evidenceId] };
+    });
+    const largeCandidate = { ...candidate, detail: 'context '.repeat(5_000) };
+    const record = {
+      ...evidence[0]!,
+      output: text.repeat(text === 'x' ? 240_000 : 20_000) + 'END',
+    };
+    const result = await reviewInvestigation(
+      generator,
+      largeCandidate,
+      [record],
+      new AbortController().signal,
+    );
+    expect(result).toBe(largeCandidate);
+    expect(prompts.length).toBeGreaterThan(1);
+    expect(prompts.length).toBeLessThanOrEqual(7);
+    expect(prompts.every((prompt) => prompt.length <= 96_000)).toBe(true);
+    const slices = prompts.flatMap((prompt) => JSON.parse(prompt).evidenceSlices ?? []);
+    expect(slices.map((slice) => slice.content).join('')).toBe(JSON.stringify(record));
+  },
+);
+
+test.each([10, 200_000])('identifies missing evidence IDs at %i characters', async (size) => {
+  const script = vi.fn();
+  const result = await reviewInvestigation(
+    makeFakeGenerator(script),
+    candidate,
+    [{ ...evidence[0]!, id: undefined, output: 'x'.repeat(size) }],
+    new AbortController().signal,
+  );
+  expect(script).not.toHaveBeenCalled();
+  expect(result.unknowns?.at(-1)?.question).toMatch(/missing.*id/i);
+});
+
+test('rejects context that leaves no chunk capacity before calling the provider', async () => {
+  const script = vi.fn();
+  const result = await reviewInvestigation(
+    makeFakeGenerator(script),
+    { ...candidate, detail: 'x'.repeat(96_000) },
+    [{ ...evidence[0]!, output: 'x'.repeat(100_000) }],
+    new AbortController().signal,
+  );
+  expect(script).not.toHaveBeenCalled();
+  expect(result.unknowns?.at(-1)?.question).toMatch(/context.*budget/i);
+});
+
 test('unsupported findings become nonpromoting while preserving evidence receipts', async () => {
   const generator = makeFakeGenerator(() => ({
     supported: false,
@@ -66,7 +118,7 @@ test('an oversized review fails closed without claiming semantic contradiction d
   const result = await reviewInvestigation(
     makeFakeGenerator(script),
     candidate,
-    [{ ...evidence[0]!, output: 'x'.repeat(170_000) }],
+    [{ ...evidence[0]!, output: 'x'.repeat(500_000) }],
     new AbortController().signal,
   );
   expect(script).not.toHaveBeenCalled();
@@ -149,3 +201,212 @@ test('recorded evidence reads reject foreign IDs and preserve original ID across
     data: { evidenceId, offset: 8_000, nextOffset: null },
   });
 });
+
+test('reviews both ends of a large recorded response before accepting a conclusion', async () => {
+  const prompts: string[] = [];
+  const generator = makeFakeGenerator((prompt) => {
+    prompts.push(prompt);
+    return {
+      supported: true,
+      summary: 'The record contains observations, not proof of recovery.',
+      reason: 'The admitted observations are consistent with the candidate.',
+      evidenceIds: [evidenceId],
+    };
+  });
+  const generate = vi.spyOn(generator, 'generate');
+  const signal = new AbortController().signal;
+  const result = await reviewInvestigation(
+    generator,
+    candidate,
+    [
+      {
+        ...evidence[0]!,
+        output: `FIRST-POD-OBSERVATION ${'x'.repeat(120_000)} MIDDLE-POD-OBSERVATION ${'x'.repeat(120_000)} LAST-POD-OBSERVATION`,
+      },
+    ],
+    signal,
+  );
+
+  expect(prompts.length).toBeGreaterThan(1);
+  expect(prompts.length).toBeLessThanOrEqual(7);
+  expect(prompts.every((prompt) => prompt.length <= 96_000)).toBe(true);
+  expect(prompts.join('\n')).toContain('FIRST-POD-OBSERVATION');
+  expect(prompts.join('\n')).toContain('MIDDLE-POD-OBSERVATION');
+  expect(prompts.join('\n')).toContain('LAST-POD-OBSERVATION');
+  expect(generate.mock.calls.every((call) => call[2]?.signal === signal)).toBe(true);
+  expect(result).toMatchObject({
+    outcome: 'conclusive',
+    evidenceReceipts: candidate.evidenceReceipts,
+  });
+});
+
+test('does not start evidence review after the shared deadline is aborted', async () => {
+  const controller = new AbortController();
+  const reason = new Error('Investigation deadline exceeded');
+  controller.abort(reason);
+  const script = vi.fn(() => ({
+    supported: true,
+    summary: 'Healthy',
+    reason: 'Accepted',
+    evidenceIds: [evidenceId],
+  }));
+  await expect(
+    reviewInvestigation(makeFakeGenerator(script), candidate, evidence, controller.signal),
+  ).rejects.toBe(reason);
+  expect(script).not.toHaveBeenCalled();
+});
+
+test('carries a later contradictory observation from a large record into the corrected answer', async () => {
+  let sawOlder = false;
+  let sawLater = false;
+  const script = vi.fn((prompt: string) => {
+    sawOlder ||= prompt.includes('10:28 runner absent');
+    sawLater ||= prompt.includes('10:56 runner active');
+    return {
+      supported: !sawLater,
+      summary: sawLater
+        ? 'The runner was active at 10:56; earlier absence does not prove continuing absence.'
+        : 'Only the earlier observation has been reviewed.',
+      detail: sawLater
+        ? 'Check the workload active at 10:56 before attributing current disk traffic.'
+        : 'The 10:28 sample alone is incomplete.',
+      reason: sawLater
+        ? 'The later observation contradicts the claim of continuing absence.'
+        : 'Review the remaining record before concluding.',
+      evidenceIds: [evidenceId],
+    };
+  });
+  const result = await reviewInvestigation(
+    makeFakeGenerator(script),
+    {
+      ...candidate,
+      disposition: 'reply',
+      summary: 'The runner remained absent.',
+      detail: 'No runner was active throughout the incident.',
+    },
+    [
+      {
+        ...evidence[0]!,
+        output: `10:28 runner absent ${'x'.repeat(120_000)} 10:56 runner active ${'x'.repeat(120_000)}`,
+      },
+    ],
+    new AbortController().signal,
+  );
+  expect(sawOlder).toBe(true);
+  expect(sawLater).toBe(true);
+  expect(result).toMatchObject({
+    outcome: 'inconclusive',
+    detail: expect.stringContaining('10:56'),
+  });
+  expect(result.detail).not.toContain('No runner was active throughout');
+});
+
+test('reports an input budget failure as incomplete review, not contradictory evidence', async () => {
+  const script = vi.fn(() => ({
+    supported: true,
+    summary: 'Healthy',
+    reason: 'Approved',
+    evidenceIds: [evidenceId],
+  }));
+  const result = await reviewInvestigation(
+    makeFakeGenerator(script),
+    { ...candidate, disposition: 'reply', detail: 'Unchecked: restart every production node.' },
+    [{ ...evidence[0]!, output: 'x'.repeat(500_000) }],
+    new AbortController().signal,
+  );
+
+  expect(result.outcome).toBe('inconclusive');
+  expect(result.detail).not.toContain('restart every production node');
+  expect(result.unknowns?.at(-1)?.category).not.toBe('contradictory_evidence');
+  expect(result.unknowns?.at(-1)?.question).toMatch(/budget|window|coverage/i);
+  expect(script.mock.calls.length).toBeLessThanOrEqual(6);
+});
+
+test.each([
+  ['invalid output', () => ({})],
+  [
+    'foreign evidence',
+    () => ({
+      supported: true,
+      summary: 'Healthy',
+      reason: 'Confirmed',
+      evidenceIds: [randomUUID()],
+    }),
+  ],
+] as const)(
+  'retains a safe %s review failure reason without publishing unchecked detail',
+  async (scenario, script) => {
+    const result = await reviewInvestigation(
+      makeFakeGenerator(script),
+      { ...candidate, disposition: 'reply', detail: 'Unchecked destructive procedure' },
+      evidence,
+      new AbortController().signal,
+    );
+
+    expect(result.outcome).toBe('inconclusive');
+    expect(result.detail).not.toContain('Unchecked destructive procedure');
+    expect(result.unknowns?.at(-1)?.category).not.toBe('contradictory_evidence');
+    expect(result.unknowns?.at(-1)?.question).toMatch(
+      scenario === 'invalid output' ? /invalid|malformed/i : /foreign|unadmitted/i,
+    );
+  },
+);
+
+test('stops large-record review on its first rate limit without synthesis or retry', async () => {
+  const script = vi.fn(() => {
+    throw new ProviderRateLimitError();
+  });
+  await expect(
+    reviewInvestigation(
+      makeFakeGenerator(script),
+      candidate,
+      [{ ...evidence[0]!, output: 'x'.repeat(240_000) }],
+      new AbortController().signal,
+    ),
+  ).rejects.toBeInstanceOf(ProviderRateLimitError);
+  expect(script).toHaveBeenCalledTimes(1);
+});
+
+test.each([
+  [95_000, 100_000, /chunk budget/i],
+  [80_000, 81_000, /synthesis budget/i],
+] as const)(
+  'preflights review cost for %i characters of context',
+  async (contextSize, evidenceSize, reason) => {
+    const script = vi.fn();
+    const result = await reviewInvestigation(
+      makeFakeGenerator(script),
+      { ...candidate, detail: 'x'.repeat(contextSize) },
+      [{ ...evidence[0]!, output: 'x'.repeat(evidenceSize) }],
+      new AbortController().signal,
+    );
+    expect(script).not.toHaveBeenCalled();
+    expect(result.unknowns?.at(-1)?.question).toMatch(reason);
+  },
+);
+
+test.each([
+  [undefined, 'partial_evidence'],
+  ['insufficient_evidence', 'partial_evidence'],
+  ['contradictory_evidence', 'contradictory_evidence'],
+] as const)(
+  'classifies a completed unsupported review with rejection %s',
+  async (rejection, category) => {
+    const generator = makeFakeGenerator(() => ({
+      supported: false,
+      rejection,
+      summary: 'More evidence is needed.',
+      reason: 'The candidate is not established.',
+      evidenceIds: [evidenceId],
+    }));
+    const result = await reviewInvestigation(
+      generator,
+      candidate,
+      evidence,
+      new AbortController().signal,
+    );
+    expect(result.outcome).toBe('inconclusive');
+    expect(result.unknowns?.at(-1)?.category).toBe(category);
+    expect(result.evidenceReceipts).toEqual(candidate.evidenceReceipts);
+  },
+);

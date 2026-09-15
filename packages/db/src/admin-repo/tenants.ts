@@ -21,7 +21,12 @@ async function tenantDetails(db: Db, tenantIds: string[]) {
       .where(and(inArray(memberships.tenantId, tenantIds), eq(memberships.status, 'active')))
       .groupBy(memberships.tenantId),
     db
-      .select({ tenantId: memberships.tenantId, userId: users.id, email: users.email })
+      .select({
+        tenantId: memberships.tenantId,
+        userId: users.id,
+        email: users.email,
+        accountStatus: users.status,
+      })
       .from(memberships)
       .innerJoin(users, eq(users.id, memberships.userId))
       .where(
@@ -62,15 +67,45 @@ async function tenantDetails(db: Db, tenantIds: string[]) {
   ]);
   const grouped = new Map<
     string,
-    { memberCount: number; owners: unknown[]; providers: unknown[]; domains: unknown[] }
+    {
+      memberCount: number;
+      owners: typeof owners;
+      providers: unknown[];
+      domains: unknown[];
+      ownership: {
+        state: 'owned' | 'missing_owner' | 'inactive_owners';
+        activeOwnerCount: number;
+        inactiveOwnerCount: number;
+      };
+    }
   >();
   for (const tenantId of tenantIds) {
-    grouped.set(tenantId, { memberCount: 0, owners: [], providers: [], domains: [] });
+    grouped.set(tenantId, {
+      memberCount: 0,
+      owners: [],
+      providers: [],
+      domains: [],
+      ownership: { state: 'missing_owner', activeOwnerCount: 0, inactiveOwnerCount: 0 },
+    });
   }
   for (const row of memberCounts) grouped.get(row.tenantId)!.memberCount = row.count;
   for (const row of owners) grouped.get(row.tenantId)!.owners.push(row);
   for (const row of providers) grouped.get(row.tenantId)!.providers.push(row);
   for (const row of domains) grouped.get(row.tenantId)!.domains.push(row);
+  for (const details of grouped.values()) {
+    const activeOwnerCount = details.owners.filter(
+      (owner) => owner.accountStatus === 'active',
+    ).length;
+    details.ownership = {
+      state: activeOwnerCount
+        ? 'owned'
+        : details.owners.length
+          ? 'inactive_owners'
+          : 'missing_owner',
+      activeOwnerCount,
+      inactiveOwnerCount: details.owners.length - activeOwnerCount,
+    };
+  }
   return grouped;
 }
 

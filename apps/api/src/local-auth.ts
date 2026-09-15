@@ -14,6 +14,7 @@ import {
 } from 'jose';
 import {
   attachMembership,
+  InactiveIdentityError,
   ensureActiveLocalFounding,
   ensureLocalProvider,
   ensureLocalProvisioningFounding,
@@ -190,6 +191,15 @@ export interface LocalAuthDeps {
  */
 export function localAuthRoutes(deps: LocalAuthDeps): Hono {
   const routes = new Hono();
+  const sessionResponse = async (c: Context) => {
+    try {
+      return c.json(await createLocalSession(deps));
+    } catch (error) {
+      if (error instanceof InactiveIdentityError)
+        return c.json({ error: 'invalid credentials' }, 401);
+      throw error;
+    }
+  };
 
   if (deps.local.passwordEnabled)
     routes.post('/login', async (c) => {
@@ -202,7 +212,7 @@ export function localAuthRoutes(deps: LocalAuthDeps): Hono {
       if (!deps.local.verify(email, password)) return c.json({ error: 'invalid credentials' }, 401);
 
       c.header('Cache-Control', 'no-store');
-      return c.json(await createLocalSession(deps));
+      return sessionResponse(c);
     });
 
   if (deps.allowAutomaticSession)
@@ -216,7 +226,7 @@ export function localAuthRoutes(deps: LocalAuthDeps): Hono {
       if (body.email.trim().toLowerCase() !== deps.local.email.trim().toLowerCase()) {
         return c.json({ matched: false });
       }
-      return c.json(await createLocalSession(deps));
+      return sessionResponse(c);
     });
 
   return routes;
@@ -231,11 +241,11 @@ async function createLocalSession(deps: LocalAuthDeps) {
     subject: deps.local.email,
     email: deps.local.email,
   };
+  const userId = await upsertIdentity(deps.db, identity);
   const providerId = await ensureLocalProvider(deps.db, {
     issuer: LOCAL_ISSUER,
     audience: deps.local.audience,
   });
-  const userId = await upsertIdentity(deps.db, identity);
   const existingTenantId = await getLocalProviderTenant(deps.db, LOCAL_ISSUER);
   let tenantId: string;
   if (existingTenantId) {

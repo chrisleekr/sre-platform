@@ -1,10 +1,10 @@
 # Workspace settings
 
-Open **Settings** in the sidebar's Configure group. The area is titled **Workspace settings** and has
-three tabs: **Workspace**,
-**Authentication**, and **Members**. Every member can read the settings. Owners and admins can
-rename the workspace. Only owners can change sign-in methods, work email domains, or schedule
-deletion. The screen-by-screen reference is [Dashboard: Workspace settings](../dashboard/settings.md).
+Open **Settings** in the sidebar's Configure group. The area is titled **Workspace settings** and
+has three tabs: **Workspace**, **Authentication**, and **Members**. Every member can read the
+settings. Owners and admins can rename the workspace and change connections and the Slack
+connection. Only owners can change sign-in methods, work email domains, or schedule deletion. The
+screen-by-screen reference is [Dashboard: Workspace settings](../dashboard/settings.md).
 
 ## Rename the workspace
 
