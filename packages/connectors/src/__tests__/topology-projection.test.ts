@@ -51,7 +51,7 @@ test('endpoint projection rejects recognized credentials including encoded path 
   const token = `ghp_${'A'.repeat(36)}`;
   for (const path of [
     `/reset/${token}`,
-    `/access/${token.replace('ghp_', '%67%68%70%5f')}`,
+    `/access/%67%68%70%5f${'A'.repeat(36)}`,
     '/token%3Dprivate-value',
   ])
     expect(topologyEndpoint(`https://service.example${path}`)).toBeNull();
