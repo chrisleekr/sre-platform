@@ -52,6 +52,58 @@ const graph: TopologyGraph = {
 };
 
 describe('DeploymentGraph', () => {
+  test('combined environments render one explicitly mixed edge instead of overlapping declarations', () => {
+    const { container } = render(
+      <DeploymentGraph
+        graph={{
+          ...graph,
+          edges: [
+            {
+              ...graph.edges[0]!,
+              environment: 'production',
+              syncType: 'sync',
+              circuitBreaker: true,
+            },
+            { ...graph.edges[0]!, environment: 'staging' },
+          ],
+        }}
+      />,
+    );
+    const edges = container.querySelectorAll('[data-edge="checkout->orders"]');
+    expect(edges).toHaveLength(1);
+    expect(edges[0]?.getAttribute('data-sync')).toBe('mixed');
+    expect(edges[0]?.getAttribute('data-circuit-breaker')).toBe('mixed');
+    expect(edges[0]?.getAttribute('stroke')).toBe(ORANGE);
+    expect(edges[0]?.textContent).toContain('mixed circuit-breaker declarations');
+    expect(screen.getByText('Mixed circuit-breaker declarations')).toBeTruthy();
+    expect(edges[0]?.textContent).toContain('production');
+    expect(edges[0]?.textContent).toContain('staging');
+  });
+  test('arrowheads stop outside service circles and reciprocal edges do not overlap', () => {
+    const { container } = render(
+      <DeploymentGraph
+        graph={{
+          ...graph,
+          edges: [
+            ...graph.edges,
+            { upstream: 'orders', downstream: 'checkout', syncType: 'sync', circuitBreaker: false },
+          ],
+        }}
+      />,
+    );
+    const edge = container.querySelector('[data-edge="checkout->orders"]')!;
+    const reverse = container.querySelector('[data-edge="orders->checkout"]')!;
+    const target = container.querySelector('circle[data-node="orders"]')!;
+    const distance = Math.hypot(
+      Number(edge.getAttribute('x2')) - Number(target.getAttribute('cx')),
+      Number(edge.getAttribute('y2')) - Number(target.getAttribute('cy')),
+    );
+    expect(distance).toBeGreaterThan(Number(target.getAttribute('r')));
+    expect([edge.getAttribute('x1'), edge.getAttribute('y1')]).not.toEqual([
+      reverse.getAttribute('x2'),
+      reverse.getAttribute('y2'),
+    ]);
+  });
   test('renders a node per service with its label', () => {
     render(<DeploymentGraph graph={graph} />);
     expect(screen.getByText('checkout')).toBeDefined();
@@ -178,8 +230,8 @@ describe('DeploymentGraph', () => {
       'No live telemetry',
       'Selected service',
       'Affected service',
-      'Direct dependent',
-      'Indirect dependent',
+      'Synchronous exposure',
+      'Async exposure',
       'Synchronous dependency',
       'Asynchronous dependency',
       'Circuit breaker',
@@ -187,7 +239,7 @@ describe('DeploymentGraph', () => {
     ]) {
       expect(within(legend).getByText(label)).toBeDefined();
     }
-    expect(within(legend).queryByText(/insulated/i)).toBeNull();
+    expect(within(legend).getByText('Breaker on exposure path')).toBeDefined();
 
     expect(legend.querySelector('[data-legend="status-incident"]')?.getAttribute('fill')).toBe(RED);
     expect(legend.querySelector('[data-legend="status-attention"]')?.getAttribute('fill')).toBe(

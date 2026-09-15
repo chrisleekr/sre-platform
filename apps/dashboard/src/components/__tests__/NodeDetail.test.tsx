@@ -116,8 +116,9 @@ describe('NodeDetail via node click', () => {
     expect(screen.getByText('catalog · kubernetes · incident')).toBeDefined();
     expect(screen.getByText(/2\/3 pods healthy · 1 attention/)).toBeDefined();
     expect(screen.getByText(/7 restarts · 1 OOM-killed pods/)).toBeDefined();
-    expect(screen.getByText(/Called by: storefront/)).toBeDefined();
-    expect(screen.getByText(/Depends on: payments \(async, breaker\)/)).toBeDefined();
+    expect(screen.getByRole('button', { name: 'storefront' })).toBeDefined();
+    expect(screen.getByRole('button', { name: 'payments' })).toBeDefined();
+    expect(screen.getByText(/\(async, breaker\)/)).toBeDefined();
   });
 
   test('clicking a node opens a drawer with its recent deploys and active alerts', () => {
@@ -193,4 +194,41 @@ describe('NodeDetail via node click', () => {
     expect(detail.className).toMatch(/lg:w-|sm:w-|md:w-/);
     expect(screen.getByRole('heading', { name }).className).toMatch(/break-words|break-all/);
   });
+});
+
+test('relationship keys distinguish endpoint and environment tuples containing slashes', () => {
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    render(
+      <NodeDetail
+        node={checkout}
+        incidents={[]}
+        onClose={() => {}}
+        graph={{
+          ...graph,
+          edges: [
+            {
+              upstream: 'checkout',
+              downstream: 'a/b',
+              environment: 'c',
+              syncType: 'sync',
+              circuitBreaker: false,
+            },
+            {
+              upstream: 'checkout',
+              downstream: 'a',
+              environment: 'b/c',
+              syncType: 'sync',
+              circuitBreaker: false,
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText('a/b')).toBeTruthy();
+    expect(screen.getByText('a')).toBeTruthy();
+    expect(error.mock.calls.flat().join(' ')).not.toMatch(/same key/);
+  } finally {
+    error.mockRestore();
+  }
 });

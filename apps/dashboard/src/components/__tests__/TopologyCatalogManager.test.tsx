@@ -7,11 +7,15 @@ import { installDialogMethods } from '../../test/dialog';
 const h = vi.hoisted(() => ({
   saveService: vi.fn(async () => {}),
   saveDependency: vi.fn(async () => {}),
+  deleteDependency: vi.fn(async () => {}),
+  deleteService: vi.fn(async () => {}),
 }));
 
 vi.mock('../../lib/useTopology', () => ({
   saveTopologyService: h.saveService,
   saveTopologyDependency: h.saveDependency,
+  deleteTopologyDependency: h.deleteDependency,
+  deleteTopologyService: h.deleteService,
 }));
 
 import { TopologyCatalogManager } from '../TopologyCatalogManager';
@@ -53,11 +57,11 @@ afterEach(() => {
   dialogMethods.restore();
 });
 
-function renderManager() {
+function renderManager(input = graph) {
   const onSaved = vi.fn();
   render(
     <TopologyCatalogManager
-      graph={graph}
+      graph={input}
       apiBaseUrl="http://api"
       getCredentials={async () => ({ kind: 'bearer' as const, token: 'jwt' })}
       onSaved={onSaved}
@@ -68,6 +72,92 @@ function renderManager() {
 }
 
 describe('TopologyCatalogManager', () => {
+  test('choosing endpoints and environment preserves the unsaved evidence and call settings', async () => {
+    renderManager();
+    fireEvent.change(screen.getByLabelText('Evidence or reason for this dependency'), {
+      target: { value: 'Confirmed configuration' },
+    });
+    fireEvent.change(screen.getByLabelText('Call type'), { target: { value: 'async' } });
+    fireEvent.change(screen.getByLabelText('Protocol (optional)'), { target: { value: 'AMQP' } });
+    fireEvent.change(screen.getByLabelText('Caller (upstream)'), { target: { value: 'checkout' } });
+    fireEvent.change(screen.getByLabelText('Dependency (downstream)'), {
+      target: { value: 'payments' },
+    });
+    fireEvent.change(screen.getByLabelText('Environment (optional)'), {
+      target: { value: 'production' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save relationship' }));
+    await waitFor(() =>
+      expect(h.saveDependency).toHaveBeenCalledWith(
+        'http://api',
+        expect.any(Function),
+        expect.objectContaining({
+          rationale: 'Confirmed configuration',
+          syncType: 'async',
+          protocol: 'AMQP',
+          environment: 'production',
+        }),
+      ),
+    );
+  });
+  test('editing a saved relationship preserves protocol and updates call protection', async () => {
+    renderManager({
+      ...graph,
+      edges: [
+        {
+          upstream: 'checkout',
+          downstream: 'payments',
+          syncType: 'async',
+          circuitBreaker: true,
+          protocol: 'AMQP',
+        },
+      ],
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit checkout to payments' }));
+    expect((screen.getByLabelText('Protocol (optional)') as HTMLInputElement).value).toBe('AMQP');
+    expect((screen.getByLabelText('Call type') as HTMLSelectElement).value).toBe('async');
+    fireEvent.click(screen.getByLabelText(/circuit breaker/i));
+    fireEvent.change(screen.getByLabelText('Evidence or reason for this dependency'), {
+      target: { value: 'Confirmed from service configuration.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Update relationship' }));
+    await waitFor(() =>
+      expect(h.saveDependency).toHaveBeenCalledWith('http://api', expect.any(Function), {
+        upstream: 'checkout',
+        downstream: 'payments',
+        syncType: 'async',
+        circuitBreaker: false,
+        protocol: 'AMQP',
+        environment: '',
+        rationale: 'Confirmed from service configuration.',
+      }),
+    );
+  });
+
+  test('relationship removal requires confirmation, while referenced service removal is disabled', async () => {
+    renderManager({
+      ...graph,
+      edges: [
+        { upstream: 'checkout', downstream: 'payments', syncType: 'sync', circuitBreaker: false },
+      ],
+    });
+    fireEvent.change(screen.getByLabelText('Service'), { target: { value: 'checkout' } });
+    expect(
+      (screen.getByRole('button', { name: 'Remove service from catalog' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove checkout to payments' }));
+    expect(h.deleteDependency).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm removal' }));
+    await waitFor(() =>
+      expect(h.deleteDependency).toHaveBeenCalledWith('http://api', expect.any(Function), {
+        upstream: 'checkout',
+        downstream: 'payments',
+        environment: '',
+      }),
+    );
+  });
+
   test('loads normalized ownership and clears it when the service no longer matches', () => {
     renderManager();
 
@@ -100,16 +190,23 @@ describe('TopologyCatalogManager', () => {
 
   test('saves an explicit relationship and prevents a self-edge', async () => {
     const onSaved = renderManager();
-    fireEvent.change(screen.getByLabelText('Upstream'), { target: { value: 'checkout' } });
-    fireEvent.change(screen.getByLabelText('Downstream'), { target: { value: 'checkout' } });
+    fireEvent.change(screen.getByLabelText('Caller (upstream)'), { target: { value: 'checkout' } });
+    fireEvent.change(screen.getByLabelText('Dependency (downstream)'), {
+      target: { value: 'checkout' },
+    });
     expect(
       (screen.getByRole('button', { name: 'Save relationship' }) as HTMLButtonElement).disabled,
     ).toBe(true);
     expect(screen.getByText(/choose two different services/i)).toBeDefined();
 
-    fireEvent.change(screen.getByLabelText('Downstream'), { target: { value: 'payments' } });
+    fireEvent.change(screen.getByLabelText('Dependency (downstream)'), {
+      target: { value: 'payments' },
+    });
     fireEvent.change(screen.getByLabelText('Call type'), { target: { value: 'async' } });
     fireEvent.click(screen.getByLabelText(/circuit breaker/i));
+    fireEvent.change(screen.getByLabelText('Evidence or reason for this dependency'), {
+      target: { value: 'Confirmed from service configuration.' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Save relationship' }));
 
     await waitFor(() =>
@@ -118,6 +215,9 @@ describe('TopologyCatalogManager', () => {
         downstream: 'payments',
         syncType: 'async',
         circuitBreaker: true,
+        protocol: null,
+        environment: '',
+        rationale: 'Confirmed from service configuration.',
       }),
     );
     expect(onSaved).toHaveBeenCalledOnce();
@@ -132,4 +232,32 @@ describe('TopologyCatalogManager', () => {
     expect((await screen.findByRole('alert')).textContent).toMatch(/service update rejected/i);
     expect((screen.getByLabelText('Service') as HTMLInputElement).value).toBe('checkout');
   });
+});
+
+test('switching from a saved relationship to a new edge clears borrowed evidence and call settings', () => {
+  renderManager({
+    ...graph,
+    nodes: [...graph.nodes, { ...graph.nodes[0]!, name: 'orders' }],
+    edges: [
+      {
+        upstream: 'checkout',
+        downstream: 'payments',
+        environment: '',
+        syncType: 'async',
+        circuitBreaker: true,
+        protocol: 'AMQP',
+        rationale: 'Payments evidence',
+      },
+    ],
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Edit checkout to payments' }));
+  fireEvent.change(screen.getByLabelText('Dependency (downstream)'), {
+    target: { value: 'orders' },
+  });
+  expect(
+    (screen.getByLabelText('Evidence or reason for this dependency') as HTMLInputElement).value,
+  ).toBe('');
+  expect((screen.getByLabelText('Protocol (optional)') as HTMLInputElement).value).toBe('');
+  expect((screen.getByLabelText('Call type') as HTMLSelectElement).value).toBe('sync');
+  expect((screen.getByLabelText(/circuit breaker/i) as HTMLInputElement).checked).toBe(false);
 });

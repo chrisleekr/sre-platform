@@ -140,6 +140,7 @@ describe('on-demand connector wizards', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await screen.findByRole('option', { name: '#alerts' });
     fireEvent.change(await screen.findByLabelText('Incident Slack channel'), {
       target: { value: 'C07ALERTS' },
     });
@@ -225,12 +226,69 @@ describe('on-demand connector wizards', () => {
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith({
         name: 'EU Datadog',
-        settings: { site: 'datadoghq.eu' },
+        settings: { site: 'datadoghq.eu', collectApm: false, collectLogs: false },
         credential: JSON.stringify({ apiKey: 'api-key', appKey: 'app-key' }),
       }),
     );
     expect(await screen.findByText('EU Datadog enabled.')).toBeDefined();
     expect(onRunTest).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000003');
+  });
+
+  test.each([undefined, true, false])(
+    'preserves the existing Datadog APM choice %s',
+    (collectApm) => {
+      render(
+        <ObservabilityConnectWizard
+          type="datadog"
+          mode="edit"
+          connectorId="datadog-existing"
+          initialSettings={{
+            site: 'datadoghq.eu',
+            ...(collectApm === undefined ? {} : { collectApm }),
+          }}
+          onSave={vi.fn()}
+          onRunTest={vi.fn()}
+          onClose={() => {}}
+        />,
+      );
+      expect(
+        (
+          screen.getByRole('checkbox', {
+            name: /^Collect APM service-call evidence \(optional\)/,
+          }) as HTMLInputElement
+        ).checked,
+      ).toBe(collectApm !== false);
+    },
+  );
+
+  test('edits Datadog log consent without rotating credentials', async () => {
+    const onSave = vi.fn(async () => ({ connectorId: 'existing' }));
+    render(
+      <ObservabilityConnectWizard
+        type="datadog"
+        mode="edit"
+        connectorId="existing"
+        initialSettings={{ site: 'datadoghq.eu', collectLogs: true, collectApm: false }}
+        credentialConfigured
+        onSave={onSave}
+        onRunTest={vi.fn()}
+        onClose={() => {}}
+      />,
+    );
+    const checkbox = screen.getByRole('checkbox', {
+      name: /Discover traffic from logs/i,
+    }) as HTMLInputElement;
+    expect(checkbox.checked).toBe(true);
+    fireEvent.click(checkbox);
+    fireEvent.click(screen.getByRole('button', { name: 'Credentials' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save and verify' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settings: { site: 'datadoghq.eu', collectLogs: false, collectApm: false },
+      }),
+    );
   });
 
   test('edits Grafana without prefilling its stored token or CA', async () => {

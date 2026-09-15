@@ -6,7 +6,7 @@ export type InvestigationSubject =
   | { kind: 'infrastructure_resource'; dataSourceId: string; entityId: string }
   | { kind: 'deployment'; deploymentId: string }
   | { kind: 'connector_verification'; connectorId: string }
-  | { kind: 'topology_service'; service: string };
+  | { kind: 'topology_service'; service: string; subjectKey?: string };
 
 export interface InvestigationDeclaration {
   outcome: 'created' | 'existing';
@@ -76,7 +76,9 @@ export function investigationSubjectKey(subject: InvestigationSubject): string {
     case 'connector_verification':
       return `${subject.kind}:${subject.connectorId}`;
     case 'topology_service':
-      return `${subject.kind}:${subject.service}`;
+      return subject.subjectKey
+        ? `${subject.kind}:discovery:${subject.subjectKey}`
+        : `${subject.kind}:${subject.service}`;
   }
 }
 
@@ -97,14 +99,24 @@ export async function listActiveInvestigations(
   );
   if (!response.ok) return new Map();
   const body = (await response.json()) as {
-    active?: Array<{ kind: string; sourceId: string; subjectId: string; incidentId: string }>;
+    active?: Array<{
+      kind: string;
+      sourceId: string;
+      subjectId: string;
+      subjectKey?: string;
+      incidentId: string;
+    }>;
   };
   return new Map(
     (body.active ?? []).map((item) => {
       const key =
-        item.kind === 'infrastructure_resource'
-          ? `${item.kind}:${item.sourceId}:${item.subjectId}`
-          : `${item.kind}:${item.subjectId}`;
+        item.kind === 'topology_service' &&
+        item.sourceId === 'topology-discovery' &&
+        item.subjectKey
+          ? `${item.kind}:discovery:${item.subjectKey}`
+          : item.kind === 'infrastructure_resource'
+            ? `${item.kind}:${item.sourceId}:${item.subjectId}`
+            : `${item.kind}:${item.subjectId}`;
       return [key, item.incidentId];
     }),
   );

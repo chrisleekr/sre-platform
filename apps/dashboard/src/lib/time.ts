@@ -22,7 +22,7 @@ export function futureRelativeTime(iso: string, now: number): string {
 /** Operator-readable local time with seconds so adjacent provider events remain distinguishable. */
 export function formatAbsoluteTime(iso: string): string {
   const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
+  if (!iso || Number.isNaN(date.getTime())) return 'Time unavailable';
   return new Intl.DateTimeFormat(undefined, {
     year: 'numeric',
     month: 'short',

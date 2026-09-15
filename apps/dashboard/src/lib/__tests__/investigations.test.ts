@@ -9,6 +9,38 @@ import {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('investigation client identities', () => {
+  test('keeps discovered services scoped and maps server identities back to the selected subject', async () => {
+    const subject: InvestigationSubject = {
+      kind: 'topology_service',
+      service: 'checkout',
+      subjectKey: 'exact-production-key',
+    };
+    expect(investigationSubjectKey(subject)).not.toBe(
+      investigationSubjectKey({ ...subject, subjectKey: 'exact-development-key' }),
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({
+          active: [
+            {
+              kind: 'topology_service',
+              sourceId: 'topology-discovery',
+              subjectId: 'bounded-hash',
+              subjectKey: subject.subjectKey,
+              incidentId: 'incident-production',
+            },
+          ],
+        }),
+      ),
+    );
+    const active = await listActiveInvestigations(
+      '/api',
+      async () => ({ kind: 'bearer', token: 'token' }),
+      [subject],
+    );
+    expect(active.get(investigationSubjectKey(subject))).toBe('incident-production');
+  });
   const subjects: InvestigationSubject[] = [
     { kind: 'infrastructure_resource', dataSourceId: 'source-1', entityId: 'ns/pod-1' },
     { kind: 'deployment', deploymentId: 'deployment-1' },

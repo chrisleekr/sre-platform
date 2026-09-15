@@ -15,6 +15,7 @@ export interface ConnectorSummary {
     polling: 'snapshots' | 'none';
     events: 'authenticated' | 'none';
     instances: 'multiple' | 'singleton';
+    topology?: 'inventory' | 'on_demand';
   };
   credentialConfigured?: boolean;
   verification?: {

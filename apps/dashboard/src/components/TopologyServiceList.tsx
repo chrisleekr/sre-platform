@@ -13,8 +13,8 @@ const STATUS_LABEL: Record<NonNullable<GraphNode['status']>, string> = {
   incident: 'Active incident',
   attention: 'Needs attention',
   stale: 'Stale telemetry',
-  healthy: 'Healthy',
-  unknown: 'No live telemetry',
+  healthy: 'Runtime healthy',
+  unknown: 'Evidence incomplete',
 };
 
 export interface TopologyServiceListProps {
@@ -75,7 +75,7 @@ export function TopologyServiceList({ nodes, selected, onSelect }: TopologyServi
               <span className="min-w-0 break-words text-ink-muted">
                 {latestDeploy ? (
                   <>
-                    <span className="block">{latestDeploy.status}</span>
+                    <span className="block">Reported deployment · {latestDeploy.status}</span>
                     <time
                       className="block text-xs text-ink-muted"
                       dateTime={latestDeploy.deployedAt}
@@ -86,7 +86,7 @@ export function TopologyServiceList({ nodes, selected, onSelect }: TopologyServi
                 ) : node.lastDeployAt ? (
                   <time dateTime={node.lastDeployAt}>{relativeTime(node.lastDeployAt, now)}</time>
                 ) : (
-                  'Never deployed'
+                  'No recorded deployment'
                 )}
               </span>
             </button>

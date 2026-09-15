@@ -1,3 +1,5 @@
+import { useOperationalTopology } from '../useOperationalTopology';
+import { useTopologyImpact } from '../useTopologyImpact';
 // @vitest-environment jsdom
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
@@ -8,6 +10,7 @@ import {
   saveTopologyService,
 } from '../useTopology';
 import type { TopologyGraph, BlastRadius } from '../topology';
+import { discoveryFixture } from '../../components/__tests__/topology-discovery.fixture';
 
 const origFetch = globalThis.fetch;
 afterEach(() => {
@@ -35,6 +38,29 @@ const graph: TopologyGraph = {
 };
 
 describe('useTopology', () => {
+  test('preserves automatic identity, relationship and coverage evidence without a catalog', async () => {
+    const discovery = discoveryFixture();
+    globalThis.fetch = vi.fn(async () => Response.json({ nodes: [], edges: [], discovery }));
+    const { result } = renderHook(() => useTopology(opts));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.graph.discovery).toEqual(discovery);
+    expect(result.current.graph.nodes).toEqual([]);
+  });
+  test('a failed historical read never substitutes a previously loaded live graph', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json(graph))
+      .mockResolvedValue(Response.json({}, { status: 503 }));
+    const { result, rerender } = renderHook(({ at }) => useTopology({ ...opts, at }), {
+      initialProps: { at: '' },
+    });
+    await waitFor(() => expect(result.current.graph.nodes).toHaveLength(1));
+    rerender({ at: '2026-09-01T00:00:00.000Z' });
+    expect(result.current.graph.nodes).toEqual([]);
+    await waitFor(() => expect(result.current.error).toBe(true));
+    expect(result.current.graph.nodes).toEqual([]);
+    expect(result.current.graph.historicalAt).toBe('2026-09-01T00:00:00.000Z');
+  });
   test('loads the tenant service graph', async () => {
     globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => graph }) as Response);
     const { result } = renderHook(() => useTopology(opts));
@@ -198,4 +224,91 @@ describe('fetchBlastRadius', () => {
       ),
     ).rejects.toThrow();
   });
+});
+
+test('operational health is reused across unrelated renders and ages on the clock', () => {
+  vi.useFakeTimers();
+  const observedAt = new Date().toISOString();
+  const input: TopologyGraph = {
+    ...graph,
+    infrastructure: [
+      {
+        dataSourceId: 'cluster',
+        dataSourceName: 'Cluster',
+        source: 'kubernetes',
+        entityId: 'apps/checkout',
+        namespace: 'apps',
+        kind: 'pod',
+        metrics: { ready: 1 },
+        observedAt,
+      },
+    ],
+    runtimeBindings: [
+      {
+        id: 'binding',
+        serviceName: 'checkout',
+        connectorId: 'cluster',
+        namespace: 'apps',
+        labelKey: '',
+        labelValue: '',
+        environment: 'production',
+        rationale: 'Confirmed',
+        updatedAt: observedAt,
+      },
+    ],
+    coverage: [
+      {
+        dataSourceId: 'cluster',
+        dataSourceName: 'Cluster',
+        state: 'complete',
+        observedAt,
+        lastSucceededAt: observedAt,
+      },
+    ],
+  };
+  const { result, rerender, unmount } = renderHook(() => useOperationalTopology(input, ''));
+  const first = result.current;
+  expect(first.nodes[0]?.status).toBe('healthy');
+  rerender();
+  expect(result.current).toBe(first);
+  act(() => vi.advanceTimersByTime(90_000));
+  expect(result.current.nodes[0]?.status).toBe('stale');
+  unmount();
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+test('impact refreshes for evidence changes even when subject and relation counts stay equal', async () => {
+  const discovery = discoveryFixture();
+  const input = { ...graph, discovery };
+  const blast = {
+    service: 'checkout',
+    mapped: true,
+    dependents: { direct: [], indirect: [], insulated: [] },
+    suspects: [],
+    truncated: false,
+  };
+  const fetchMock = vi.fn(async () => Response.json(blast));
+  globalThis.fetch = fetchMock;
+  const { result, rerender } = renderHook(
+    ({ value }) => useTopologyImpact('http://api', opts.getCredentials, value, 'checkout'),
+    { initialProps: { value: input } },
+  );
+  await waitFor(() => expect(result.current.result).not.toBeNull());
+  rerender({ value: { ...input } });
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  const changed = {
+    ...input,
+    discovery: {
+      ...discovery,
+      operational: {
+        ...discovery.operational,
+        relations: discovery.operational.relations.map((relation, index) =>
+          index ? relation : { ...relation, stale: !relation.stale },
+        ),
+      },
+    },
+  };
+  rerender({ value: changed });
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(result.current.loading).toBe(false));
 });

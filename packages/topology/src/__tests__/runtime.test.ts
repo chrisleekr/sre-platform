@@ -152,3 +152,15 @@ test('runtime confirmation cannot name a member of another tenant', async () => 
     cause: { code: '23503', constraint_name: 'runtime_binding_membership_fk' },
   });
 });
+
+test('complete source inventory without a matching bound pod cannot establish recovery', async () => {
+  expect(
+    await readServiceRuntime(app.db, tenantId, 'checkout', async ({ id }) =>
+      id === otherId
+        ? snapshots(id).filter(
+            (row) => row.metadata.kind === 'collection' || row.entityId.endsWith('/other'),
+          )
+        : snapshots(id),
+    ),
+  ).toBeNull();
+});

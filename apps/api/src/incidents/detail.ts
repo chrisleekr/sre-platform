@@ -1,3 +1,4 @@
+import { resolveIncidentTopologyContext as resolveIncidentEntityContext } from '@sre/topology';
 import {
   IncidentFeedbackRateLimitError,
   connectorConfigs,
@@ -16,7 +17,6 @@ import {
   recentGitLabEvents,
   resolveGitHubRepositories,
   resolveGitLabProjects,
-  resolveIncidentEntityContext,
   upsertEntityServiceMappingTx,
   recordIncidentFeedbackTx,
   incidentSignals,
@@ -276,6 +276,7 @@ export function registerIncidentDetailRoutes(
         : null,
       feedback,
       feedbackEligibleFindingRunIds: findingRows.map((row) => row.runId).sort(),
+      serviceTeams: owners,
       attention: operatorState.attention,
       automation: {
         nextAction: operatorState.automation,

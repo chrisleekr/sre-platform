@@ -22,6 +22,12 @@ const selectGraph = (body: unknown): TopologyGraph => {
     nodes: graph.nodes ?? [],
     edges: graph.edges ?? [],
     infrastructure: graph.infrastructure ?? [],
+    ...(graph.incidentMappings ? { incidentMappings: graph.incidentMappings } : {}),
+    ...(graph.incidents ? { incidents: graph.incidents } : {}),
+    ...(graph.coverage ? { coverage: graph.coverage } : {}),
+    ...(graph.runtimeBindings ? { runtimeBindings: graph.runtimeBindings } : {}),
+    ...(graph.historicalAt ? { historicalAt: graph.historicalAt } : {}),
+    ...(graph.discovery ? { discovery: graph.discovery } : {}),
   };
 };
 
@@ -35,19 +41,26 @@ export function useTopology(opts: {
   apiBaseUrl: string;
   getCredentials: CredentialGetter;
   pollMs?: number;
+  at?: string;
 }): UseTopology {
   const [nonce, setNonce] = useState(0);
   const refetch = useCallback(() => setNonce((value) => value + 1), []);
   const { data, loading, error } = useFetchResource<TopologyGraph>({
     apiBaseUrl: opts.apiBaseUrl,
     getCredentials: opts.getCredentials,
-    path: '/topology/graph',
+    path: `/topology/graph${opts.at ? `?at=${encodeURIComponent(opts.at)}` : ''}`,
     initial: EMPTY,
     select: selectGraph,
     pollMs: opts.pollMs ?? POLL_MS,
     nonce,
   });
-  return { graph: data, loading, error, refetch };
+  const sameTime = (data.historicalAt ?? '') === (opts.at ?? '');
+  return {
+    graph: sameTime ? data : { ...EMPTY, ...(opts.at ? { historicalAt: opts.at } : {}) },
+    loading,
+    error,
+    refetch,
+  };
 }
 
 async function topologyMutation(
@@ -55,9 +68,10 @@ async function topologyMutation(
   getCredentials: CredentialGetter,
   path: string,
   body: unknown,
+  method: 'PUT' | 'DELETE' = 'PUT',
 ): Promise<void> {
   const res = await authenticatedFetch(`${apiBaseUrl}${path}`, getCredentials, {
-    method: 'PUT',
+    method,
     headers: {
       'content-type': 'application/json',
     },
@@ -90,25 +104,53 @@ export async function saveTopologyDependency(
     downstream: string;
     syncType: 'sync' | 'async';
     circuitBreaker: boolean;
+    protocol?: string | null;
+    environment?: string;
+    rationale?: string | null;
   },
 ): Promise<void> {
   await topologyMutation(apiBaseUrl, getCredentials, '/topology/dependencies', input);
 }
 
+/** Remove a declared relationship without deleting either service. */
+export async function deleteTopologyDependency(
+  apiBaseUrl: string,
+  getCredentials: CredentialGetter,
+  input: { upstream: string; downstream: string; environment?: string },
+): Promise<void> {
+  await topologyMutation(apiBaseUrl, getCredentials, '/topology/dependencies', input, 'DELETE');
+}
+
+/** Remove only the catalog entry; live sources can still show the service. */
+export async function deleteTopologyService(
+  apiBaseUrl: string,
+  getCredentials: CredentialGetter,
+  name: string,
+): Promise<void> {
+  await topologyMutation(
+    apiBaseUrl,
+    getCredentials,
+    `/topology/services/${encodeURIComponent(name)}`,
+    undefined,
+    'DELETE',
+  );
+}
+
 /**
- * One-shot blast-radius fetch for a service (the incident overlay). Not polled: the overlay refetches
- * only when the active incident's service changes. Throws on a non-2xx so the caller can ignore the
- * overlay and keep the base graph.
+ * Fetch dependency impact for one service. The caller refreshes on selection or catalog changes
+ * and presents failures without blanking the service graph.
  */
 export async function fetchBlastRadius(
   apiBaseUrl: string,
   getCredentials: CredentialGetter,
   service: string,
+  environment?: string,
+  subjectKey?: string,
 ): Promise<BlastRadius> {
   const res = await authenticatedFetch(
-    `${apiBaseUrl}/topology/blast-radius?service=${encodeURIComponent(service)}`,
+    `${apiBaseUrl}/topology/blast-radius?service=${encodeURIComponent(service)}${environment ? `&environment=${encodeURIComponent(environment)}` : ''}${subjectKey ? `&subjectKey=${encodeURIComponent(subjectKey)}` : ''}`,
     getCredentials,
   );
-  if (!res.ok) throw new Error('request failed');
+  await checkResponse(res, 'Could not load dependency impact. Try again.');
   return (await res.json()) as BlastRadius;
 }

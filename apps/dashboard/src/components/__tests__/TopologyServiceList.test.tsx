@@ -37,10 +37,10 @@ describe('TopologyServiceList', () => {
       expect.stringContaining('checkout'),
       expect.stringContaining('orders'),
     ]);
-    for (const value of ['checkout', 'payments', 'tier1', 'success']) {
+    for (const value of ['checkout', 'payments', 'tier1', 'Reported deployment · success']) {
       expect(within(buttons[0]!).getByText(value)).toBeDefined();
     }
-    for (const fallback of ['No team', 'No criticality', 'Never deployed']) {
+    for (const fallback of ['No team', 'No criticality', 'No recorded deployment']) {
       expect(within(buttons[1]!).getByText(fallback)).toBeDefined();
     }
   });
