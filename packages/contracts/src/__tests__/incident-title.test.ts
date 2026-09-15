@@ -54,3 +54,12 @@ test.each(['<script<script>>Check latency', '<img src=x onerror=bad', 'Check < l
     expect(meaningfulIncidentTitle(value)).not.toMatch(/[<>]/);
   },
 );
+
+test.each([
+  ['Disk<b>pressure</b>rising', 'Disk pressure rising'],
+  ['<scr<script>ipt>Check latency', 'iptCheck latency'],
+  ['<scrip<script>removed</script>t>Check latency', 'removed tCheck latency'],
+  ['<https://status.example.com|Checkout status> degraded', 'Checkout status degraded'],
+])('keeps text separated when removing markup: %s', (value, expected) => {
+  expect(meaningfulIncidentTitle(value)).toBe(expected);
+});
