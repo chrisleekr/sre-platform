@@ -224,9 +224,11 @@ describe('incident response workspace', () => {
 
     const view = renderIncident();
 
-    expect(await screen.findByText(/monitoring recovery after check 1 of 3/i)).toBeDefined();
-    expect(screen.getByText(/next automated check/i)).toBeDefined();
-    expect(screen.getByText(/no human action is required yet/i)).toBeDefined();
+    expect(
+      (await screen.findAllByText(/scheduled recovery check overdue/i)).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText('Recovery not verified')).toBeDefined();
+    expect(screen.queryByText(/no human action is required yet/i)).toBeNull();
     view.unmount();
   });
 

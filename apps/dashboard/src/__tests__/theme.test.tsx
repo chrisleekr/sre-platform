@@ -13,7 +13,7 @@ const storage = new Map<string, string>();
 const indexHtml = readFileSync(resolve(process.cwd(), 'apps/dashboard/index.html'), 'utf8');
 
 function loadBootstrapSource(): string {
-  const source = indexHtml.match(/<script>\s*([\s\S]*?)\s*<\/script>/)?.[1];
+  const source = indexHtml.match(/<script>\s*([\s\S]*?)\s*<\/script>/i)?.[1];
   if (!source) throw new Error('Theme bootstrap script is missing from index.html.');
   return source;
 }

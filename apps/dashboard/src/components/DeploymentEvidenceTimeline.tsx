@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import type { Deployment, GitOpsApplication, Incident } from '../lib/types';
 import { incidentPath } from '../lib/routes';
+import { incidentDisplayTitle } from '../lib/incidentTitle';
 import { formatAbsoluteTime, relativeTime } from '../lib/time';
 
 const CORRELATION_WINDOW_MS = 24 * 60 * 60 * 1_000;
@@ -142,7 +143,7 @@ export function DeploymentEvidenceTimeline({
                     to={incidentPath(event.incident.id)}
                     className="block break-words font-medium text-critical hover:underline"
                   >
-                    {event.incident.title || event.incident.service}
+                    {incidentDisplayTitle(event.incident)}
                   </Link>
                   <span className="block text-xs text-critical">
                     {event.incident.severity} · {event.incident.status} · {event.incident.service}
@@ -244,7 +245,7 @@ export function DeploymentEvidenceTimeline({
                           to={incidentPath(incident.id)}
                           className="text-sm font-medium text-info hover:underline"
                         >
-                          {incident.title || incident.service}
+                          {incidentDisplayTitle(incident)}
                         </Link>
                         <p className="text-xs text-ink-muted">
                           {incident.severity} · {incident.status} ·{' '}

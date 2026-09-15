@@ -1,4 +1,5 @@
 import type { EvidenceDetail } from '../lib/types';
+import { IncidentEvidenceText } from './IncidentEvidenceText';
 
 type CodeProjection = Extract<EvidenceDetail['projection'], { kind: 'code' }>;
 
@@ -119,9 +120,7 @@ export function IncidentCodeEvidence({ projection }: { projection: CodeProjectio
             </div>
             <ProviderLink href={match.providerUrl}>Open exact source</ProviderLink>
           </header>
-          <pre className="max-h-[32rem] overflow-auto whitespace-pre bg-code p-3 font-instrument text-xs leading-5 text-code-ink">
-            <code>{match.excerpt}</code>
-          </pre>
+          <IncidentEvidenceText text={match.excerpt} label="Code" />
         </article>
       ))}
 

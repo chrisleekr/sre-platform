@@ -1,23 +1,38 @@
 import type { Incident } from './types';
-import { investigationRunOutcomeLabel } from './investigationRuns';
+import { formatAbsoluteTime } from './time';
+
+/** Preview current citations, or disclose recent checks when none are cited. */
+export function incidentEvidencePreview(
+  incident: Incident,
+  recoveryIsCurrent: boolean,
+  recentIds: string[],
+) {
+  const citations = recoveryIsCurrent
+    ? incident.recoveryEvidenceIds
+    : incident.assessmentEvidenceIds;
+  const cited = Boolean(citations?.length);
+  return { cited, ids: [...new Set(cited ? citations : recentIds)].slice(0, 3) };
+}
 
 /** Current work is independent of an earlier completed assessment.
  * @param incident - Canonical lifecycle, last result and queued work facts.
  */
 export function investigationWorkLabel(incident: Incident): string {
   const pending = incident.pendingAutomation;
-  if (pending && ['resume', 'triage', 'signal.reassess'].includes(pending.type))
+  if (pending)
     return pending.status === 'processing'
-      ? 'Investigation in progress'
+      ? `${pending.type === 'recovery.verify' ? 'Recovery check' : 'Investigation'} recorded as processing`
       : pending.type === 'resume'
         ? 'Responder follow-up queued'
-        : 'Investigation queued';
-  if (incident.investigationStatus === 'gathering') return 'Gathering evidence';
-  if (incident.investigationStatus === 'queued') return 'Queued';
-  if (incident.latestInvestigationRun?.outcome === 'failed') return 'Latest follow-up failed';
-  if (incident.latestInvestigationRun && incident.latestInvestigationRun.outcome !== 'conclusive')
-    return `Latest follow-up: ${investigationRunOutcomeLabel(incident.latestInvestigationRun.outcome)}`;
-  return incident.investigationStatus === 'assessed' ? 'Assessment ready' : 'Needs human help';
+        : `${pending.type === 'recovery.verify' ? 'Recovery check' : 'Investigation'} queued`;
+  if (incident.recoveryState === 'monitoring' && incident.recoveryNextCheckAt) {
+    const at = Date.parse(incident.recoveryNextCheckAt);
+    if (Number.isFinite(at))
+      return at <= Date.now()
+        ? 'Scheduled recovery check overdue; execution not confirmed'
+        : `Next recovery check scheduled ${formatAbsoluteTime(incident.recoveryNextCheckAt)}`;
+  }
+  return 'No active automation recorded';
 }
 
 /** Investigation progress is separate from the incident's operational lifecycle. */

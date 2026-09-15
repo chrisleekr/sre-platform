@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import type { Incident } from '../lib/types';
+import { incidentDisplayTitle } from '../lib/incidentTitle';
 import { incidentPath } from '../lib/routes';
 import { formatAbsoluteTime, futureRelativeTime, relativeTime } from '../lib/time';
 import {
@@ -219,7 +220,7 @@ export function IncidentsList({ incidents }: { incidents: Incident[] }) {
                   </time>
                 </div>
                 <h2 className="break-words text-base font-semibold text-ink">
-                  {incident.title || incident.service}
+                  {incidentDisplayTitle(incident)}
                 </h2>
                 {incident.causalParentId && (
                   <p className="text-xs font-semibold text-info">
@@ -230,7 +231,7 @@ export function IncidentsList({ incidents }: { incidents: Incident[] }) {
                   </p>
                 )}
                 <p className="mt-1 flex min-w-0 flex-wrap gap-x-2 gap-y-1 text-xs text-ink-muted">
-                  {incident.title && (
+                  {!incident.service.startsWith('slack:') && (
                     <>
                       <span className="break-words font-medium text-ink-secondary">
                         {incident.service}

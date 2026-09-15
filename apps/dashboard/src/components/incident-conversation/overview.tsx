@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { incidentDisplayTitle } from '../../lib/incidentTitle';
-import { investigationWorkLabel } from '../../lib/incidentState';
+import { evidenceOutcomeLabel, toolDisplayLabel } from '../../lib/toolPresentation';
 import { incidentPath, productPath } from '../../lib/routes';
 import { formatAbsoluteTime } from '../../lib/time';
 import {
@@ -11,8 +11,10 @@ import {
 } from '../../lib/investigationRuns';
 import { IncidentDecisionBrief } from '../IncidentDecisionBrief';
 import { IncidentOperatorPanel } from '../IncidentOperatorPanel';
+import { IncidentEvidencePreview } from '../IncidentEvidencePreview';
+import { IncidentAutomationStatus } from '../IncidentAutomationStatus';
+import { incidentEvidencePreview } from '../../lib/incidentState';
 import { Money } from '../Money';
-import { IncidentTags } from '../IncidentTags';
 import { SlackThreadLink } from './signals';
 import type { IncidentLiveViewModel } from './view-model';
 
@@ -37,6 +39,12 @@ export function IncidentOverview({ view }: { view: IncidentLiveViewModel }) {
     refreshWorkspace,
   } = view;
   const displayTitle = incidentDisplayTitle(incident, signals);
+  const serviceTeam = workspace.serviceTeams?.join(', ') ?? workspace.attention?.owner;
+  const preview = incidentEvidencePreview(
+    incident,
+    view.recoveryIsCurrent,
+    view.evidenceState.evidence.map((item) => item.id),
+  );
   const resolvedServices = (workspace.codeContext?.resolvedServices ?? []).filter(
     (service) => !service.startsWith('slack:'),
   );
@@ -62,7 +70,10 @@ export function IncidentOverview({ view }: { view: IncidentLiveViewModel }) {
   return (
     <>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <h1 className="mr-2 min-w-0 break-words text-2xl font-semibold tracking-tight">
+        <h1
+          tabIndex={-1}
+          className="mr-2 min-w-0 break-words text-2xl font-semibold tracking-tight"
+        >
           {displayTitle}
         </h1>
         {incident.purpose === 'health_check' ? (
@@ -87,7 +98,7 @@ export function IncidentOverview({ view }: { view: IncidentLiveViewModel }) {
             ? 'Completed'
             : incident.status}
         </span>
-        {assessment && (
+        {assessment === 'assessment available' && (
           <span className="rounded-full bg-assessment-muted px-2.5 py-1 text-xs font-medium text-assessment">
             {assessment}
           </span>
@@ -100,6 +111,10 @@ export function IncidentOverview({ view }: { view: IncidentLiveViewModel }) {
           <strong className="font-semibold text-ink-secondary">
             {affected || 'Not established'}
           </strong>
+        </span>
+        <span>
+          <span>Service team</span>{' '}
+          <strong className="text-ink-secondary">{serviceTeam || 'Not established'}</strong>
         </span>
         {incident.originSurface !== 'slack' && (
           <span>{incident.alertSource === 'manual' ? 'Human report' : incident.alertSource}</span>
@@ -128,28 +143,61 @@ export function IncidentOverview({ view }: { view: IncidentLiveViewModel }) {
         </time>
         <span>Live updates: {stream.status}</span>
       </div>
-
-      <IncidentTags
-        incidentId={incident.id}
-        getCredentials={getCredentials}
-        data={{
-          tags: workspace.tags ?? [],
-          suggestions: workspace.tagSuggestions ?? [],
-          linkRules: workspace.tagLinkRules ?? [],
-          historySuggestions: workspace.tagHistorySuggestions ?? [],
-        }}
-        refresh={refreshWorkspace}
-      />
+      {stream.status !== 'open' && (
+        <div
+          role="status"
+          className="mt-3 rounded border border-warning-line bg-warning-soft p-3 text-sm text-warning"
+        >
+          <p className="font-semibold">
+            {stream.status === 'closed' || stream.connectionError
+              ? 'Live updates interrupted. Showing the last loaded information.'
+              : 'Connecting to live updates. Showing the loaded incident.'}
+          </p>
+          <button type="button" onClick={stream.retry} className="min-h-11 underline">
+            Retry live updates
+          </button>
+        </div>
+      )}
+      {(view.newMessageCount > 0 || view.conversationReviewNeeded) && (
+        <div role="status">
+          <button
+            type="button"
+            onClick={view.showNewMessages}
+            className="mt-2 min-h-11 text-info underline"
+          >
+            {view.newMessageCount > 0 &&
+              `${view.newMessageCount} new conversation update${view.newMessageCount === 1 ? '' : 's'} · `}
+            {view.conversationReviewNeeded
+              ? 'Connection restored · Review conversation'
+              : 'View updates'}
+          </button>
+        </div>
+      )}
 
       <nav
         aria-label="Incident workspace sections"
-        className="mt-4 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 border-y border-line py-2"
+        className="mt-2 flex min-w-0 flex-wrap items-center gap-x-4 text-xs"
       >
         <span className="text-xs text-ink-muted">Jump to</span>
+        <button
+          type="button"
+          className="min-h-11 text-info underline"
+          onClick={() => {
+            const controls = document.getElementById(
+              'incident-lifecycle-controls',
+            ) as HTMLDetailsElement | null;
+            if (controls) {
+              controls.open = true;
+              controls.scrollIntoView({ block: 'start' });
+              controls.querySelector('summary')?.focus();
+            }
+          }}
+        >
+          Manage incident
+        </button>
         {[
           ['#decision-brief-title', 'Brief'],
           ['#timeline-title', 'Conversation'],
-          ['#incident-evidence', 'Evidence'],
         ].map(([href, label]) => (
           <a
             key={href}
@@ -161,15 +209,15 @@ export function IncidentOverview({ view }: { view: IncidentLiveViewModel }) {
         ))}
       </nav>
 
-      <div className="mt-5 grid min-w-0 gap-4 @4xl:grid-cols-[minmax(0,1fr)_23rem] @4xl:items-start">
+      <div className="mt-3 grid min-w-0 gap-4 @4xl:grid-cols-[minmax(0,1fr)_18rem] @4xl:items-start">
         <div className="min-w-0 space-y-4">
-          <IncidentOperatorPanel workspace={workspace} />
           <IncidentDecisionBrief
             workspace={workspace}
             onSelectEvidence={openEvidence}
             getCredentials={getCredentials}
             onChanged={refreshWorkspace}
           />
+          <IncidentOperatorPanel workspace={workspace} showTeam={false} />
 
           {workspace.investigationSubject ? (
             <section className="rounded-lg border border-info-line bg-info-soft p-4">
@@ -235,148 +283,211 @@ export function IncidentOverview({ view }: { view: IncidentLiveViewModel }) {
           ) : null}
         </div>
 
-        <aside className="min-w-0 rounded-xl border border-line bg-surface-subtle p-3 @4xl:sticky @4xl:top-4">
-          <div className="mb-3 px-1">
-            <h2 className="text-sm font-bold text-ink">Current response state</h2>
-            <p className="mt-0.5 text-xs leading-5 text-ink-muted">
-              Live signals, automation, and required human action.
+        <aside className="min-w-0 space-y-3" aria-label="Supporting evidence">
+          <IncidentAutomationStatus incident={incident} />
+          <section className="rounded-lg border border-line bg-surface p-4" id="incident-evidence">
+            <h2 className="font-semibold">Supporting evidence</h2>
+            <p className="mt-1 text-xs text-ink-muted">
+              {preview.cited
+                ? 'Recorded citations for the current assessment'
+                : 'Recent checks, not cited proof of a finding'}
             </p>
-          </div>
-          <dl className="grid min-w-0 gap-2 @4xl:grid-cols-2">
-            <div className="relative overflow-hidden rounded-lg border border-line bg-surface p-3 pl-4">
-              <span
-                aria-hidden="true"
-                className={`absolute inset-y-3 left-0 w-1 rounded-r-full ${ownershipMarker}`}
-              />
-              <dt className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-                Ownership
-              </dt>
-              <dd className="mt-1 text-sm font-semibold text-ink">{ownershipLabel}</dd>
-              <dd className="mt-1 text-xs text-ink-muted">
-                Lifecycle v{incident.lifecycleVersion}
-              </dd>
+            <ul className="mt-3 space-y-2">
+              {preview.ids.map((id) => {
+                const item = view.evidenceState.evidence.find((record) => record.id === id);
+                return (
+                  <li key={id}>
+                    <button
+                      type="button"
+                      className="min-h-11 w-full rounded border border-line p-3 text-left"
+                      onClick={() =>
+                        openEvidence(
+                          id,
+                          (view.recoveryIsCurrent
+                            ? incident.recoveryEvidenceIds
+                            : incident.assessmentEvidenceIds
+                          )?.includes(id)
+                            ? view.recoveryIsCurrent
+                              ? (incident.recoverySummary ?? 'Recovery assessment citation')
+                              : (incident.rcaSummary ?? 'Recorded assessment citation')
+                            : undefined,
+                        )
+                      }
+                    >
+                      <span className="block break-words text-sm font-semibold">
+                        {item ? toolDisplayLabel(item.tool) : `Cited check ${id.slice(0, 8)}`}
+                      </span>
+                      <span className="mt-1 block break-all text-xs">
+                        {item?.summary ?? 'Inspect recorded evidence'}
+                      </span>
+                      <IncidentEvidencePreview
+                        detail={view.evidenceState.details?.[id]}
+                        failed={view.evidenceState.detailErrors?.[id]}
+                      />
+                      {item && (
+                        <span className="mt-1 block text-xs text-ink-muted">
+                          {evidenceOutcomeLabel(item.outcome)} ·{' '}
+                          {formatAbsoluteTime(item.recordedAt)}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            <button
+              type="button"
+              onClick={view.showAllEvidence}
+              className="mt-3 min-h-11 text-info underline"
+            >
+              All evidence · {view.evidenceState.evidence.length} loaded
+            </button>
+          </section>
+          <details className="rounded-xl border border-line bg-surface-subtle p-3">
+            <summary className="min-h-11 cursor-pointer font-semibold">
+              Response history and usage
+            </summary>
+            <div className="mb-3 px-1">
+              <h2 className="text-sm font-bold text-ink">Current response state</h2>
             </div>
-            <div className="relative overflow-hidden rounded-lg border border-line bg-surface p-3 pl-4">
-              <span
-                aria-hidden="true"
-                className={`absolute inset-y-3 left-0 w-1 rounded-r-full ${providerState.marker}`}
-              />
-              <dt className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-                Provider notifications
-              </dt>
-              <dd className={`mt-1 text-sm font-semibold ${providerState.text}`}>
-                {providerState.label}
-              </dd>
-              <dd className="mt-1 text-xs text-ink-muted">
-                {signals.length} correlated notification{signals.length === 1 ? '' : 's'}
-              </dd>
-            </div>
-            <div className="relative overflow-hidden rounded-lg border border-line bg-surface p-3 pl-4">
-              <span
-                aria-hidden="true"
-                className={`absolute inset-y-3 left-0 w-1 rounded-r-full ${
-                  incident.investigationStatus === 'degraded'
-                    ? 'bg-critical-solid'
-                    : incident.investigationStatus === 'assessed'
-                      ? 'bg-assessment-solid'
-                      : 'bg-info-solid'
-                }`}
-              />
-              <dt className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-                SRE investigation
-              </dt>
-              <dd
-                className={`mt-1 text-sm font-semibold ${
-                  incident.investigationStatus === 'degraded' ? 'text-critical' : 'text-ink'
-                }`}
-              >
-                {investigationWorkLabel(incident)}
-              </dd>
-              {incident.queuedResponderWork && (
+            <dl className="grid min-w-0 gap-2 @4xl:grid-cols-2">
+              <div className="relative overflow-hidden rounded-lg border border-line bg-surface p-3 pl-4">
+                <span
+                  aria-hidden="true"
+                  className={`absolute inset-y-3 left-0 w-1 rounded-r-full ${ownershipMarker}`}
+                />
+                <dt className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                  Ownership
+                </dt>
+                <dd className="mt-1 text-sm font-semibold text-ink">{ownershipLabel}</dd>
                 <dd className="mt-1 text-xs text-ink-muted">
-                  Responder follow-up queued. New input has not yet been incorporated.
+                  Lifecycle v{incident.lifecycleVersion}
                 </dd>
-              )}
-              <dd className="mt-1 text-xs text-ink-muted">
-                {workspace.progress.total} diagnostic check
-                {workspace.progress.total === 1 ? '' : 's'} recorded
-              </dd>
-              {incident.latestInvestigationRun && (
-                <dd className="mt-2 border-t border-line pt-2 text-xs text-ink-muted">
-                  <span className="block font-semibold">Latest investigation run</span>
-                  <span>
-                    {investigationRunOperationLabel(incident.latestInvestigationRun.operation)} ·{' '}
-                    {investigationRunOutcomeLabel(incident.latestInvestigationRun.outcome)} ·{' '}
-                    {formatAbsoluteTime(incident.latestInvestigationRun.completedAt)}
-                  </span>
-                  <span className="block">
-                    Trigger:{' '}
-                    {investigationRunTriggerLabel(incident.latestInvestigationRun.triggerReason)}
-                    {incident.latestInvestigationRun.triggerReason
-                      ? incident.latestInvestigationRun.triggerAutomatic
-                        ? ' · automatic'
-                        : ' · manual'
-                      : ''}
-                  </span>
-                  {investigationRunBudgetLabel(incident.latestInvestigationRun) && (
-                    <span className="block">
-                      {investigationRunBudgetLabel(incident.latestInvestigationRun)}
+              </div>
+              <div className="relative overflow-hidden rounded-lg border border-line bg-surface p-3 pl-4">
+                <span
+                  aria-hidden="true"
+                  className={`absolute inset-y-3 left-0 w-1 rounded-r-full ${providerState.marker}`}
+                />
+                <dt className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                  Provider notifications
+                </dt>
+                <dd className={`mt-1 text-sm font-semibold ${providerState.text}`}>
+                  {providerState.label}
+                </dd>
+                <dd className="mt-1 text-xs text-ink-muted">
+                  {signals.length} correlated notification{signals.length === 1 ? '' : 's'}
+                </dd>
+              </div>
+              <div className="relative overflow-hidden rounded-lg border border-line bg-surface p-3 pl-4">
+                <span
+                  aria-hidden="true"
+                  className={`absolute inset-y-3 left-0 w-1 rounded-r-full ${
+                    incident.investigationStatus === 'degraded'
+                      ? 'bg-critical-solid'
+                      : incident.investigationStatus === 'assessed'
+                        ? 'bg-assessment-solid'
+                        : 'bg-info-solid'
+                  }`}
+                />
+                <dt className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                  SRE investigation
+                </dt>
+                <dd
+                  className={`mt-1 text-sm font-semibold ${
+                    incident.investigationStatus === 'degraded' ? 'text-critical' : 'text-ink'
+                  }`}
+                >
+                  {incident.latestInvestigationRun
+                    ? investigationRunOperationLabel(incident.latestInvestigationRun.operation)
+                    : 'No completed run recorded'}
+                </dd>
+                {incident.queuedResponderWork && (
+                  <dd className="mt-1 text-xs text-ink-muted">
+                    Responder follow-up queued. New input has not yet been incorporated.
+                  </dd>
+                )}
+                <dd className="mt-1 text-xs text-ink-muted">
+                  {workspace.progress.total} diagnostic check
+                  {workspace.progress.total === 1 ? '' : 's'} recorded
+                </dd>
+                {incident.latestInvestigationRun && (
+                  <dd className="mt-2 border-t border-line pt-2 text-xs text-ink-muted">
+                    <span className="block font-semibold">Latest investigation run</span>
+                    <span>
+                      {investigationRunOperationLabel(incident.latestInvestigationRun.operation)} ·{' '}
+                      {investigationRunOutcomeLabel(incident.latestInvestigationRun.outcome)} ·{' '}
+                      {formatAbsoluteTime(incident.latestInvestigationRun.completedAt)}
                     </span>
+                    <span className="block">
+                      Trigger:{' '}
+                      {investigationRunTriggerLabel(incident.latestInvestigationRun.triggerReason)}
+                      {incident.latestInvestigationRun.triggerReason
+                        ? incident.latestInvestigationRun.triggerAutomatic
+                          ? ' · automatic'
+                          : ' · manual'
+                        : ''}
+                    </span>
+                    {investigationRunBudgetLabel(incident.latestInvestigationRun) && (
+                      <span className="block">
+                        {investigationRunBudgetLabel(incident.latestInvestigationRun)}
+                      </span>
+                    )}
+                  </dd>
+                )}
+              </div>
+              <div className="relative overflow-hidden rounded-lg border border-line bg-surface p-3 pl-4">
+                <span
+                  aria-hidden="true"
+                  className={`absolute inset-y-3 left-0 w-1 rounded-r-full ${
+                    (workspace.llmUsage?.unpriced ?? 0) > 0 ||
+                    (workspace.llmUsage?.missingUsage ?? 0) > 0
+                      ? 'bg-warning-solid'
+                      : 'bg-assessment-solid'
+                  }`}
+                />
+                <dt className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                  LLM usage
+                </dt>
+                <dd className="mt-1 text-sm font-semibold text-ink">
+                  {!workspace.llmUsage || workspace.llmUsage.invocations === 0 ? (
+                    'No model spend recorded'
+                  ) : workspace.llmUsage.unpriced === workspace.llmUsage.invocations ? (
+                    'Pricing required'
+                  ) : (
+                    <>
+                      <Money amount={workspace.llmUsage.configuredCostUsd} /> configured cost
+                    </>
                   )}
                 </dd>
-              )}
-            </div>
-            <div className="relative overflow-hidden rounded-lg border border-line bg-surface p-3 pl-4">
-              <span
-                aria-hidden="true"
-                className={`absolute inset-y-3 left-0 w-1 rounded-r-full ${
-                  (workspace.llmUsage?.unpriced ?? 0) > 0 ||
-                  (workspace.llmUsage?.missingUsage ?? 0) > 0
-                    ? 'bg-warning-solid'
-                    : 'bg-assessment-solid'
-                }`}
-              />
-              <dt className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-                LLM usage
-              </dt>
-              <dd className="mt-1 text-sm font-semibold text-ink">
-                {!workspace.llmUsage || workspace.llmUsage.invocations === 0 ? (
-                  'No model spend recorded'
-                ) : workspace.llmUsage.unpriced === workspace.llmUsage.invocations ? (
-                  'Pricing required'
-                ) : (
-                  <>
-                    <Money amount={workspace.llmUsage.configuredCostUsd} /> configured cost
-                  </>
+                <dd className="mt-1 text-xs text-ink-muted">
+                  {workspace.llmUsage?.invocations ?? 0} invocation
+                  {(workspace.llmUsage?.invocations ?? 0) === 1 ? '' : 's'} ·{' '}
+                  {tokenFormatter.format(
+                    (workspace.llmUsage?.tokens.input ?? 0) +
+                      (workspace.llmUsage?.tokens.output ?? 0) +
+                      (workspace.llmUsage?.tokens.cacheRead ?? 0) +
+                      (workspace.llmUsage?.tokens.cacheWrite ?? 0),
+                  )}{' '}
+                  tokens
+                </dd>
+                {(workspace.llmUsage?.unpriced ?? 0) > 0 && (
+                  <dd className="mt-1 text-xs font-medium text-warning">
+                    {workspace.llmUsage!.unpriced} unpriced ·{' '}
+                    <Link className="underline underline-offset-2" to={productPath('settings')}>
+                      Set model pricing
+                    </Link>
+                  </dd>
                 )}
-              </dd>
-              <dd className="mt-1 text-xs text-ink-muted">
-                {workspace.llmUsage?.invocations ?? 0} invocation
-                {(workspace.llmUsage?.invocations ?? 0) === 1 ? '' : 's'} ·{' '}
-                {tokenFormatter.format(
-                  (workspace.llmUsage?.tokens.input ?? 0) +
-                    (workspace.llmUsage?.tokens.output ?? 0) +
-                    (workspace.llmUsage?.tokens.cacheRead ?? 0) +
-                    (workspace.llmUsage?.tokens.cacheWrite ?? 0),
-                )}{' '}
-                tokens
-              </dd>
-              {(workspace.llmUsage?.unpriced ?? 0) > 0 && (
-                <dd className="mt-1 text-xs font-medium text-warning">
-                  {workspace.llmUsage!.unpriced} unpriced ·{' '}
-                  <Link className="underline underline-offset-2" to={productPath('settings')}>
-                    Set model pricing
-                  </Link>
-                </dd>
-              )}
-              {(workspace.llmUsage?.missingUsage ?? 0) > 0 && (
-                <dd className="mt-1 text-xs font-medium text-critical">
-                  {workspace.llmUsage!.missingUsage} invocation
-                  {workspace.llmUsage!.missingUsage === 1 ? '' : 's'} missing provider usage
-                </dd>
-              )}
-            </div>
-          </dl>
+                {(workspace.llmUsage?.missingUsage ?? 0) > 0 && (
+                  <dd className="mt-1 text-xs font-medium text-critical">
+                    {workspace.llmUsage!.missingUsage} invocation
+                    {workspace.llmUsage!.missingUsage === 1 ? '' : 's'} missing provider usage
+                  </dd>
+                )}
+              </div>
+            </dl>
+          </details>
         </aside>
       </div>
     </>

@@ -2,6 +2,7 @@ import { MAX_CONTENT_CHARS } from '@sre/contracts';
 import { Link } from 'react-router-dom';
 import { incidentPath } from '../../lib/routes';
 import { IncidentEvidenceWorkspace } from '../IncidentEvidenceWorkspace';
+import { IncidentTags } from '../IncidentTags';
 import { CodeContextPanel } from './code-context';
 import { EntityContextPanel } from './entity-context';
 import { IncidentRelationships } from './relationships';
@@ -29,7 +30,6 @@ export function IncidentBody({ view }: { view: IncidentLiveViewModel }) {
     setFullAudit,
     confirmingRepositoryId,
     repositoryConfirmError,
-    selectedEvidenceId,
     canPost,
     sentDelivery,
     hasSlackBinding,
@@ -42,7 +42,7 @@ export function IncidentBody({ view }: { view: IncidentLiveViewModel }) {
   } = view;
   return (
     <>
-      <div className="grid min-w-0 gap-4 @4xl:grid-cols-[minmax(0,1.35fr)_minmax(22rem,0.9fr)] @4xl:items-start">
+      <div className="min-w-0 space-y-5">
         <section className="min-w-0" aria-labelledby="timeline-title">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -127,6 +127,7 @@ export function IncidentBody({ view }: { view: IncidentLiveViewModel }) {
             getCredentials={getCredentials}
             onFeedbackChanged={refreshWorkspace}
           />
+          <div id="conversation-latest" />
           {/* A refused post is per-message; the conversation remains open. */}
           {view.decisionError && (
             <p role="alert" className="mt-3 text-xs text-critical">
@@ -218,7 +219,7 @@ export function IncidentBody({ view }: { view: IncidentLiveViewModel }) {
                     ? 'This incident was joined into another investigation'
                     : 'Ask for evidence, challenge a hypothesis, or request the next check'
                 }
-                disabled={!canPost}
+                disabled={!view.canEditDraft}
               />
             </div>
             <div className="mt-2 flex min-w-0 flex-wrap items-center justify-between gap-2">
@@ -235,8 +236,10 @@ export function IncidentBody({ view }: { view: IncidentLiveViewModel }) {
                       ? (deliveryLabel(sentDelivery) ??
                         (hasSlackBinding
                           ? 'Saved to the incident. Waiting for Slack acceptance.'
-                          : 'Saved to the incident. Investigation is continuing.'))
-                      : 'Enter sends. Shift+Enter adds a new line.'}
+                          : 'Saved to the incident.'))
+                      : stream.status !== 'open'
+                        ? 'Draft retained on this page. Reconnect before sending.'
+                        : 'Enter sends. Shift+Enter adds a new line.'}
               </p>
               <button
                 type="button"
@@ -249,22 +252,23 @@ export function IncidentBody({ view }: { view: IncidentLiveViewModel }) {
             </div>
           </div>
         </section>
-        <aside
+        <details
           aria-label="Incident evidence and context"
-          className="min-w-0 space-y-4 @4xl:sticky @4xl:top-4 @4xl:max-h-[calc(100dvh-7rem)] @4xl:overflow-y-auto @4xl:pr-1"
+          className="min-w-0 space-y-4 rounded-lg border border-line p-4"
         >
-          <IncidentEvidenceWorkspace
-            evidence={evidenceState.evidence}
-            details={evidenceState.details}
-            selectedId={selectedEvidenceId}
-            nextCursor={evidenceState.nextCursor}
-            loading={evidenceState.loading}
-            error={evidenceState.error}
-            paginationError={evidenceState.paginationError}
-            detailErrors={evidenceState.detailErrors}
-            onOpen={openEvidence}
-            onLoadOlder={evidenceState.loadOlder}
-            onRetry={evidenceState.refresh}
+          <summary className="min-h-11 cursor-pointer font-semibold">
+            Supporting context, relationships and signals
+          </summary>
+          <IncidentTags
+            incidentId={incident.id}
+            getCredentials={getCredentials}
+            data={{
+              tags: workspace.tags ?? [],
+              suggestions: workspace.tagSuggestions ?? [],
+              linkRules: workspace.tagLinkRules ?? [],
+              historySuggestions: workspace.tagHistorySuggestions ?? [],
+            }}
+            refresh={refreshWorkspace}
           />
           <EntityContextPanel
             workspace={workspace}
@@ -289,8 +293,28 @@ export function IncidentBody({ view }: { view: IncidentLiveViewModel }) {
             getCredentials={getCredentials}
             onChanged={refreshWorkspace}
           />
-        </aside>
+        </details>
       </div>
+      <IncidentEvidenceWorkspace
+        key={incident.id}
+        evidence={evidenceState.evidence}
+        details={evidenceState.details}
+        selectedId={view.inspectorId}
+        context={view.inspectorContext}
+        nextCursor={evidenceState.nextCursor}
+        loading={evidenceState.loading}
+        error={evidenceState.error}
+        paginationError={evidenceState.paginationError}
+        detailErrors={evidenceState.detailErrors}
+        loadingOlder={evidenceState.loadingOlder}
+        onOpen={openEvidence}
+        onLoadOlder={evidenceState.loadOlder}
+        onRetry={evidenceState.refresh}
+        open={view.inspectorOpen}
+        onClose={view.closeEvidence}
+        onBack={view.showAllEvidence}
+        returnFocusTo={view.evidenceTrigger}
+      />
       {zoom && (
         <SetupDialog title="Zoomed screenshot" closeLabel="Close" onClose={() => setZoom(null)}>
           <img

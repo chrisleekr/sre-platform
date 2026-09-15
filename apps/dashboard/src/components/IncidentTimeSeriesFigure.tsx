@@ -1,5 +1,6 @@
 import { formatAbsoluteTime } from '../lib/time';
 import type { EvidenceDetail } from '../lib/types';
+import { useId, useState } from 'react';
 
 type TimeSeriesProjection = Extract<EvidenceDetail['projection'], { kind: 'time_series' }>;
 type Series = TimeSeriesProjection['series'][number];
@@ -18,13 +19,19 @@ function SeriesFigure({
   series,
   unit,
   groupIndex,
+  compact = false,
 }: {
   detail: EvidenceDetail;
   projection: TimeSeriesProjection;
   series: Series[];
   unit: string | null;
   groupIndex: number;
+  compact?: boolean;
 }) {
+  const [page, setPage] = useState(0);
+  const tablePoints = series.flatMap((item) =>
+    item.points.map((point) => ({ ...point, name: item.name })),
+  );
   const points = series.flatMap((item) => item.points);
   const times = points.map((point) => Date.parse(point.timestamp));
   const values = points.map((point) => point.value);
@@ -38,7 +45,7 @@ function SeriesFigure({
   const y = (value: number) =>
     valueSpan === 0 ? 108 : 16 + (1 - (value - minValue) / valueSpan) * 184;
   const reportedUnit = unit ?? 'unit not reported';
-  const titleId = `evidence-chart-${detail.id}-${groupIndex}`;
+  const titleId = `evidence-chart-${useId()}-${groupIndex}`;
   const tickTime = new Intl.DateTimeFormat(undefined, {
     hour: '2-digit',
     minute: '2-digit',
@@ -53,7 +60,9 @@ function SeriesFigure({
           viewBox="0 0 640 230"
           role="img"
           aria-labelledby={titleId}
-          className="h-auto min-w-[32rem] max-w-none sm:min-w-0 sm:w-full"
+          className={
+            compact ? 'h-auto w-full' : 'h-auto min-w-[32rem] max-w-none sm:min-w-0 sm:w-full'
+          }
         >
           <title id={titleId}>{`${projection.source} metric evidence, ${reportedUnit}`}</title>
           <line x1="48" y1="200" x2="616" y2="200" stroke="var(--sre-line-strong)" />
@@ -99,20 +108,22 @@ function SeriesFigure({
         · {fromLabel} to {toLabel}
         <span className="block">Recorded {formatAbsoluteTime(detail.recordedAt)}</span>
       </figcaption>
-      <ul className="mt-2 flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-xs">
-        {series.map((item, index) => (
-          <li key={`${item.name}:${index}`} className="flex min-w-0 items-center gap-1">
-            <span
-              className="inline-block size-2 rounded-full"
-              style={{ backgroundColor: colors[index % colors.length] }}
-            />
-            <span className="break-all">
-              {item.name} · {reportedUnit}
-            </span>
-          </li>
-        ))}
-      </ul>
-      {projection.query && (
+      {!compact && (
+        <ul className="mt-2 flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-xs">
+          {series.map((item, index) => (
+            <li key={`${item.name}:${index}`} className="flex min-w-0 items-center gap-1">
+              <span
+                className="inline-block size-2 rounded-full"
+                style={{ backgroundColor: colors[index % colors.length] }}
+              />
+              <span className="break-all">
+                {item.name} · {reportedUnit}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {!compact && projection.query && (
         <details className="mt-3 min-w-0">
           <summary className="cursor-pointer text-xs font-semibold text-ink-secondary">
             View metric query
@@ -122,39 +133,71 @@ function SeriesFigure({
           </code>
         </details>
       )}
-      <details className="mt-3">
-        <summary className="cursor-pointer text-xs font-semibold text-ink-secondary">
-          View chart data table
-        </summary>
-        <div className="mt-2 max-h-72 overflow-auto">
-          <table className="w-full text-left text-xs">
-            <caption className="sr-only">{`Metric evidence data, ${reportedUnit}`}</caption>
-            <thead className="sticky top-0 bg-surface">
-              <tr>
-                <th className="px-2 py-1">Series</th>
-                <th className="px-2 py-1">Timestamp</th>
-                <th className="px-2 py-1">Value</th>
-              </tr>
-            </thead>
-            <tbody>
-              {series.flatMap((item, seriesIndex) =>
-                item.points.map((point, pointIndex) => (
-                  <tr key={`${seriesIndex}:${pointIndex}`} className="border-t border-line">
-                    <td className="px-2 py-1">{item.name}</td>
+      {!compact && (
+        <details className="mt-3">
+          <summary className="cursor-pointer text-xs font-semibold text-ink-secondary">
+            View chart data table
+          </summary>
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <caption className="sr-only">{`Metric evidence data, ${reportedUnit}`}</caption>
+              <thead className="sticky top-0 bg-surface">
+                <tr>
+                  <th className="px-2 py-1">Series</th>
+                  <th className="px-2 py-1">Timestamp</th>
+                  <th className="px-2 py-1">Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tablePoints.slice(page * 25, (page + 1) * 25).map((point, pointIndex) => (
+                  <tr key={pointIndex} className="border-t border-line">
+                    <td className="break-all px-2 py-1">{point.name}</td>
                     <td className="px-2 py-1">{point.timestamp}</td>
                     <td className="px-2 py-1">{point.value}</td>
                   </tr>
-                )),
-              )}
-            </tbody>
-          </table>
-        </div>
-      </details>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-2 text-xs text-ink-muted">
+            Projected data, up to 20 series and 1000 points per series.
+          </p>
+          {tablePoints.length > 25 && (
+            <div className="flex gap-3 text-xs">
+              <button
+                type="button"
+                className="min-h-11 underline"
+                disabled={page === 0}
+                onClick={() => setPage(page - 1)}
+              >
+                Previous points
+              </button>
+              <span className="py-3">
+                {page + 1} / {Math.ceil(tablePoints.length / 25)}
+              </span>
+              <button
+                type="button"
+                className="min-h-11 underline"
+                disabled={(page + 1) * 25 >= tablePoints.length}
+                onClick={() => setPage(page + 1)}
+              >
+                Next points
+              </button>
+            </div>
+          )}
+        </details>
+      )}
     </figure>
   );
 }
 
-export function IncidentTimeSeriesFigure({ detail }: { detail: EvidenceDetail }) {
+export function IncidentTimeSeriesFigure({
+  detail,
+  compact = false,
+}: {
+  detail: EvidenceDetail;
+  compact?: boolean;
+}) {
   if (detail.projection.kind !== 'time_series') return null;
   const projection = detail.projection;
   const groups = new Map<string | null, Series[]>();
@@ -164,16 +207,19 @@ export function IncidentTimeSeriesFigure({ detail }: { detail: EvidenceDetail })
 
   return (
     <div className="grid min-w-0 max-w-full gap-3 overflow-hidden">
-      {[...groups.entries()].map(([unit, series], groupIndex) => (
-        <SeriesFigure
-          key={unit ?? 'unreported'}
-          detail={detail}
-          projection={projection}
-          series={series}
-          unit={unit}
-          groupIndex={groupIndex}
-        />
-      ))}
+      {[...groups.entries()]
+        .slice(0, compact ? 1 : groups.size)
+        .map(([unit, series], groupIndex) => (
+          <SeriesFigure
+            key={unit ?? 'unreported'}
+            detail={detail}
+            projection={projection}
+            series={series}
+            unit={unit}
+            groupIndex={groupIndex}
+            compact={compact}
+          />
+        ))}
     </div>
   );
 }

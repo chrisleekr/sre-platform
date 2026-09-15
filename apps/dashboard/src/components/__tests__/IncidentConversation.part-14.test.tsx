@@ -10,6 +10,8 @@ import type { EvidenceDetail, EvidenceListItem, HubMessage } from '../../lib/typ
 import type { WsRefusalCode } from '../../lib/useWsStream';
 
 import { IncidentConversation } from '../IncidentConversation';
+import { installDialogMethods } from '../../test/dialog';
+let dialogMethods: ReturnType<typeof installDialogMethods>;
 
 const getCredentials = vi.hoisted(() =>
   vi.fn(async () => ({ kind: 'bearer' as const, token: 'jwt' })),
@@ -72,6 +74,7 @@ let wsState: {
 };
 
 beforeEach(() => {
+  dialogMethods = installDialogMethods();
   wsState = {
     messages: [],
     status: 'connecting',
@@ -112,6 +115,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  dialogMethods.restore();
+  window.history.replaceState(null, '', '/');
   globalThis.fetch = originalFetch;
   useWsStream.mockClear();
   useAttachments.mockClear();
@@ -239,10 +244,12 @@ describe('incident response workspace', () => {
     globalThis.fetch = vi.fn(async () => response(detail()));
 
     const { unmount } = renderIncident();
-    const unitlessChart = await screen.findByRole('img', {
+    fireEvent.click(await screen.findByRole('button', { name: /Prometheus/ }));
+    const inspector = within(screen.getByRole('dialog'));
+    const unitlessChart = await inspector.findByRole('img', {
       name: 'prometheus metric evidence, unit not reported',
     });
-    const requestsChart = screen.getByRole('img', {
+    const requestsChart = inspector.getByRole('img', {
       name: 'prometheus metric evidence, requests',
     });
     expect(unitlessChart.querySelector('circle')).not.toBeNull();
@@ -250,7 +257,7 @@ describe('incident response workspace', () => {
     expect(requestsChart.querySelector('polyline')?.getAttribute('points')).toContain(',16');
     expect(screen.getByText('up {job=checkout} · unit not reported')).toBeDefined();
     expect(screen.getByText('errors {job=checkout} · requests')).toBeDefined();
-    const captions = screen.getAllByText((_, element) => element?.tagName === 'FIGCAPTION');
+    const captions = inspector.getAllByText((_, element) => element?.tagName === 'FIGCAPTION');
     expect(captions).toHaveLength(2);
     expect(captions.every((caption) => caption.textContent?.includes('Recorded'))).toBe(true);
     for (const disclosure of screen.getAllByText('View chart data table')) {
@@ -288,7 +295,8 @@ describe('incident response workspace', () => {
     globalThis.fetch = vi.fn(async () => response(detail()));
 
     const { unmount } = renderIncident();
-    expect(await screen.findByText('Evidence is unavailable.')).toBeDefined();
+    fireEvent.click(await screen.findByRole('button', { name: /All evidence/ }));
+    expect(await screen.findByText(/Evidence is unavailable\./)).toBeDefined();
     expect(screen.queryByText('No checks recorded yet.')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Retry evidence' }));
     expect(refresh).toHaveBeenCalledOnce();

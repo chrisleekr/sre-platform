@@ -35,6 +35,7 @@ describe('dashboard surface session', () => {
     });
     expect(session).not.toBeNull();
     await __fixture.waitFor(() => c.messages().some((m) => m.content === 'investigating'));
+    expect(c.messages().find((m) => m.content === 'investigating')).toMatchObject({ replay: true });
 
     // Live fan-out: a new hub append reaches the open session.
     await __fixture.hub.append(__fixture.tenantA, __fixture.incidentId, {
@@ -42,6 +43,9 @@ describe('dashboard surface session', () => {
       content: 'found the cause',
     });
     await __fixture.waitFor(() => c.messages().some((m) => m.content === 'found the cause'));
+    expect(c.messages().find((m) => m.content === 'found the cause')).toMatchObject({
+      replay: false,
+    });
 
     // Ingest: human input from the surface lands in the canonical hub.
     await session!.adapter.ingest({ content: 'ack, on it' });
