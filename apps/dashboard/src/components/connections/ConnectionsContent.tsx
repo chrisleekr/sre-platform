@@ -15,6 +15,7 @@ export function ConnectionsContent({
   error,
   refetch,
   onAdd,
+  canConfigure,
   ...saved
 }: ComponentProps<typeof SavedConnectors> & {
   loading: boolean;
@@ -86,7 +87,7 @@ export function ConnectionsContent({
                 : 'Manage the tools your AI SRE can access.'
           }
           action={
-            !catalog && !selectedId ? (
+            canConfigure && !catalog && !selectedId ? (
               <button
                 type="button"
                 onClick={() => navigate('catalog')}
@@ -98,6 +99,11 @@ export function ConnectionsContent({
           }
         />
       </div>
+      {!canConfigure && (
+        <p className="mb-4 text-sm text-ink-muted">
+          Only workspace owners and admins can change connections.
+        </p>
+      )}
       {error && (
         <InlineAlert
           message="Could not refresh evidence connections. Previously loaded information may be outdated."
@@ -113,9 +119,9 @@ export function ConnectionsContent({
       {catalog ? (
         <ConnectorCatalog
           connectors={saved.connectors}
-          unavailable={loading || error}
+          unavailable={!canConfigure || loading || error}
           slackConfigured={chat.surfaces.length > 0}
-          slackUnavailable={chat.loading || chat.error}
+          slackUnavailable={!canConfigure || chat.loading || chat.error}
           onAdd={onAdd}
           onSlack={() => navigate(undefined, 'slack')}
         />
@@ -124,6 +130,7 @@ export function ConnectionsContent({
       ) : selected ? (
         <SavedConnectors
           {...saved}
+          canConfigure={canConfigure}
           connectors={[selected]}
           onDisconnect={async (connector) => {
             const removed = await saved.onDisconnect(connector);

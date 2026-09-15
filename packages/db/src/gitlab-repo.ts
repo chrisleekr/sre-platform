@@ -209,7 +209,10 @@ export async function markGitLabProjectRemoved(
 }
 
 /**
- * Lists git lab projects.
+ * Search ranked projects, or page by project ID when an explicit cursor is supplied.
+ *
+ * @remarks Start ID-ordered pagination with afterRepositoryId: '', then pass the last returned ID.
+ * Ranked search without a cursor is a bounded result, not the first page of an ID traversal.
  *
  * @param db - Database connection used for the operation.
  * @param tenantId - Tenant whose records are read or changed.

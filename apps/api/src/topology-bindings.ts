@@ -131,9 +131,14 @@ export function topologyBindingRoutes(db: Db) {
     const id = z.string().uuid().safeParse(c.req.param('id'));
     if (!id.success) return c.json({ error: 'Invalid runtime binding ID.' }, 400);
     const { tenantId } = c.get('tenant');
-    await withTenant(db, tenantId, (tx) =>
-      tx.delete(serviceRuntimeBindings).where(eq(serviceRuntimeBindings.id, id.data)),
+    const removed = await withTenant(db, tenantId, (tx) =>
+      tx
+        .delete(serviceRuntimeBindings)
+        .where(eq(serviceRuntimeBindings.id, id.data))
+        .returning({ id: serviceRuntimeBindings.id }),
     );
+    if (!removed.length)
+      return c.json({ error: 'This runtime mapping is unavailable in this workspace.' }, 404);
     return c.json({ ok: true });
   });
   return routes;

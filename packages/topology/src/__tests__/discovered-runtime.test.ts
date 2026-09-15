@@ -238,3 +238,23 @@ test('deduplicates resource observations and refuses contradictory equal-time st
   expect(evidence.observations[0]?.state).toBe('unknown');
   expect(evidence.note).toContain('conflicting resource state');
 });
+
+test('material runtime hashes ignore observation order before truncating summaries', async () => {
+  const base = await readTopologyRuntime(app.db, tenantId, selection, async () => [snapshot()]);
+  expect(base.observations).toHaveLength(1);
+  const observations = Array.from({ length: 25 }, (_, index) => ({
+    ...base.observations[0]!,
+    resourceKey: `resource-${index}`,
+    name: `resource-${String(index).padStart(2, '0')}`,
+    state: 'attention' as const,
+    stale: false,
+  }));
+  const now = new Date();
+  const first = normalizeDiscoveredRuntimeObservation({ ...base, observations }, now);
+  const reversed = normalizeDiscoveredRuntimeObservation(
+    { ...base, observations: [...observations].reverse() },
+    now,
+  );
+  expect(first.contentHash).toBe(reversed.contentHash);
+  expect(first.snapshot.summaries).toEqual(observations.slice(0, 20).map((item) => item.name));
+});

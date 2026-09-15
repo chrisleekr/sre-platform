@@ -1,3 +1,4 @@
+import { seedMembership } from '@sre/db/test-support';
 import { openIncidentWorkspace } from '@sre/alerts';
 import {
   connectorConfigs,
@@ -12,6 +13,7 @@ import {
   serviceRuntimeBindings,
   surfaceBindings,
   tenants,
+  users,
   type DbHandle,
 } from '@sre/db';
 import { ConversationHub } from '@sre/hub';
@@ -34,6 +36,7 @@ export function createFixture() {
   let hub: ConversationHub;
 
   let tenantId: string;
+  let ownerUserId: string;
 
   beforeAll(async () => {
     expect(process.env.SRE_TEST_INFRA).toBe('testcontainers');
@@ -44,6 +47,12 @@ export function createFixture() {
     hub = new ConversationHub(app.db, redis);
     tenantId = randomUUID();
     await admin.db.insert(tenants).values({ id: tenantId, name: 'Subject sync tests' });
+    ownerUserId = await seedMembership(
+      admin.db,
+      { issuer: 'https://subject-sync.test', subject: randomUUID() },
+      tenantId,
+      'owner',
+    );
   });
 
   afterAll(async () => {
@@ -59,6 +68,7 @@ export function createFixture() {
       await admin.db.delete(services).where(sql`tenant_id = ${tenantId}`);
       await admin.db.delete(connectorConfigs).where(sql`tenant_id = ${tenantId}`);
       await admin.db.delete(tenants).where(sql`id = ${tenantId}`);
+      if (ownerUserId) await admin.db.delete(users).where(sql`id = ${ownerUserId}`);
       await admin.close();
     }
     if (app) await app.close();
@@ -110,6 +120,9 @@ export function createFixture() {
   });
 
   return {
+    get ownerUserId() {
+      return ownerUserId;
+    },
     get admin() {
       return admin;
     },

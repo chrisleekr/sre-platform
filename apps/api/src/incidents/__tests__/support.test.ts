@@ -17,3 +17,14 @@ test.each(['service:日本語', 'x'.repeat(8192), '["provider","service","api"]'
     expect(parseObservationSubject(subject)).toEqual(subject);
   },
 );
+
+test('observation resolvers share the route error constructors', async () => {
+  const declared = await import('../../incident-observations');
+  const topology = await import('../../observation-errors');
+  for (const name of [
+    'ObservationNotFoundError',
+    'ObservationNotActionableError',
+    'ObservationUnavailableError',
+  ] as const)
+    expect(new topology[name]()).toBeInstanceOf(declared[name]);
+});

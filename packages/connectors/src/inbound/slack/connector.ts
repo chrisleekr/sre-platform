@@ -157,13 +157,10 @@ function groupedEventKey(eventKey: string, identity: string): string {
   return `${eventKey.slice(0, producerIndex)}:observation:${identity}${eventKey.slice(producerIndex)}`;
 }
 
-// The lazy `([^|\n]+?)` this replaces was fenced by `\s+` and `\s*`, sharing the space character
-// with both neighbours: a 5KB message of `[firing] ` plus spaces took 65 seconds to reject. Here a
-// single `\s` separates the bracket from a greedy class that cannot contain `|`, and the optional
-// `(?:\n\s*)?` keeps the pre-pipe newline the old `\s*` allowed. No two unbounded repetitions are
-// adjacent, so the scan is linear. The caller trims and collapses the capture.
+// A non-whitespace first group character separates the prefix whitespace from the capture.
+// This preserves wrapped headings without the overlapping quantifiers that caused slow rejection.
 const ALERTMANAGER_GROUP =
-  /(?:^|\n)\[\s*(?:firing|resolved)(?:\s*:\s*\d+)?\s*\]\s([^|\n]*)(?:\n\s*)?\|\s*<([^|>\n]+)(?:\|[^>\n]*)?>/i;
+  /(?:^|\n)\[\s*(?:firing|resolved)(?:\s*:\s*\d+)?\s*\]\s+([^\s|][^|\n]*)(?:\n\s*)?\|\s*<([^|>\n]+)(?:\|[^>\n]*)?>/i;
 
 function alertmanagerGroupKey(text: string): string | undefined {
   const match = ALERTMANAGER_GROUP.exec(text);

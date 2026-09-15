@@ -199,3 +199,25 @@ describe('Slack provider materiality', () => {
     );
   });
 });
+
+test.each([' ', '\n', ' \n', '\n\n', '\t\r\n \r\n\t'])(
+  'preserves Alertmanager correlation across prefix whitespace %j',
+  (separator) => {
+    const candidate = normalizedCandidate({
+      type: 'message',
+      subtype: 'bot_message',
+      channel: 'C123',
+      ts: '1787991000.000100',
+      bot_id: 'B_ALERT',
+      attachments: [
+        {
+          fallback: `[FIRING:1]${separator}HighLatency | <https://alerts.example/#/alerts|Source>`,
+          text: '*Alert:* Checkout latency is high. *Severity:* warning',
+        },
+      ],
+    });
+    expect(candidate?.observations?.[0]?.providerGroupKey).toBe(
+      'alertmanager:https://alerts.example/|highlatency',
+    );
+  },
+);

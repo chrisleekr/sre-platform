@@ -1,6 +1,10 @@
 import { reportSessionFailure, reportTokenFailure } from '../session-failure';
 import { getLocalSession } from '../local-session';
-import { impersonationHeaders, setImpersonationSession } from './impersonation';
+import {
+  getImpersonationSession,
+  impersonationHeaders,
+  setImpersonationSession,
+} from './impersonation';
 import { sessionFetch } from './session-fetch';
 
 import {
@@ -42,7 +46,15 @@ export async function authenticatedFetch(
     headers: { ...init.headers, ...supportHeaders, ...credentialHeaders(credential) },
   });
   if (response.status === 403 && supportHeaders['x-impersonation-session']) {
-    setImpersonationSession(null);
+    const body = (await response
+      .clone()
+      .json()
+      .catch(() => null)) as { code?: unknown } | null;
+    if (
+      body?.code === 'support_session_unavailable' &&
+      getImpersonationSession()?.id === supportHeaders['x-impersonation-session']
+    )
+      setImpersonationSession(null);
   }
   if (response.status === 401 && (!localToken || getLocalSession()?.token === localToken)) {
     reportSessionFailure('unauthorized');

@@ -70,8 +70,8 @@ export function TopologyExplorer({
     }),
     [subjects],
   );
+  const scopePair = scope ? (JSON.parse(scope) as [string, string]) : null;
   const filtered = subjects.filter((subject) => {
-    const scopePair = scope ? (JSON.parse(scope) as [string, string]) : null;
     return (
       (!kind || subject.kind === kind) &&
       (!source || subject.sources.some((item) => item.connectorId === source)) &&
@@ -314,7 +314,6 @@ export function TopologyExplorer({
           </div>
           {view === 'map' && (
             <DiscoveredTopologyMap
-              key={JSON.stringify([search, kind, source, scope])}
               subjects={filtered}
               relations={graph.operational.relations}
               unresolvedTrafficCount={

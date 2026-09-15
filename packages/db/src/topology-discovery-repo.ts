@@ -1,3 +1,4 @@
+import { validateTopologyScan } from './topology-scan';
 import { and, eq, isNull, lt } from 'drizzle-orm';
 import {
   hasKnownCredential,
@@ -169,14 +170,7 @@ export async function persistTopologyDiscovery(
       new Set(c.relations.map(topologyRelationKey)).size !== c.relations.length
     )
       throw new Error('Invalid topology inventory');
-    if (
-      c.scan &&
-      (typeof c.scan.incomplete !== 'boolean' ||
-        (c.scan.cursor !== null &&
-          (typeof c.scan.cursor !== 'string' || !c.scan.cursor || c.scan.cursor.length > 4096)) ||
-        (c.completeness === 'complete' && (c.scan.cursor !== null || c.scan.incomplete)))
-    )
-      throw new Error('Invalid topology scan');
+    validateTopologyScan(c);
     for (const ref of [
       ...c.entities.flatMap((e) => [e.ref, ...(e.aliases ?? [])]),
       ...c.relations.flatMap((r) => [r.from, r.to]),
@@ -357,7 +351,18 @@ export async function readTopologyScans(
       );
     return Object.fromEntries(
       rows.flatMap(({ key, scan }) =>
-        scan?.cursor ? [[key, { cursor: scan.cursor, incomplete: scan.incomplete }]] : [],
+        scan?.cursor
+          ? [
+              [
+                key,
+                {
+                  cursor: scan.cursor,
+                  incomplete: scan.incomplete,
+                  ...(scan.inventory ? { inventory: scan.inventory } : {}),
+                },
+              ],
+            ]
+          : [],
       ),
     );
   });

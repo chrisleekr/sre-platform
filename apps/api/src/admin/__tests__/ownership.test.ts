@@ -298,7 +298,7 @@ test('reports ownerless state to ordinary members and refreshes stored authoriza
   expect((await recover(f.peerId)).status).toBe(409);
 });
 
-test('refuses an ordinary member and a support-session administrator', async () => {
+test('requires real administrator authority even during a support session', async () => {
   const body = { userId: f.memberId, reason: 'Recover ownership' };
   expect(
     (await f.request(`/admin/tenants/${f.tenantId}/recover-owner`, body, f.memberToken)).status,
@@ -314,8 +314,21 @@ test('refuses an ordinary member and a support-session administrator', async () 
         'x-impersonation-session': support.id,
       })
     ).status,
+  ).toBe(200);
+  expect(await f.role()).toBe('owner');
+  const [audit] = await f.db.db
+    .select()
+    .from(adminActions)
+    .where(eq(adminActions.action, 'workspace.owner_recover'));
+  expect(audit).toMatchObject({ actorUserId: f.actorId, targetId: f.tenantId });
+  await f.db.db.delete(platformOperators).where(eq(platformOperators.userId, f.actorId));
+  expect(
+    (
+      await f.request(`/admin/tenants/${f.tenantId}/recover-owner`, body, f.actorToken, {
+        'x-impersonation-session': support.id,
+      })
+    ).status,
   ).toBe(403);
-  expect(await f.role()).toBe('member');
 });
 
 test('supports the existing armed local administrator gate but never accepts it from request JSON', async () => {

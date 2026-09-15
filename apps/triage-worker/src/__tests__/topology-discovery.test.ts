@@ -1,9 +1,10 @@
+import { readFileSync } from 'node:fs';
 import { expect, test, vi } from 'vitest';
 import type { IDataSourceConnector } from '@sre/connectors';
 import { makePrometheusConnector } from '@sre/connectors';
 import type { Job } from '@sre/queue';
 import type { TopologyScanProgress } from '@sre/contracts';
-import { makeTopologyDiscoveryHandler } from '../topology-discovery';
+import { makeTopologyDiscoveryHandler, runTopologyDiscoveryConsumer } from '../topology-discovery';
 import { PollScheduler } from '../poller';
 
 const connector = (
@@ -334,4 +335,85 @@ test('provider failure records unavailable evidence, while persistence failure i
     })(job),
   ).rejects.toThrow('database unavailable');
   expect(failed).not.toHaveBeenCalled();
+});
+
+test.each(['permission_denied', 'unreachable', 'invalid_response'] as const)(
+  'continues an advanced partial cursor despite a child %s issue',
+  async (issue) => {
+    const continueScan = vi.fn(async () => {});
+    const source = connector(async () => ({
+      observedAt: new Date().toISOString(),
+      collections: [
+        {
+          key: 'applications',
+          completeness: 'partial',
+          issue,
+          entities: [],
+          relations: [],
+          scan: { cursor: '25', incomplete: true },
+        },
+      ],
+    }));
+    await makeTopologyDiscoveryHandler({
+      connectorProvider: () => async () => [source],
+      persist: async () => true,
+      failed: vi.fn(),
+      continueScan,
+    })(job);
+    expect(continueScan).toHaveBeenCalledWith('tenant', 'source', 1, ['applications']);
+  },
+);
+
+test('the independent discovery consumer does not hold up a snapshot poll', async () => {
+  let finish!: () => void;
+  const blocked = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const stop = new Error('test consumer finished');
+  const process = vi
+    .fn()
+    .mockImplementationOnce(async (_name, handler) => {
+      await handler(job);
+      return 1;
+    })
+    .mockRejectedValue(stop);
+  const pending = runTopologyDiscoveryConsumer({ process }, async () => blocked);
+  const settled = expect(pending).rejects.toBe(stop);
+  const poll = vi.fn(async () => 'snapshot refreshed');
+  expect(await poll()).toBe('snapshot refreshed');
+  expect(process).toHaveBeenCalledTimes(1);
+  expect(process).toHaveBeenCalledWith('topology-worker', expect.any(Function), { count: 1 });
+  finish();
+  await settled;
+});
+
+test('passes only the current connector generation to persisted cluster identity lookup', async () => {
+  const source = { ...connector(), type: 'kubernetes' as const };
+  const clusterAuthority = vi.fn(async () => 'kubernetes-cluster:pinned');
+  await makeTopologyDiscoveryHandler({
+    connectorProvider: () => async () => [source],
+    persist: async () => true,
+    failed: vi.fn(),
+    clusterAuthority,
+  })(job);
+  expect(clusterAuthority).toHaveBeenCalledWith('tenant', 'source', 7);
+  expect(source.topology!.discover).toHaveBeenCalledWith({
+    scans: undefined,
+    clusterAuthority: 'kubernetes-cluster:pinned',
+  });
+});
+
+test('production wiring dispatches and consumes discovery independently from snapshot polling', () => {
+  const source = readFileSync(new URL('../index.ts', import.meta.url), 'utf8');
+  expect(source).toMatch(
+    /const topologyQueue = new Queue[\s\S]*?stream: 'sre:jobs:topology',[\s\S]*?group: 'topology'/,
+  );
+  expect(source).toMatch(
+    /const topology = makeTopologyDiscoveryRuntime\(\{[^}]*dispatch: topologyQueue/,
+  );
+  expect(source).toContain('void runTopologyDiscoveryConsumer(topologyQueue, topology.handler)');
+  const poll = source.match(/const polled = await pollQueue.process([\s\S]*?)const classified/);
+  expect(poll).not.toBeNull();
+  expect(poll![1]).toContain('await topologyQueue.enqueue');
+  expect(poll![1]).not.toContain('topology.handler');
 });

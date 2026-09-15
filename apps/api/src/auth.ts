@@ -89,7 +89,13 @@ export type IdentityResolution =
       status: 401 | 403;
       error: string;
       state?: 'disabled' | 'directory_unverified';
+      code?: 'support_session_unavailable';
     };
+
+function identityErrorBody(resolution: Extract<IdentityResolution, { ok: false }>) {
+  const { ok: _ok, status: _status, ...body } = resolution;
+  return body;
+}
 
 async function applyImpersonation(
   deps: AuthDeps,
@@ -97,9 +103,13 @@ async function applyImpersonation(
   sessionId: string | undefined,
 ): Promise<IdentityResolution> {
   if (!resolution.ok || !sessionId) return resolution;
-  if (!FOUNDING_ID.test(sessionId)) {
-    return { ok: false, status: 403, error: 'impersonation session unavailable' };
-  }
+  const unavailable = {
+    ok: false,
+    status: 403,
+    error: 'impersonation session unavailable',
+    code: 'support_session_unavailable',
+  } as const;
+  if (!FOUNDING_ID.test(sessionId)) return unavailable;
   const allowed = await isPlatformAdminIdentity(deps.db, {
     userId: resolution.user.userId,
     providerId: resolution.user.providerId,
@@ -108,7 +118,7 @@ async function applyImpersonation(
   const session = allowed
     ? await getActiveAdminImpersonation(deps.db, sessionId, resolution.user.userId)
     : null;
-  if (!session) return { ok: false, status: 403, error: 'impersonation session unavailable' };
+  if (!session) return unavailable;
   return {
     ...resolution,
     tenant: {
@@ -272,12 +282,7 @@ export function requireUser(deps: AuthDeps) {
         : resolveIdentityFromToken(deps, bearerToken(c.req.header('authorization')))),
       c.req.header('x-impersonation-session'),
     );
-    if (!resolution.ok) {
-      return c.json(
-        { error: resolution.error, ...(resolution.state ? { state: resolution.state } : {}) },
-        resolution.status,
-      );
-    }
+    if (!resolution.ok) return c.json(identityErrorBody(resolution), resolution.status);
     c.set('user', resolution.user);
     if (resolution.tenant) c.set('tenant', resolution.tenant);
     if (resolution.tenantAccessState) c.set('tenantAccessState', resolution.tenantAccessState);
@@ -343,12 +348,7 @@ export function requireOnboardingUser(deps: AuthDeps, controls: OnboardingAuthCo
           )),
       c.req.header('x-impersonation-session'),
     );
-    if (!resolution.ok) {
-      return c.json(
-        { error: resolution.error, ...(resolution.state ? { state: resolution.state } : {}) },
-        resolution.status,
-      );
-    }
+    if (!resolution.ok) return c.json(identityErrorBody(resolution), resolution.status);
     c.set('user', resolution.user);
     if (resolution.tenant) c.set('tenant', resolution.tenant);
     if (resolution.tenantAccessState) c.set('tenantAccessState', resolution.tenantAccessState);
@@ -389,12 +389,7 @@ export function requireFoundingUser(deps: AuthDeps) {
           )),
       c.req.header('x-impersonation-session'),
     );
-    if (!resolution.ok) {
-      return c.json(
-        { error: resolution.error, ...(resolution.state ? { state: resolution.state } : {}) },
-        resolution.status,
-      );
-    }
+    if (!resolution.ok) return c.json(identityErrorBody(resolution), resolution.status);
     c.set('user', resolution.user);
     if (resolution.tenant) c.set('tenant', resolution.tenant);
     if (resolution.tenantAccessState) c.set('tenantAccessState', resolution.tenantAccessState);
@@ -419,7 +414,7 @@ export function requireTenant() {
 }
 
 /** Reads are flat across a tenant, so only a change needs a tier above ordinary membership. */
-const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'TRACE']);
 
 /**
  * Reserves durable workspace configuration changes to an owner or administrator.

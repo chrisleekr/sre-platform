@@ -16,35 +16,47 @@ export async function recordDependencyVersionTx(
   key: { upstream: string; downstream: string; environment: string },
   next?: typeof serviceDependencies.$inferSelect,
 ) {
-  const [clock] = (await tx.execute(sql`select clock_timestamp() as at`)) as unknown as Array<{
-    at: Date;
-  }>;
-  const at = new Date(clock!.at);
-  await tx
-    .update(serviceDependencyHistory)
-    .set({ validUntil: at })
-    .where(
-      and(
-        eq(serviceDependencyHistory.upstream, key.upstream),
-        eq(serviceDependencyHistory.downstream, key.downstream),
-        eq(serviceDependencyHistory.environment, key.environment),
-        isNull(serviceDependencyHistory.validUntil),
-      ),
-    );
-  if (next)
-    await tx.insert(serviceDependencyHistory).values({
-      tenantId,
-      upstream: key.upstream,
-      downstream: key.downstream,
-      environment: key.environment,
-      validFrom: at,
-      declaration: {
+  const current = and(
+    eq(serviceDependencyHistory.upstream, key.upstream),
+    eq(serviceDependencyHistory.downstream, key.downstream),
+    eq(serviceDependencyHistory.environment, key.environment),
+    isNull(serviceDependencyHistory.validUntil),
+  );
+  const declaration = next
+    ? {
         syncType: next.syncType,
         circuitBreaker: next.circuitBreaker,
         protocol: next.protocol,
         rationale: next.rationale,
         confirmedByUserId: next.confirmedByUserId,
         lastConfirmedAt: next.lastConfirmedAt?.toISOString() ?? null,
-      },
+      }
+    : null;
+  if (declaration) {
+    const unchanged = await tx
+      .select({ id: serviceDependencyHistory.id })
+      .from(serviceDependencyHistory)
+      .where(
+        and(
+          current,
+          sql`${serviceDependencyHistory.declaration} = ${JSON.stringify(declaration)}::jsonb`,
+        ),
+      )
+      .limit(1);
+    if (unchanged.length) return;
+  }
+  const [clock] = (await tx.execute(sql`select clock_timestamp() as at`)) as unknown as Array<{
+    at: Date;
+  }>;
+  const at = new Date(clock!.at);
+  await tx.update(serviceDependencyHistory).set({ validUntil: at }).where(current);
+  if (declaration)
+    await tx.insert(serviceDependencyHistory).values({
+      tenantId,
+      upstream: key.upstream,
+      downstream: key.downstream,
+      environment: key.environment,
+      validFrom: at,
+      declaration,
     });
 }

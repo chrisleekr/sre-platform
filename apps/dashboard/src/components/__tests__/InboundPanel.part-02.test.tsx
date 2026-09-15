@@ -9,6 +9,8 @@ import { RequestError } from '../../lib/request-error';
 import { installDialogMethods } from '../../test/dialog';
 
 const h = vi.hoisted(() => ({
+  role: 'admin' as string | undefined,
+  impersonation: null as object | null,
   surfaces: [] as SurfaceSummary[],
   loading: false,
   error: false,
@@ -26,6 +28,10 @@ const h = vi.hoisted(() => ({
 }));
 
 // The shared auth boundary is a hard dependency of the panel; stub it so the hook wiring doesn't run.
+vi.mock('../../lib/me-store', () => ({
+  useMe: () => ({ data: { tenant: { role: h.role, impersonation: h.impersonation } } }),
+}));
+
 vi.mock('../../auth', () => ({
   useSession: () => ({ getCredentials: async () => ({ kind: 'bearer' as const, token: 'tok' }) }),
 }));
@@ -50,6 +56,8 @@ import { InboundPanel } from '../InboundPanel';
 let dialogMethods: ReturnType<typeof installDialogMethods>;
 
 beforeEach(() => {
+  h.role = 'admin';
+  h.impersonation = null;
   dialogMethods = installDialogMethods();
 });
 
@@ -318,3 +326,27 @@ describe('InboundPanel', () => {
     expect(screen.queryByText(/truncated|not all channels|too many channels/i)).toBeNull();
   });
 });
+
+test.each(['member', undefined, 'support'])(
+  'keeps Slack details and subscriptions readable for %s without mutation controls',
+  async (role) => {
+    h.role = role === 'support' ? 'admin' : role;
+    h.impersonation = role === 'support' ? { sessionId: 'support' } : null;
+    h.surfaces = [surface()];
+    h.listChannels.mockResolvedValue([{ channel: 'C123', name: 'alerts', enabled: true }]);
+    render(<InboundPanel embedded />);
+    const subscription = (await screen.findByRole('checkbox', {
+      name: 'Subscribe #alerts',
+    })) as HTMLInputElement;
+    expect(subscription.disabled).toBe(true);
+    for (const name of ['Edit Slack', 'Disconnect', 'Add channel']) {
+      const button = screen.getByRole('button', { name }) as HTMLButtonElement;
+      expect(button.disabled).toBe(true);
+      fireEvent.click(button);
+    }
+    expect(h.toggleChannel).not.toHaveBeenCalled();
+    expect(h.disconnectSlackSurface).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('searchbox', { name: 'Search subscriptions' })).toBeDefined();
+  },
+);

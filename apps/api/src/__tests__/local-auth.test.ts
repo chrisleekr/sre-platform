@@ -1,3 +1,4 @@
+import { registerInactiveLocalAuthCases } from './local-auth-inactive-cases';
 import { seedMembership } from '@sre/db/test-support';
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
@@ -582,3 +583,13 @@ describe('C20: tenant provisioning for the local identity', () => {
     });
   });
 });
+
+registerInactiveLocalAuthCases(() => ({
+  db: admin,
+  local,
+  api: armedApi,
+  reset: resetLocalIdentity,
+  email: LOCAL_EMAIL,
+  password: LOCAL_PASSWORD,
+  memberships: () => localMemberships(LOCAL_EMAIL),
+}));

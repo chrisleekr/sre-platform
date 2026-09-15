@@ -383,13 +383,11 @@ describe('platform administration API', () => {
       expect.objectContaining({ state: 'ended' }),
       expect.anything(),
     );
-    expect(
-      (
-        await api.request('/me', {
-          headers: { authorization: `Bearer ${adminToken}`, 'x-impersonation-session': session.id },
-        })
-      ).status,
-    ).toBe(403);
+    const endedResponse = await api.request('/me', {
+      headers: { authorization: `Bearer ${adminToken}`, 'x-impersonation-session': session.id },
+    });
+    expect(endedResponse.status).toBe(403);
+    expect(await endedResponse.json()).toMatchObject({ code: 'support_session_unavailable' });
     await admin.db
       .update(tenants)
       .set({ status: 'deleting', deleteAfter: new Date(Date.now() + 86_400_000) })

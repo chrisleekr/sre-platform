@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   topologyRefKey,
+  hasKnownCredential,
   topologyRelationKey,
   type TopologyCollection,
   type TopologyEntity,
@@ -26,7 +27,9 @@ export function topologyEndpoint(raw: unknown): TopologyEntity | null {
       url.username ||
       url.password ||
       url.search ||
-      url.hash
+      url.hash ||
+      hasKnownCredential(url.href) ||
+      hasKnownCredential(decodeURIComponent(url.pathname))
     )
       return null;
     const ref: TopologyRef = { authority: 'http-endpoint', kind: 'endpoint', id: url.href };
@@ -42,6 +45,11 @@ export function topologyEndpoint(raw: unknown): TopologyEntity | null {
   }
 }
 
+const evidenceTime = (value: string | undefined): number => {
+  const parsed = Date.parse(value ?? '');
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+};
+
 /** Remove repeated facts within a collection while keeping the newest event observation.
  * @param collection - Projected provider collection to normalize before persistence.
  */
@@ -50,14 +58,14 @@ export function deduplicateTopology(collection: TopologyCollection): TopologyCol
   for (const entity of collection.entities) {
     const key = topologyRefKey(entity.ref),
       previous = entities.get(key);
-    if (!previous || (entity.evidenceAt ?? '') >= (previous.evidenceAt ?? ''))
+    if (!previous || evidenceTime(entity.evidenceAt) >= evidenceTime(previous.evidenceAt))
       entities.set(key, entity);
   }
   const relations = new Map<string, TopologyCollection['relations'][number]>();
   for (const relation of collection.relations) {
     const key = topologyRelationKey(relation),
       previous = relations.get(key);
-    if (!previous || (relation.evidenceAt ?? '') >= (previous.evidenceAt ?? ''))
+    if (!previous || evidenceTime(relation.evidenceAt) >= evidenceTime(previous.evidenceAt))
       relations.set(key, relation);
   }
   return { ...collection, entities: [...entities.values()], relations: [...relations.values()] };

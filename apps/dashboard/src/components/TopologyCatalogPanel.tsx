@@ -1,3 +1,5 @@
+import { useOperationalTopology } from '../lib/useOperationalTopology';
+import { useMe } from '../lib/me-store';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from '../auth';
 import { config } from '../config';
@@ -6,10 +8,8 @@ import { useTopologyImpact } from '../lib/useTopologyImpact';
 import {
   activeIncidents,
   filterTopologyGraph,
-  operationalTopologyGraph,
   topologyIncidentServices,
   topologyIncidentTitle,
-  scopeTopologyGraph,
 } from '../lib/topology';
 import type { GraphNode, ServiceStatus, TopologySource } from '../lib/topology';
 import { formatAbsoluteTime } from '../lib/time';
@@ -24,7 +24,12 @@ import { TopologyRuntimeManager } from './TopologyRuntimeManager';
 import { TopologyHistory } from './TopologyHistory';
 import { TopologyReliability } from './TopologyReliability';
 import { TopologyIncidentContext } from './TopologyIncidentContext';
-import { TopologyOverview, TopologySummary, TOPOLOGY_STATUSES } from './TopologyOverview';
+import {
+  TopologyOverview,
+  TopologySummary,
+  TopologyRepresentation,
+  TOPOLOGY_STATUSES,
+} from './TopologyOverview';
 import {
   declareInvestigation,
   investigationSubjectKey,
@@ -52,7 +57,12 @@ export function TopologyCatalogPanel({
   at: string;
   setAt: (at: string) => void;
 }) {
-  const { getCredentials } = useSession();
+  const session = useSession();
+  const { getCredentials } = session;
+  const me = useMe(getCredentials, session.status === 'authenticated', session.sessionKey);
+  const canConfigure =
+    !me.data?.tenant?.impersonation &&
+    (me.data?.tenant?.role === 'owner' || me.data?.tenant?.role === 'admin');
   const incidents = graph.incidents ?? [];
 
   const [selectedName, setSelectedName] = useState<string | null>(() =>
@@ -79,8 +89,7 @@ export function TopologyCatalogPanel({
     ? topologyIncidentServices(graph, selectedIncident)
     : [];
   const incidentService = incidentServices.length === 1 ? incidentServices[0]! : null;
-  const scopedGraph = scopeTopologyGraph(graph, environment);
-  const operationalGraph = operationalTopologyGraph(scopedGraph, incidents, Date.now());
+  const operationalGraph = useOperationalTopology(graph, environment);
   const environments = [
     ...new Set([
       ...graph.edges.flatMap((edge) => (edge.environment ? [edge.environment] : [])),
@@ -168,7 +177,7 @@ export function TopologyCatalogPanel({
     <section className="min-w-0">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-lg font-semibold">Service catalog</h2>
-        {!graph.historicalAt && (
+        {!graph.historicalAt && canConfigure && (
           <TopologyCatalogManager
             graph={graph}
             apiBaseUrl={config.apiBaseUrl}
@@ -177,6 +186,11 @@ export function TopologyCatalogPanel({
           />
         )}
       </div>
+      {!canConfigure && (
+        <p className="text-sm text-ink-muted">
+          Only workspace owners and admins can edit the service catalog.
+        </p>
+      )}
       <p className="mb-4 max-w-4xl text-sm text-ink-muted">
         Explore registered services, their confirmed runtime and declared dependencies. Runtime
         health and potential dependency exposure are not measurements of service availability.
@@ -201,7 +215,7 @@ export function TopologyCatalogPanel({
         </p>
       )}
       <TopologyCoverage sources={graph.coverage ?? []} />
-      {!loading && !graph.historicalAt && (
+      {!loading && !graph.historicalAt && canConfigure && (
         <TopologyRuntimeManager
           graph={graph}
           apiBaseUrl={config.apiBaseUrl}
@@ -284,24 +298,7 @@ export function TopologyCatalogPanel({
                 ))}
               </select>
             </label>
-            <div className="flex gap-2" aria-label="Topology representation">
-              <button
-                type="button"
-                aria-pressed={representation === 'map'}
-                onClick={() => setRepresentation('map')}
-                className="rounded border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-ink-secondary hover:bg-surface-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus aria-pressed:border-line-strong aria-pressed:bg-line"
-              >
-                Map
-              </button>
-              <button
-                type="button"
-                aria-pressed={representation === 'list'}
-                onClick={() => setRepresentation('list')}
-                className="rounded border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-ink-secondary hover:bg-surface-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus aria-pressed:border-line-strong aria-pressed:bg-line"
-              >
-                List
-              </button>
-            </div>
+            <TopologyRepresentation value={representation} onChange={setRepresentation} />
             <label className="min-w-0 flex-1 text-xs font-medium text-ink-muted">
               Search services
               <input

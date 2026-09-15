@@ -11,6 +11,7 @@ test('resolves only a unique admitted external repository identity without exter
     htmlUrl: 'https://git.example/team/mono',
     private: true,
     archived: false,
+    path: '/apps/api/',
   };
   const search = vi.fn(async () => [entry]);
   const config: ConnectorConfig = {
@@ -27,7 +28,15 @@ test('resolves only a unique admitted external repository identity without exter
     'gitlab',
     repositoryTopologyRef('git@git.example:team/mono.git')!,
   );
-  expect(found).toMatchObject({ repositoryId: '42', dataSourceId: 'source' });
+  expect(found).toMatchObject({
+    repositoryId: '42',
+    dataSourceId: 'source',
+    pathPrefix: 'apps/api',
+  });
+  search.mockResolvedValue([{ ...entry, path: '///' }]);
+  expect(
+    await resolveSourceRepository(config, 'gitlab', repositoryTopologyRef(entry.htmlUrl)!),
+  ).toMatchObject({ pathPrefix: null });
   expect(config.getCredential).not.toHaveBeenCalled();
   expect(config.repositories?.resolve).not.toHaveBeenCalled();
   expect(

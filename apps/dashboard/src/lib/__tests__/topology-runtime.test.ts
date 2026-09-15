@@ -160,3 +160,30 @@ describe('confirmed runtime identity', () => {
     expect(focused.edges).toHaveLength(2);
   });
 });
+
+test('overlapping namespace and label bindings count a pod once and exclude other scopes', () => {
+  const result = operationalTopologyGraph(
+    {
+      ...graph,
+      runtimeBindings: [
+        binding('prod-cluster', 'production'),
+        {
+          ...binding('prod-cluster', 'production'),
+          id: 'whole-namespace',
+          labelKey: '',
+          labelValue: '',
+        },
+      ],
+      infrastructure: [
+        pod('prod-cluster', 'checkout', 1),
+        pod('stage-cluster', 'checkout', 0),
+        { ...pod('prod-cluster', 'checkout', 0), namespace: 'other' },
+        { ...pod('prod-cluster', 'checkout', 0), kind: 'node' },
+      ],
+    },
+    [],
+    now,
+  );
+  expect(result.nodes[0]?.runtime).toMatchObject({ pods: 1, healthy: 1, attention: 0 });
+  expect(result.nodes[0]?.status).toBe('healthy');
+});

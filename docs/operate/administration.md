@@ -83,9 +83,10 @@ common reason to open a session.
 ## Recover workspace ownership
 
 Use this when a workspace has no owner memberships, or all its owner accounts are inactive.
-Platform-administrator access does not itself grant workspace ownership.
+Platform-administrator access does not itself grant workspace ownership. Recovery uses the
+operator’s own platform-administrator authority, including during a support session.
 
-1. End any support session. Open **Platform administration → Workspaces**.
+1. Open **Platform administration → Workspaces**.
 2. On the active workspace, select **Recover owner**.
 3. Choose the exact existing active member, enter a reason and select **Review recovery**.
 4. Check the named member and workspace. Type the workspace address and select **Confirm change**.

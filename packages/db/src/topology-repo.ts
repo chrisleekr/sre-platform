@@ -171,7 +171,7 @@ export async function updateDependency(
   upstream: string,
   downstream: string,
   patch: DependencyPatch,
-  environment = '',
+  environment: string,
 ) {
   return withTenant(db, tenantId, async (tx) => {
     await lockTopologyTx(tx, tenantId);
@@ -212,7 +212,7 @@ export async function listDependencies(db: Db, tenantId: string) {
 }
 
 /**
- * Removes dependency.
+ * Remove an exact scoped dependency and return the number of deleted rows.
  *
  * @param db - Database connection used for the operation.
  * @param tenantId - Tenant whose records are read or changed.
@@ -225,12 +225,11 @@ export async function removeDependency(
   tenantId: string,
   upstream: string,
   downstream: string,
-  environment = '',
-): Promise<void> {
-  await withTenant(db, tenantId, async (tx) => {
+  environment: string,
+): Promise<number> {
+  return withTenant(db, tenantId, async (tx) => {
     await lockTopologyTx(tx, tenantId);
-    await recordDependencyVersionTx(tx, tenantId, { upstream, downstream, environment });
-    await tx
+    const rows = await tx
       .delete(serviceDependencies)
       .where(
         and(
@@ -238,6 +237,10 @@ export async function removeDependency(
           eq(serviceDependencies.downstream, downstream),
           eq(serviceDependencies.environment, environment),
         ),
-      );
+      )
+      .returning();
+    if (rows.length)
+      await recordDependencyVersionTx(tx, tenantId, { upstream, downstream, environment });
+    return rows.length;
   });
 }

@@ -384,3 +384,29 @@ test.each([
     expect(result.unknowns?.at(-1)?.question).toMatch(reason);
   },
 );
+
+test.each([
+  [undefined, 'partial_evidence'],
+  ['insufficient_evidence', 'partial_evidence'],
+  ['contradictory_evidence', 'contradictory_evidence'],
+] as const)(
+  'classifies a completed unsupported review with rejection %s',
+  async (rejection, category) => {
+    const generator = makeFakeGenerator(() => ({
+      supported: false,
+      rejection,
+      summary: 'More evidence is needed.',
+      reason: 'The candidate is not established.',
+      evidenceIds: [evidenceId],
+    }));
+    const result = await reviewInvestigation(
+      generator,
+      candidate,
+      evidence,
+      new AbortController().signal,
+    );
+    expect(result.outcome).toBe('inconclusive');
+    expect(result.unknowns?.at(-1)?.category).toBe(category);
+    expect(result.evidenceReceipts).toEqual(candidate.evidenceReceipts);
+  },
+);

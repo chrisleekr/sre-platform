@@ -22,6 +22,14 @@ export {
   type SignInUser,
 } from './sign-in-repo';
 
+/** Identifies an expected refusal to provision a disabled or deleted identity. */
+export class InactiveIdentityError extends Error {
+  constructor() {
+    super('cannot upsert an inactive account');
+    this.name = 'InactiveIdentityError';
+  }
+}
+
 export interface Identity {
   issuer: string;
   subject: string;
@@ -55,7 +63,7 @@ export async function upsertIdentity(db: Db, identity: Identity): Promise<string
     .where(and(eq(users.issuer, issuer), eq(users.subject, subject)))
     .limit(1);
   if (!existing) throw new Error('user upsert returned no row');
-  if (existing.status !== 'active') throw new Error('cannot upsert an inactive account');
+  if (existing.status !== 'active') throw new InactiveIdentityError();
   return existing.id;
 }
 
@@ -430,7 +438,7 @@ export async function attachMembership(
       .from(users)
       .where(eq(users.id, userId))
       .for('no key update');
-    if (user?.status !== 'active') throw new Error('cannot attach an inactive account');
+    if (user?.status !== 'active') throw new InactiveIdentityError();
     // `memberships` is exempt from RLS and the app role keeps INSERT on it, so nothing in the database
     // stops this from attaching an identity to a tenant it must never reach. Only an administrative or
     // test caller may run it.

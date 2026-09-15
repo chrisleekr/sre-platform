@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CredentialGetter } from './request-credentials';
 import type { BlastRadius, TopologyGraph } from './topology';
 import { fetchBlastRadius } from './useTopology';
@@ -20,11 +20,15 @@ export function useTopologyImpact(
   const queryKey = JSON.stringify([apiBaseUrl, service, environment, subjectKey]);
   const credentials = useRef(getCredentials);
   credentials.current = getCredentials;
-  const revision = JSON.stringify([
-    graph.nodes.map((node) => [node.name, node.team, node.criticality, node.sources]),
-    graph.edges,
-    graph.discovery?.operational,
-  ]);
+  const revision = useMemo(
+    () =>
+      JSON.stringify([
+        graph.nodes.map((node) => [node.name, node.team, node.criticality, node.sources]),
+        graph.edges,
+        graph.discovery?.operational,
+      ]),
+    [graph.nodes, graph.edges, graph.discovery?.operational],
+  );
   useEffect(() => {
     setResult(null);
     setError(null);

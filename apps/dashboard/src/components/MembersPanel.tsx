@@ -110,6 +110,7 @@ export function MembersPanel({
             {members.map((member) => {
               const lastOwner =
                 member.role === 'owner' &&
+                member.status === 'active' &&
                 (ownership?.activeOwnerCount ?? owners.length) -
                   (!member.userStatus || member.userStatus === 'active' ? 1 : 0) <
                   1;

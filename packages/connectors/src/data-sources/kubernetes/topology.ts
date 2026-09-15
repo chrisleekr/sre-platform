@@ -286,14 +286,19 @@ export function kubernetesTopology(
       const url = new URL(str(config.settings.apiUrl)!);
       // No credential-bearing query, userinfo or fragment enters topology identity.
       const endpoint = `kubernetes:${url.origin}${url.pathname.replace(/\/$/, '')}`;
-      let authority = endpoint;
-      try {
-        const cluster = obj(await kjson('/api/v1/namespaces/kube-system'));
-        const uid = str(obj(cluster.metadata).uid);
-        if (uid) authority = `kubernetes-cluster:${uid}`;
-      } catch {
-        // Cluster-scoped namespace reads are optional for namespace-restricted credentials.
-      }
+      let authority = options?.clusterAuthority;
+      if (!authority)
+        try {
+          const cluster = obj(await kjson('/api/v1/namespaces/kube-system'));
+          const uid = str(obj(cluster.metadata).uid);
+          if (!uid) throw new Error('Invalid Kubernetes cluster identity');
+          authority = `kubernetes-cluster:${uid}`;
+        } catch (error) {
+          // A permanent namespace permission boundary may use the stable endpoint identity.
+          if (namespace && error instanceof K8sApiError && error.status === 403)
+            authority = endpoint;
+          else throw error;
+        }
       const collections: TopologyCollection[] = [];
       for (const [apiVersion, resource, kind] of RESOURCES) {
         if (!shouldReadTopologyCollection(options, resource)) continue;

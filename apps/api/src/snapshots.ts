@@ -299,7 +299,9 @@ function isoOrNull(v: unknown): string | undefined {
 export function toInfraSnapshot(
   s: NormalizedSnapshot,
   dataSource: { id: string; name: string } = { id: '', name: 'Kubernetes' },
-): InfraSnapshotDto {
+): InfraSnapshotDto | null {
+  const observedAt = isoOrNull(s.observedAt);
+  if (!observedAt) return null;
   const error = metaStr(s.metadata.error);
   const kind =
     s.metadata.kind === 'pod' || s.metadata.kind === 'node' ? s.metadata.kind : undefined;
@@ -329,7 +331,7 @@ export function toInfraSnapshot(
     source: s.source,
     entityId: s.entityId,
     metrics: s.metrics,
-    observedAt: isoOrNull(s.observedAt) ?? '',
+    observedAt,
     ...(error ? { error } : {}),
     ...(kind ? { kind } : {}),
     ...(namespace ? { namespace } : {}),
@@ -406,7 +408,7 @@ export function snapshotRoutes(deps: SnapshotRouteDeps): Hono<{ Variables: Tenan
     const infrastructure = lists.flatMap(({ dataSource, snapshots }) =>
       snapshots
         .filter((snapshot) => snapshot.metadata.kind !== 'collection')
-        .map((snapshot) => toInfraSnapshot(snapshot, dataSource)),
+        .flatMap((snapshot) => toInfraSnapshot(snapshot, dataSource) ?? []),
     );
     return c.json({ infrastructure });
   });

@@ -26,7 +26,11 @@ import {
 import type { NormalizedSnapshot } from '@sre/connectors';
 import { makeApp } from '../app';
 import { makeTestAuth } from './auth-test-support';
-import { verifyDiscoveredTopologyAccess, type GraphBody } from './topology-graph.fixture';
+import {
+  verifyDiscoveredTopologyAccess,
+  verifyDeclarationHistory,
+  type GraphBody,
+} from './topology-graph.fixture';
 import { verifyTopologyIncidentSelection } from './topology-incident-selection.fixture';
 
 const ADMIN_URL = process.env.DATABASE_URL ?? 'postgres://sre:sre@localhost:5432/sre_platform';
@@ -265,9 +269,13 @@ describe('GET /topology/graph', () => {
     ).toEqual([]);
     const other = await sign(orgB, ['responder']);
     expect((await save(input, other)).status).toBe(400);
-    await api.request(`/topology/runtime-bindings/${binding.id}`, {
+    const foreignDelete = await api.request(`/topology/runtime-bindings/${binding.id}`, {
       method: 'DELETE',
       headers: auth(other),
+    });
+    expect(foreignDelete.status).toBe(404);
+    expect(await foreignDelete.json()).toEqual({
+      error: 'This runtime mapping is unavailable in this workspace.',
     });
     const changed = await save({
       ...input,
@@ -294,6 +302,14 @@ describe('GET /topology/graph', () => {
         })
       ).status,
     ).toBe(200);
+    expect(
+      (
+        await api.request(`/topology/runtime-bindings/${binding.id}`, {
+          method: 'DELETE',
+          headers: auth(token),
+        })
+      ).status,
+    ).toBe(404);
     const after = await api.request('/topology/graph', { headers: auth(token) });
     expect(((await after.json()) as { runtimeBindings: unknown[] }).runtimeBindings).toEqual([]);
     const atomic = await save({ ...input, serviceName: 'new-bound-service', createService: true });
@@ -454,74 +470,7 @@ describe('GET /topology/blast-radius', () => {
     }
   });
   test('records scoped declarations and reconstructs their earlier version without current runtime', async () => {
-    const token = await sign(orgA, ['responder']);
-    const input = {
-      upstream: 'checkout',
-      downstream: 'orders',
-      environment: 'production',
-      protocol: 'HTTPS',
-      rationale: 'Verified in deployment configuration.',
-      syncType: 'sync',
-      circuitBreaker: false,
-    };
-    const save = (body: unknown) =>
-      api.request('/topology/dependencies', {
-        method: 'PUT',
-        headers: { ...auth(token), 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-    expect((await save(input)).status).toBe(200);
-    const historyResponse = await api.request('/topology/history', { headers: auth(token) });
-    const before = (
-      (await historyResponse.json()) as {
-        changes: Array<{
-          upstream: string;
-          downstream: string;
-          environment: string;
-          validFrom: string;
-        }>;
-      }
-    ).changes.find(
-      (row) => row.downstream === 'orders' && row.environment === 'production',
-    )!.validFrom;
-    expect(
-      (await save({ ...input, syncType: 'async', rationale: 'Now delivered asynchronously.' }))
-        .status,
-    ).toBe(200);
-    const old = await api.request(`/topology/graph?at=${encodeURIComponent(before)}`, {
-      headers: auth(token),
-    });
-    const oldGraph = (await old.json()) as GraphBody & { historicalAt: string };
-    expect(oldGraph.historicalAt).toBe(before);
-    expect(oldGraph.infrastructure).toEqual([]);
-    expect(oldGraph.edges).toContainEqual(
-      expect.objectContaining({
-        upstream: 'checkout',
-        downstream: 'orders',
-        syncType: 'sync',
-        rationale: input.rationale,
-        confirmedByUserId: expect.any(String),
-      }),
-    );
-    const prod = await api.request('/topology/blast-radius?service=orders&environment=production', {
-      headers: auth(token),
-    });
-    expect(await prod.json()).toMatchObject({
-      dependents: { indirect: [expect.objectContaining({ name: 'checkout' })] },
-    });
-    const stage = await api.request('/topology/blast-radius?service=orders&environment=staging', {
-      headers: auth(token),
-    });
-    expect(await stage.json()).toMatchObject({
-      dependents: { direct: [], indirect: [], insulated: [] },
-    });
-    const foreign = await api.request(`/topology/graph?at=${encodeURIComponent(before)}`, {
-      headers: auth(await sign(orgB, ['responder'])),
-    });
-    expect(await foreign.json()).toMatchObject({ nodes: [], edges: [] });
-    expect(
-      (await api.request('/topology/graph?at=not-a-date', { headers: auth(token) })).status,
-    ).toBe(400);
+    await verifyDeclarationHistory(api, await sign(orgA, []), await sign(orgB, []));
   });
 
   test('an incident without entity candidates can be assigned and restored with tenant isolation', async () => {

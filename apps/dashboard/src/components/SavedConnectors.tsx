@@ -25,6 +25,7 @@ export interface ConnectorBusyAction {
 
 export function SavedConnectors({
   connectors,
+  canConfigure,
   activeInvestigations,
   getCredentials,
   busyAction,
@@ -36,6 +37,7 @@ export function SavedConnectors({
   onDisconnect,
 }: {
   connectors: ConnectorSummary[];
+  canConfigure: boolean;
   activeInvestigations: ReadonlyMap<string, string>;
   getCredentials: CredentialGetter;
   busyAction: ConnectorBusyAction | null;
@@ -275,14 +277,15 @@ export function SavedConnectors({
                     ) : null}
                     <button
                       type="button"
+                      disabled={!canConfigure}
                       onClick={(event) => onManage(c, event.currentTarget)}
-                      className="rounded border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-ink-secondary hover:bg-surface-subtle"
+                      className="rounded border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-ink-secondary hover:bg-surface-subtle disabled:opacity-50"
                     >
                       Manage
                     </button>
                     <button
                       type="button"
-                      disabled={busyAction !== null}
+                      disabled={!canConfigure || busyAction !== null}
                       onClick={() => onRetest(c)}
                       className="rounded border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-ink-secondary hover:bg-surface-subtle disabled:opacity-50"
                     >
@@ -296,7 +299,7 @@ export function SavedConnectors({
                       </summary>
                       <button
                         type="button"
-                        disabled={busyAction !== null}
+                        disabled={!canConfigure || busyAction !== null}
                         onClick={() => onRequestDisconnect(c.id)}
                         className="rounded border border-critical-line bg-surface px-3 py-1.5 text-sm font-medium text-critical hover:bg-critical-soft disabled:opacity-50"
                       >
@@ -305,7 +308,7 @@ export function SavedConnectors({
                     </details>
                   </div>
                 )}
-                {isManagedConnector(c.type) && confirmDisconnect === c.id && (
+                {canConfigure && isManagedConnector(c.type) && confirmDisconnect === c.id && (
                   <div
                     role="alertdialog"
                     aria-label={`Disconnect ${disconnectLabel(c)}`}
@@ -315,7 +318,7 @@ export function SavedConnectors({
                     <div className="mt-2 flex flex-wrap gap-2">
                       <button
                         type="button"
-                        disabled={busyAction !== null}
+                        disabled={!canConfigure || busyAction !== null}
                         onClick={onCancelDisconnect}
                         className="rounded border border-line-strong bg-surface px-3 py-1.5 font-medium"
                       >
@@ -323,7 +326,7 @@ export function SavedConnectors({
                       </button>
                       <button
                         type="button"
-                        disabled={busyAction !== null}
+                        disabled={!canConfigure || busyAction !== null}
                         onClick={() => onDisconnect(c)}
                         className="rounded bg-critical-solid px-3 py-1.5 font-medium text-on-critical disabled:opacity-50"
                       >

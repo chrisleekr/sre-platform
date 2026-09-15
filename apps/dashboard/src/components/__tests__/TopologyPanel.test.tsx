@@ -6,29 +6,11 @@ import type { BlastRadius, TopologyGraph } from '../../lib/topology';
 import type { InvestigationSubject } from '../../lib/investigations';
 import { installMatchMedia } from './match-media.fixture';
 
-const graph: TopologyGraph = {
-  nodes: [
-    {
-      name: 'checkout',
-      team: null,
-      criticality: null,
-      lastDeployAt: null,
-      recentDeploys: [],
-    },
-    {
-      name: 'payments',
-      team: null,
-      criticality: null,
-      lastDeployAt: null,
-      recentDeploys: [],
-    },
-  ],
-  edges: [
-    { upstream: 'checkout', downstream: 'payments', syncType: 'sync', circuitBreaker: false },
-  ],
-};
+import { catalogGraph as graph } from './topology-discovery.fixture';
 
 const h = vi.hoisted(() => ({
+  role: 'admin' as string | undefined,
+  impersonation: null as object | null,
   incidents: [] as Incident[],
   fetchBlastRadius: vi.fn(),
   graph: null as TopologyGraph | null,
@@ -37,6 +19,11 @@ const h = vi.hoisted(() => ({
   activeInvestigations: new Map<string, string>(),
   investigationSubjects: [] as InvestigationSubject[],
   refetch: vi.fn(),
+}));
+
+// The shared auth boundary is a hard dependency of the panel; stub it so the hook wiring doesn't run.
+vi.mock('../../lib/me-store', () => ({
+  useMe: () => ({ data: { tenant: { role: h.role, impersonation: h.impersonation } } }),
 }));
 
 vi.mock('../../auth', () => ({
@@ -107,6 +94,8 @@ function incident(over: Partial<Incident>): Incident {
 }
 
 beforeEach(() => {
+  h.role = 'admin';
+  h.impersonation = null;
   installMatchMedia(false);
   h.fetchBlastRadius.mockResolvedValue(BLAST);
 });
@@ -597,3 +586,15 @@ describe('TopologyPanel representations and detail selection', () => {
     expect(document.activeElement).toBe(checkout);
   });
 });
+
+test.each(['member', undefined, 'support'])(
+  'shows topology without catalog editing for %s',
+  (role) => {
+    h.role = role === 'support' ? 'owner' : role;
+    h.impersonation = role === 'support' ? { sessionId: 'support' } : null;
+    render(<TopologyPanel />);
+    expect(screen.getByRole('heading', { name: 'Service topology' })).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Edit catalog' })).toBeNull();
+    expect(screen.getByText(/Only workspace owners and admins/)).toBeDefined();
+  },
+);
