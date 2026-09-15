@@ -6,7 +6,7 @@ it.each([
   '-----BEGIN PRIVATE KEY-----\nhunter2\n-----END PRIVATE KEY-----\nsafe source',
   'Authorization:\r\n  hunter2\r\nsafe source',
 ])('preserves source line numbers while redacting multiline credentials', (value) => {
-  const redacted = scrubSecrets(value, { preserveLines: true });
+  const redacted = scrubSecrets(value);
   expect(redacted).not.toContain('hunter2');
   expect(redacted.split('\n')).toHaveLength(value.split('\n').length);
   expect(redacted.split('\n').at(-1)).toBe('safe source');

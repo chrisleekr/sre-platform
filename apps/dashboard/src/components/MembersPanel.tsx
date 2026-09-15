@@ -250,6 +250,7 @@ export function MembersPage() {
   const sessionKey = session.sessionKey;
   const loadVersion = useRef(0);
   const [data, setData] = useState<{
+    ownership?: MembersPanelProps['ownership'];
     viewer: { userId: string; role: Role; isPlatformAdmin?: boolean };
     members: Member[];
     invitations?: Invitation[];
@@ -272,6 +273,7 @@ export function MembersPage() {
         tenant: { role: Role };
       };
       const members = (await membersResponse.json()) as {
+        ownership?: MembersPanelProps['ownership'];
         members: Member[];
         invitations?: Invitation[];
       };
