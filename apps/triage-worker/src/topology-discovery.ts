@@ -1,4 +1,4 @@
-import type { Job } from '@sre/queue';
+import type { Job, Queue } from '@sre/queue';
 import type {
   TopologyCollection,
   TopologyDiscovery,
@@ -23,6 +23,11 @@ import { topologyReadIssue } from '@sre/connectors';
  */
 export function makeTopologyDiscoveryHandler(deps: {
   connectorProvider: ConnectorProvider;
+  clusterAuthority?: (
+    tenantId: string,
+    connectorId: string,
+    generation: number,
+  ) => Promise<string | undefined>;
   runtimeScopes?: (tenantId: string) => Promise<TopologyRuntimeScope[]>;
   cooldown?: {
     active: (tenantId: string, connectorId: string) => Promise<boolean>;
@@ -72,6 +77,15 @@ export function makeTopologyDiscoveryHandler(deps: {
     try {
       result = await connector.topology.discover({
         scans,
+        ...(connector.type === 'kubernetes' && deps.clusterAuthority
+          ? {
+              clusterAuthority: await deps.clusterAuthority(
+                job.tenantId,
+                id,
+                connector.generation.lifecycleVersion,
+              ),
+            }
+          : {}),
         ...(deps.runtimeScopes ? { runtimeScopes: await deps.runtimeScopes(job.tenantId) } : {}),
         ...(collections ? { collections } : {}),
       });
@@ -114,7 +128,6 @@ export function makeTopologyDiscoveryHandler(deps: {
         (collection) =>
           collection.scan?.cursor &&
           collection.completeness !== 'unavailable' &&
-          (!collection.issue || collection.issue === 'limit' || collection.issue === 'sampling') &&
           collection.scan.cursor !== scans?.[collection.key]?.cursor,
       )
       .map((collection) => collection.key);
@@ -130,7 +143,7 @@ export function makeTopologyDiscoveryHandler(deps: {
   };
 }
 
-/** Wire discovery onto the existing durable polling queue with an independent five-minute cadence.
+/** Wire discovery onto its durable queue with an independent five-minute cadence.
  * @param deps - Tenant database, connector resolver and scheduler infrastructure.
  */
 export function makeTopologyDiscoveryRuntime(deps: {
@@ -149,6 +162,23 @@ export function makeTopologyDiscoveryRuntime(deps: {
         defer: async (tenantId, id, delay) => {
           await deps.redis.set(`topology:cooldown:${tenantId}:${id}`, '1', 'PX', delay);
         },
+      },
+      clusterAuthority: async (tenantId, connectorId, generation) => {
+        const authorities = new Set(
+          (await listTopologyDiscovery(deps.db, tenantId))
+            .filter(
+              (row) =>
+                row.sourceType === 'kubernetes' &&
+                row.collection.connectorId === connectorId &&
+                row.collection.generation === generation,
+            )
+            .flatMap((row) =>
+              row.collection.entities.flatMap((fact) =>
+                fact.value.scope.cluster ? [fact.value.scope.cluster] : [],
+              ),
+            ),
+        );
+        return authorities.size === 1 ? [...authorities][0] : undefined;
       },
       runtimeScopes: async (tenantId) =>
         runtimeScopesFromInventory(await listTopologyDiscovery(deps.db, tenantId)),
@@ -174,4 +204,18 @@ export function makeTopologyDiscoveryRuntime(deps: {
       listTenants: deps.listTenants,
     }),
   };
+}
+
+/** Consume one discovery at a time without holding up the snapshot polling loop.
+ * @param queue - Dedicated discovery stream and consumer group.
+ * @param handler - Generation-fenced topology discovery handler.
+ */
+export async function runTopologyDiscoveryConsumer(
+  queue: Pick<Queue, 'process'>,
+  handler: (job: Job) => Promise<void>,
+): Promise<never> {
+  for (;;) {
+    if ((await queue.process('topology-worker', handler, { count: 1 })) === 0)
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
 }

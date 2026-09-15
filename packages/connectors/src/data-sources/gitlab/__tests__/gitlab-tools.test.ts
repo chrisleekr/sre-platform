@@ -171,6 +171,8 @@ describe('group-scoped GitLab connector', () => {
     );
     const result = await toolByName(connector, 'search_projects').run({ query: ' * ', limit: 500 });
     expect(search).toHaveBeenCalledWith('', 50);
+    await toolByName(connector, 'search_projects').run({ query: 'api', limit: 2.5 });
+    expect(search).toHaveBeenLastCalledWith('api', 2);
     expect(result).toMatchObject([{ repositoryId: '42' }]);
     await expect(
       toolByName(connector, 'list_pipelines').run({ project: 'outside/project' }),

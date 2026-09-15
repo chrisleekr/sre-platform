@@ -37,6 +37,13 @@ describe('the platform tool set', () => {
       join(dirname(fileURLToPath(import.meta.url)), '..', 'index.ts'),
       'utf8',
     );
+    const factory = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '..', 'platform-tools.ts'),
+      'utf8',
+    );
+    const block = factory.match(/return\s*\[([\s\S]*?)\];/);
+    expect(block).not.toBeNull();
+    expect(block![1]).not.toMatch(/\.\.\.|\?|&&/);
     const binding = 'const tools = makePlatformTools({ db: appDb.db, embedder, cache });';
     expect(src).toContain(binding);
     const afterLiteral = src.slice(src.indexOf(binding) + binding.length);

@@ -65,11 +65,9 @@ describe('GitHub source-code capability', () => {
         }),
       ],
     });
-    expect(
-      calls
-        .filter((call) => call.url.includes('/git/commits/'))
-        .every((call) => call.url.endsWith(`/git/commits/${sha}`)),
-    ).toBe(true);
+    const commitCalls = calls.filter((call) => call.url.includes('/git/commits/'));
+    expect(commitCalls.length).toBeGreaterThan(0);
+    expect(commitCalls.every((call) => call.url.endsWith(`/git/commits/${sha}`))).toBe(true);
   });
 
   it('retains rate-limit classification through the GitHub client without continuing the source scan', async () => {

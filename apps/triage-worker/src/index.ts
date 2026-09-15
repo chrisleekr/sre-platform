@@ -57,7 +57,7 @@ import { makeSubjectSyncResolver } from './subject-sync';
 import { makeSubjectSyncRecovery } from './subject-sync-recovery';
 import { runSignalMaintenance } from './signal-maintenance';
 import { makeSignalEvaluationHandler } from './signal-evaluation';
-import { makeTopologyDiscoveryRuntime } from './topology-discovery';
+import { makeTopologyDiscoveryRuntime, runTopologyDiscoveryConsumer } from './topology-discovery';
 import { makePlatformTools } from './platform-tools';
 
 const adminDb = makeDb(adminUrl());
@@ -122,6 +122,12 @@ const queue = new Queue(adminDb.db, redis, {
 const pollQueue = new Queue(adminDb.db, redis, {
   stream: 'sre:jobs:poll',
   group: 'poll',
+  dispatchRedis: settingsRedis,
+  onStuck,
+});
+const topologyQueue = new Queue(adminDb.db, redis, {
+  stream: 'sre:jobs:topology',
+  group: 'topology',
   dispatchRedis: settingsRedis,
   onStuck,
 });
@@ -304,7 +310,7 @@ const scheduler = new PollScheduler({
 const topology = makeTopologyDiscoveryRuntime({
   db: appDb.db,
   redis,
-  dispatch: pollQueue,
+  dispatch: topologyQueue,
   connectorProvider,
   listTenants: () => listTenants(adminDb.db),
 });
@@ -316,12 +322,14 @@ const slo = makeSloRuntime({ adminDb, appDb, redis, settingsRedis, connectorProv
 await Promise.all([
   queue.ensureGroup(),
   pollQueue.ensureGroup(),
+  topologyQueue.ensureGroup(),
   classifyQueue.ensureGroup(),
   runbookQueue.ensureGroup(),
   slo.queue.ensureGroup(),
 ]);
 scheduler.start();
 topology.scheduler.start(300_000);
+void runTopologyDiscoveryConsumer(topologyQueue, topology.handler);
 slo.scheduler.start();
 console.log(
   JSON.stringify({
@@ -365,9 +373,12 @@ const SIGNAL_MAINTENANCE_MS = 5 * 60_000;
 // with this same pollHandler and needs no rework. Smarter cadence/backoff lands later.
 for (;;) {
   const triaged = await worker.tick();
-  const polled = await pollQueue.process('poll-worker', (job) =>
-    job.type === 'topology.discover' ? topology.handler(job) : pollHandler(job),
-  );
+  const polled = await pollQueue.process('poll-worker', async (job) => {
+    // Drain discovery jobs queued before stream isolation without running them in the poll loop.
+    if (job.type === 'topology.discover')
+      await topologyQueue.enqueue({ tenantId: job.tenantId, type: job.type, payload: job.payload });
+    else await pollHandler(job);
+  });
   const classified = await classifyQueue.process('classify-worker', classifyStreamHandler);
   const generated = await runbookQueue.process('runbook-worker', generationStreamHandler);
   // Bounded per turn so a slow metrics backend cannot starve triage on this replica. No reconcile

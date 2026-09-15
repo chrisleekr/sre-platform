@@ -207,3 +207,27 @@ test('distinguishes empty data from unsupported log schemas', async () => {
     ),
   ).toMatchObject({ issue: 'unsupported_schema' });
 });
+
+test('scope limits count only distinct valid scopes', async () => {
+  const repeated = Array.from({ length: 70 }, () => ({ clusterId: cluster, namespace: 'ingress' }));
+  const invalid = Array.from({ length: 70 }, () => ({
+    clusterId: 'invalid',
+    namespace: 'ingress',
+  }));
+  const empty = async () => ({ data: [] });
+  expect(await datadogLogTopology(empty, [...repeated, ...invalid])).toMatchObject({
+    issue: 'no_matches',
+  });
+  expect(
+    await datadogLogTopology(
+      async () => ({ data: [event({}, 'not a request')] }),
+      repeated,
+      Date.parse(to),
+    ),
+  ).toMatchObject({ issue: 'unsupported_schema' });
+  const distinct = Array.from({ length: 65 }, (_, i) => ({
+    clusterId: cluster,
+    namespace: `ns-${i}`,
+  }));
+  expect(await datadogLogTopology(empty, distinct)).toMatchObject({ issue: 'limit' });
+});

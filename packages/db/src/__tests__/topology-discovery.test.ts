@@ -92,11 +92,22 @@ test('paged scans survive failures and prune only unseen facts after the final s
   await persist(collection(['old', 'first']));
   const startedAt = nextTime();
   await persist(
-    { ...collection(['first'], 'partial'), scan: { cursor: '2', incomplete: false } },
+    {
+      ...collection(['first'], 'partial'),
+      scan: {
+        cursor: '2',
+        incomplete: false,
+        inventory: [{ id: 'app-uid', name: 'app', namespace: 'argocd' }],
+      },
+    },
     startedAt,
   );
   expect(await readTopologyScans(app.db, tenantId, generation)).toEqual({
-    workloads: { cursor: '2', incomplete: false },
+    workloads: {
+      cursor: '2',
+      incomplete: false,
+      inventory: [{ id: 'app-uid', name: 'app', namespace: 'argocd' }],
+    },
   });
   expect(await readTopologyScans(app.db, otherTenantId, generation)).toEqual({});
   expect(

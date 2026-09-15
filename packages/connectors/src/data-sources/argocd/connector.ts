@@ -11,6 +11,7 @@ import {
   type ProjectConnector,
 } from './projects';
 import { makeSingleArgoCdConnector } from './single-connector';
+import { topologyReadIssue } from '../../topology-transport';
 import { shouldReadTopologyCollection } from '../../topology-scan';
 
 /**
@@ -48,12 +49,12 @@ export function makeArgoCdConnector(
                 ...collection,
                 key: `${child.project}/${collection.key}`,
               }));
-            } catch {
+            } catch (error) {
               return [
                 {
                   key: `${child.project}/applications`,
                   completeness: 'unavailable' as const,
-                  issue: 'unreachable' as const,
+                  issue: topologyReadIssue(error) ?? ('unreachable' as const),
                   entities: [],
                   relations: [],
                 },

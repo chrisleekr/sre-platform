@@ -8,10 +8,10 @@ import type { ConnectorConfig } from '../../registry';
 import type { HostLookup } from '../../ssrf';
 import { obj, str } from '../../values';
 import { repositoryTopologyRef } from '../../repository-topology';
-import { topologyFetch, topologyReadIssue } from '../../topology-transport';
+import { topologyFetch, topologyReadIssue, TopologyReadError } from '../../topology-transport';
 import { finishTopologyPage, shouldReadTopologyCollection } from '../../topology-scan';
 import { ArgoApiError, connect, checkedJsonGet, validateName, type FetchLike } from './client';
-import { readApplications } from './verification';
+import { readApplications, readScopedApplication } from './verification';
 import { safeHttpUrl } from './projection';
 
 /** Discover application management and source relationships inside the configured project scope.
@@ -31,22 +31,68 @@ export function argoTopology(
         return { observedAt, collections: [] };
       const transport = topologyFetch(fetchImpl);
       const client = await connect(config, lookup);
-      const applications = (await readApplications(config, transport, client, 5000)).sort((a, b) =>
-        String(obj(obj(a).metadata).uid ?? '').localeCompare(
-          String(obj(obj(b).metadata).uid ?? ''),
-        ),
-      );
       const previous = options?.scans?.applications;
-      const offset = previous?.cursor ? Number(previous.cursor) : 0;
-      if (!Number.isSafeInteger(offset) || offset < 0)
+      // Older numeric checkpoints have no fixed inventory; restart them to avoid offset omissions.
+      const applications = previous?.inventory
+        ? undefined
+        : await readApplications(config, transport, client, 5000);
+      const inventory =
+        previous?.inventory ??
+        applications!
+          .flatMap((raw) => {
+            const meta = obj(obj(raw).metadata);
+            const id = str(meta.uid),
+              name = str(meta.name),
+              namespace = str(meta.namespace);
+            return id && name ? [{ id, name, ...(namespace ? { namespace } : {}) }] : [];
+          })
+          .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      const offset = previous?.inventory && previous.cursor ? Number(previous.cursor) : 0;
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset > inventory.length)
         throw new Error('Invalid application scan offset');
+      const initial = new Map(applications?.map((raw) => [str(obj(obj(raw).metadata).uid), raw]));
       const collection: TopologyCollection = {
         key: 'applications',
         completeness: 'complete',
         entities: [],
         relations: [],
       };
-      for (const raw of applications.slice(offset, offset + 25)) {
+      if (applications && inventory.length !== applications.length) {
+        collection.completeness = 'partial';
+        collection.issue = 'invalid_response';
+      }
+      let nextOffset = offset;
+      for (const [pageIndex, identity] of inventory.slice(offset, offset + 25).entries()) {
+        nextOffset = offset + pageIndex + 1;
+        let raw: unknown;
+        try {
+          raw =
+            initial.get(identity.id) ??
+            (await readScopedApplication(
+              config,
+              transport,
+              client,
+              validateName('name', identity.name),
+              config.settings.applicationsInAnyNamespace === true ? identity.namespace : undefined,
+            ));
+          if (str(obj(obj(raw).metadata).uid) !== identity.id) {
+            collection.completeness = 'partial';
+            collection.issue = 'invalid_response';
+            continue;
+          }
+        } catch (error) {
+          if (error instanceof TopologyReadError && error.deadlineExceeded) {
+            nextOffset = offset + pageIndex;
+            break;
+          }
+          collection.completeness = 'partial';
+          collection.issue =
+            topologyReadIssue(error) ??
+            (error instanceof ArgoApiError && error.failureCategory === 'permission_denied'
+              ? 'permission_denied'
+              : 'unreachable');
+          continue;
+        }
         const app = obj(raw),
           meta = obj(app.metadata),
           spec = obj(app.spec),
@@ -169,6 +215,7 @@ export function argoTopology(
             (error instanceof ArgoApiError && error.failureCategory === 'permission_denied'
               ? 'permission_denied'
               : 'unreachable');
+          if (error instanceof TopologyReadError && error.deadlineExceeded) break;
         }
       }
       collection.entities = [
@@ -177,16 +224,10 @@ export function argoTopology(
       collection.relations = [
         ...new Map(collection.relations.map((r) => [topologyRelationKey(r), r])).values(),
       ];
-      return {
-        observedAt,
-        collections: [
-          finishTopologyPage(
-            collection,
-            offset + 25 < applications.length ? String(offset + 25) : null,
-            previous,
-          ),
-        ],
-      };
+      const next = nextOffset < inventory.length ? String(nextOffset) : null;
+      const finished = finishTopologyPage(collection, next, previous);
+      if (next) finished.scan!.inventory = inventory;
+      return { observedAt, collections: [finished] };
     },
   };
 }
