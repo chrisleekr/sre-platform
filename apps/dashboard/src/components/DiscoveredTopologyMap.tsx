@@ -58,10 +58,11 @@ export function DiscoveredTopologyMap({
   });
   const result = useTopologyMapLayout(model);
   const edge = model.edges.find((item) => item.key === edgeKey);
+  const expandedExists = model.groups.some((group) => group.key === expanded);
   useEffect(() => {
-    if (expanded && !model.active) setExpanded(null);
+    if (expanded && !expandedExists) setExpanded(null);
     if (edgeKey && !edge) setEdgeKey(null);
-  }, [expanded, model.active?.key, edgeKey, edge?.key]);
+  }, [expanded, expandedExists, edgeKey, edge?.key]);
   const identities = new Map(subjects.map((subject) => [subject.key, subject]));
   const endpoint = (key: string) => {
     const subject = identities.get(key);

@@ -228,13 +228,12 @@ export function operationalTopologyGraph(
   const nodes = graph.nodes
     .map((node) => {
       const bindings = bindingsByService.get(node.name) ?? [];
-      const pods = new Set(
-        bindings.flatMap((binding) =>
-          (podsByScope.get(JSON.stringify([binding.connectorId, binding.namespace])) ?? []).filter(
-            (pod) => bindingMatchesPod(binding, pod),
-          ),
+      const matches = bindings.map((binding) =>
+        (podsByScope.get(JSON.stringify([binding.connectorId, binding.namespace])) ?? []).filter(
+          (pod) => bindingMatchesPod(binding, pod),
         ),
       );
+      const pods = new Set(matches.flat());
       const counts = { healthy: 0, attention: 0, stale: 0, error: 0 };
       let observedAtMs = 0;
       let restarts = 0;
@@ -250,11 +249,18 @@ export function operationalTopologyGraph(
         pods.size > 0
           ? {
               namespace: [...new Set(bindings.map((binding) => binding.namespace))].join(', '),
-              scopes: bindings.map((binding) => ({
-                dataSourceId: binding.connectorId,
-                namespace: binding.namespace,
-                environment: binding.environment,
-              })),
+              scopes: [
+                ...new Map(
+                  bindings.map((binding) => [
+                    JSON.stringify([binding.connectorId, binding.namespace, binding.environment]),
+                    {
+                      dataSourceId: binding.connectorId,
+                      namespace: binding.namespace,
+                      environment: binding.environment,
+                    },
+                  ]),
+                ).values(),
+              ],
               pods: pods.size,
               healthy: counts.healthy,
               attention: counts.attention,
@@ -272,6 +278,7 @@ export function operationalTopologyGraph(
           : counts.stale > 0
             ? 'stale'
             : pods.size > 0 &&
+                matches.every((matched) => matched.length > 0) &&
                 bindings.every((binding) =>
                   graph.coverage?.some(
                     (source) =>

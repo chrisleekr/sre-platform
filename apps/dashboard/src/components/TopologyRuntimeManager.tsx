@@ -81,6 +81,12 @@ export function TopologyRuntimeManager({
           : 'Runtime mapping saved.',
       );
       setRemoveId(null);
+      setEditing(false);
+      setScope('');
+      setLabel('');
+      setService('');
+      setEnvironment('');
+      setReason('');
       onSaved();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Runtime mapping failed.');

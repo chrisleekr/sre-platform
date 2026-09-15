@@ -8,11 +8,10 @@ export function TopologyCoverage({ sources }: { sources: Coverage[] }) {
   const now = Date.now();
   const rows = sources.map((source) => {
     const observed = source.observedAt ? Date.parse(source.observedAt) : NaN;
-    const state =
-      Number.isFinite(observed) && now - observed > INFRA_STALE_AFTER_MS ? 'stale' : source.state;
-    return { ...source, state };
+    const stale = Number.isFinite(observed) && now - observed > INFRA_STALE_AFTER_MS;
+    return { ...source, stale };
   });
-  const incomplete = rows.filter((source) => source.state !== 'complete').length;
+  const incomplete = rows.filter((source) => source.state !== 'complete' || source.stale).length;
   return (
     <details
       className="mb-4 rounded-md border border-line bg-surface p-3 text-sm"
@@ -40,16 +39,19 @@ export function TopologyCoverage({ sources }: { sources: Coverage[] }) {
             >
               {source.dataSourceName}
             </a>
-            <span className={source.state === 'complete' ? 'text-ink-muted' : 'text-warning'}>
+            <span
+              className={
+                source.state === 'complete' && !source.stale ? 'text-ink-muted' : 'text-warning'
+              }
+            >
               {source.state === 'partial'
                 ? 'Partial inventory · collection limit reached'
                 : source.state === 'unknown'
                   ? 'Collection completeness unknown · waiting for a new poll'
                   : source.state === 'unavailable'
                     ? 'Current inventory unavailable'
-                    : source.state === 'stale'
-                      ? 'Inventory is stale'
-                      : 'Complete pod inventory'}
+                    : 'Complete pod inventory'}
+              {source.stale ? ' · Inventory is stale' : ''}
               {source.observedAt
                 ? ` · observed ${relativeTime(source.observedAt, now)}`
                 : source.lastSucceededAt

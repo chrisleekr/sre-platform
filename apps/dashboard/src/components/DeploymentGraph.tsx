@@ -31,7 +31,7 @@ const RING_R = NODE_R + 5;
 interface SimNode extends SimulationNodeDatum, GraphNode {}
 interface SimLink extends SimulationLinkDatum<SimNode> {
   syncType: string;
-  circuitBreaker: boolean;
+  circuitBreaker: boolean | 'mixed';
   scope: string;
 }
 
@@ -110,7 +110,9 @@ export function DeploymentGraph({
       syncType: edges.every((edge) => edge.syncType === edges[0]!.syncType)
         ? edges[0]!.syncType
         : 'mixed',
-      circuitBreaker: edges.every((edge) => edge.circuitBreaker),
+      circuitBreaker: edges.every((edge) => edge.circuitBreaker === edges[0]!.circuitBreaker)
+        ? edges[0]!.circuitBreaker
+        : 'mixed',
       scope: [...new Set(edges.map((edge) => edge.environment || 'environment unspecified'))].join(
         ', ',
       ),
@@ -313,11 +315,18 @@ export function DeploymentGraph({
                   key={`${source.name}->${target.name}`}
                   data-edge={`${source.name}->${target.name}`}
                   data-sync={link.syncType}
+                  data-circuit-breaker={String(link.circuitBreaker)}
                   x1={(source.x ?? 0) + ux * margin - uy * offset}
                   y1={(source.y ?? 0) + uy * margin + ux * offset}
                   x2={(target.x ?? 0) - ux * margin - uy * offset}
                   y2={(target.y ?? 0) - uy * margin + ux * offset}
-                  stroke={link.circuitBreaker ? CIRCUIT_STROKE : EDGE_STROKE}
+                  stroke={
+                    link.circuitBreaker === 'mixed'
+                      ? 'var(--sre-warning-solid)'
+                      : link.circuitBreaker
+                        ? CIRCUIT_STROKE
+                        : EDGE_STROKE
+                  }
                   strokeWidth={1.5}
                   strokeDasharray={
                     link.syncType === 'mixed' ? '8 3 2 3' : isAsync ? '4 3' : undefined
@@ -326,7 +335,11 @@ export function DeploymentGraph({
                 >
                   <title>
                     {source.name} calls {target.name}, {link.syncType}
-                    {link.circuitBreaker ? ', circuit breaker' : ''}
+                    {link.circuitBreaker === 'mixed'
+                      ? ', mixed circuit-breaker declarations'
+                      : link.circuitBreaker
+                        ? ', circuit breaker'
+                        : ''}
                     {`, ${link.scope}`}
                   </title>
                 </line>

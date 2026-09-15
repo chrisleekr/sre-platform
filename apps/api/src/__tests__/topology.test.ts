@@ -158,7 +158,7 @@ describe('topology CRUD API', () => {
       ),
     ).toBe(false);
   });
-  test.each([null, [], { team: 7 }, { criticality: false }])(
+  test.each([[null], [[]], [{ team: 7 }], [{ criticality: false }]])(
     'rejects malformed service fields without a server error: %j',
     async (body) => {
       const response = await api.request('/topology/services/invalid-input', {
@@ -441,3 +441,43 @@ test.each(['PUT', 'PATCH', 'DELETE'])(
     expect(await response.json()).toEqual({ error: expect.stringContaining('environment') });
   },
 );
+
+test('dependency PATCH preserves omitted confirmation and clears it only on an explicit empty rationale', async () => {
+  const headers = bearer(await sign(orgA, ['admin']));
+  for (const name of ['confirmed-caller', 'confirmed-target'])
+    await api.request(`/topology/services/${name}`, { method: 'PUT', headers, body: '{}' });
+  const edge = { upstream: 'confirmed-caller', downstream: 'confirmed-target' };
+  const request = (method: string, fields: object) =>
+    api.request('/topology/dependencies', {
+      method,
+      headers,
+      body: JSON.stringify({ ...edge, ...fields }),
+    });
+  const created = await request('PUT', { rationale: 'Verified configuration' });
+  expect(created.status).toBe(200);
+  const { dependency } = (await created.json()) as {
+    dependency: { confirmedByUserId: string; lastConfirmedAt: string };
+  };
+  expect(dependency.confirmedByUserId).toBeTruthy();
+  const updated = await request('PATCH', { syncType: 'async' });
+  expect(updated.status).toBe(200);
+  expect(await updated.json()).toMatchObject({
+    dependency: {
+      confirmedByUserId: dependency.confirmedByUserId,
+      lastConfirmedAt: dependency.lastConfirmedAt,
+      rationale: 'Verified configuration',
+      syncType: 'async',
+    },
+  });
+  const invalid = await request('PATCH', {});
+  expect(invalid.status).toBe(400);
+  expect(await invalid.json()).toEqual({
+    error: 'provide at least one of syncType, circuitBreaker, protocol, rationale',
+  });
+  const cleared = await request('PATCH', { rationale: null });
+  expect(cleared.status).toBe(200);
+  expect(await cleared.json()).toMatchObject({
+    dependency: { confirmedByUserId: null, lastConfirmedAt: null, rationale: null },
+  });
+  await request('DELETE', {});
+});

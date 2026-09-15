@@ -446,16 +446,21 @@ export function topologyRoutes(deps: TopologyRoutesDeps): Hono<{ Variables: Tena
       !('protocol' in body) &&
       !('rationale' in body)
     ) {
-      return c.json({ error: 'provide at least one of syncType, circuitBreaker, protocol' }, 400);
+      return c.json(
+        { error: 'provide at least one of syncType, circuitBreaker, protocol, rationale' },
+        400,
+      );
     }
     const patch = {
       ...('syncType' in body ? { syncType: body.syncType } : {}),
       ...('circuitBreaker' in body ? { circuitBreaker: body.circuitBreaker } : {}),
       ...('protocol' in body ? { protocol: body.protocol } : {}),
       ...('rationale' in body
-        ? { rationale: body.rationale ? scrubSecrets(body.rationale) : null }
+        ? {
+            rationale: body.rationale ? scrubSecrets(body.rationale) : null,
+            confirmedByUserId: body.rationale?.trim() ? c.get('tenant').userId : null,
+          }
         : {}),
-      confirmedByUserId: body.rationale?.trim() ? c.get('tenant').userId : null,
     };
     const dependency = await updateDependency(
       deps.db,

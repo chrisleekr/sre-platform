@@ -61,16 +61,19 @@ export async function readServiceRuntime(
     })
   )
     return null;
-  return collections.flatMap(({ source, snapshots }) =>
-    snapshots.filter((snapshot) => {
-      if (snapshot.metadata.kind !== 'pod') return false;
+  const matches = bindings.map((binding) => {
+    const snapshots = collections.find(
+      ({ source }) => source.id === binding.connectorId,
+    )!.snapshots;
+    return snapshots.filter((snapshot) => {
       const labels = snapshot.metadata.labels as Record<string, unknown> | undefined;
-      return bindings.some(
-        (binding) =>
-          binding.connectorId === source.id &&
-          binding.namespace === snapshot.metadata.namespace &&
-          (!binding.labelKey || labels?.[binding.labelKey] === binding.labelValue),
+      return (
+        snapshot.metadata.kind === 'pod' &&
+        binding.namespace === snapshot.metadata.namespace &&
+        (!binding.labelKey || labels?.[binding.labelKey] === binding.labelValue)
       );
-    }),
-  );
+    });
+  });
+  if (matches.some((matched) => matched.length === 0)) return null;
+  return [...new Set(matches.flat())];
 }

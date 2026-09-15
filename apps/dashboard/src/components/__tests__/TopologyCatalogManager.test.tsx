@@ -233,3 +233,31 @@ describe('TopologyCatalogManager', () => {
     expect((screen.getByLabelText('Service') as HTMLInputElement).value).toBe('checkout');
   });
 });
+
+test('switching from a saved relationship to a new edge clears borrowed evidence and call settings', () => {
+  renderManager({
+    ...graph,
+    nodes: [...graph.nodes, { ...graph.nodes[0]!, name: 'orders' }],
+    edges: [
+      {
+        upstream: 'checkout',
+        downstream: 'payments',
+        environment: '',
+        syncType: 'async',
+        circuitBreaker: true,
+        protocol: 'AMQP',
+        rationale: 'Payments evidence',
+      },
+    ],
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Edit checkout to payments' }));
+  fireEvent.change(screen.getByLabelText('Dependency (downstream)'), {
+    target: { value: 'orders' },
+  });
+  expect(
+    (screen.getByLabelText('Evidence or reason for this dependency') as HTMLInputElement).value,
+  ).toBe('');
+  expect((screen.getByLabelText('Protocol (optional)') as HTMLInputElement).value).toBe('');
+  expect((screen.getByLabelText('Call type') as HTMLSelectElement).value).toBe('sync');
+  expect((screen.getByLabelText(/circuit breaker/i) as HTMLInputElement).checked).toBe(false);
+});

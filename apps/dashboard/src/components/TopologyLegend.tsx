@@ -151,6 +151,16 @@ export function TopologyLegend() {
       <LegendItem label="Circuit breaker">
         <line data-legend="circuit" x1="3" y1="10" x2="29" y2="10" stroke={CIRCUIT_STROKE} />
       </LegendItem>
+      <LegendItem label="Mixed circuit-breaker declarations">
+        <line
+          data-legend="circuit-mixed"
+          x1="3"
+          y1="10"
+          x2="29"
+          y2="10"
+          stroke="var(--sre-warning-solid)"
+        />
+      </LegendItem>
       <LegendItem label="Arrow points to dependency">
         <defs>
           <marker

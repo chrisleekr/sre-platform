@@ -87,6 +87,8 @@ describe('sloStatusForService', () => {
     expect(views).toHaveLength(1);
     expect(views[0]).toMatchObject({
       name: slo.name,
+      metricQuery: slo.metricQuery,
+      connectorType: slo.connectorType,
       service,
       sliType: 'availability',
       target: 0.999,

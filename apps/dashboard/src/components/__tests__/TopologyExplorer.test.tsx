@@ -298,3 +298,54 @@ test('filtering keeps the expanded connected-resource limit', () => {
   });
   expect(screen.queryByRole('button', { name: 'Show more connected resources' })).toBeNull();
 });
+
+test('an incident deep link opens discovery incident scope and its affected-service editor', async () => {
+  window.history.replaceState({}, '', '/w/topology?incident=selected');
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () =>
+      Response.json({
+        incidentId: 'selected',
+        assignedServices: [],
+        topology: { resolutions: [], subjects: [], relations: [] },
+      }),
+    ),
+  );
+  try {
+    const input = props();
+    render(
+      <TopologyExplorer
+        {...input}
+        access={{
+          apiBaseUrl: '/api',
+          getCredentials: async () => ({ kind: 'bearer', token: 'test' }),
+        }}
+        incidentGraph={{
+          nodes: [],
+          edges: [],
+          discovery: input.graph,
+          incidents: [
+            {
+              id: 'selected',
+              alertSource: 'slack',
+              service: 'checkout',
+              title: 'Checkout errors',
+              severity: 'sev3',
+              status: 'open',
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText('Incident overlay').closest('details')?.open).toBe(true);
+    expect(
+      (screen.getByRole('combobox', { name: 'Incident scope' }) as HTMLSelectElement).value,
+    ).toBe('selected');
+    fireEvent.click(await screen.findByText('Catalog correction'));
+    fireEvent.click(screen.getByRole('button', { name: 'Link affected service' }));
+    expect(screen.getByRole('button', { name: 'Save affected services' })).toBeTruthy();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
