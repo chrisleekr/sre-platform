@@ -5,6 +5,8 @@
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
+    "@sre/contracts": "workspace:*",
+    "@sre/connectors": "workspace:*",
     "@sre/db": "workspace:*",
     "drizzle-orm": "^0.45.2"
   },

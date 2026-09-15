@@ -1,39 +1,13 @@
-import { withTenant, type Db } from '@sre/db';
+import { withTenant, services, serviceDependencies, type Db } from '@sre/db';
 import { sql } from 'drizzle-orm';
+import { readDiscoveredTopology } from './discovery-repo';
+import { selectTopologySubject } from './selection';
+import { discoveredBlastRadius } from './discovered-impact';
 
 const DEFAULT_MAX_DEPTH = 10;
 
-/** One affected caller in the blast radius. `via` explains a non-direct tier. */
-export interface BlastRadiusDependent {
-  name: string;
-  criticality: string | null;
-  team: string | null;
-  /** Minimum hop distance from the failing service (direct=conducting depth; boundary=core+1). */
-  hops: number;
-  via?: 'async' | 'circuit_breaker';
-}
-
-/** A direct (1-hop) downstream dependency of the failing service: a candidate root cause. */
-export interface BlastRadiusSuspect {
-  name: string;
-  syncType: string;
-  criticality: string | null;
-}
-
-export interface BlastRadius {
-  service: string;
-  /** False when the failing service is not registered as a topology node. */
-  mapped: boolean;
-  dependents: {
-    direct: BlastRadiusDependent[];
-    indirect: BlastRadiusDependent[];
-    insulated: BlastRadiusDependent[];
-  };
-  suspects: BlastRadiusSuspect[];
-  /** True when the direct-failure walk hit the depth cap; the radius may be larger. */
-  truncated: boolean;
-  note?: string;
-}
+import type { BlastRadius, BlastRadiusDependent, BlastRadiusSuspect } from '@sre/contracts';
+export type { BlastRadius, BlastRadiusDependent, BlastRadiusSuspect } from '@sre/contracts';
 
 /**
  * Renders a compact blast-radius brief for incident surfaces and prompts.
@@ -41,20 +15,43 @@ export interface BlastRadius {
  * @param br - Structured topology impact result to render.
  */
 export function renderBlastRadius(br: BlastRadius): string {
-  const title = `Blast radius for "${br.service}"`;
+  const title = `Blast radius for "${br.service}"${
+    br.scope && Object.keys(br.scope).length
+      ? ` [${Object.entries(br.scope)
+          .map(([key, value]) => `${key}=${value}`)
+          .join(', ')}]`
+      : ''
+  }`;
   if (!br.mapped) {
     return `${title}: ${br.note ?? 'service not registered in topology'} — blast radius unavailable.`;
   }
   const fmt = (d: BlastRadiusDependent): string =>
-    `  - ${d.name}${d.criticality ? ` (${d.criticality})` : ''}${d.team ? `, team ${d.team}` : ''}`;
-  const lines: string[] = [`${title}:`];
-  const { direct, indirect, insulated } = br.dependents;
-  if (direct.length + indirect.length + insulated.length === 0) {
-    lines.push('- No known dependents (nothing calls this service).');
+    `  - ${d.name}${
+      d.scope && Object.keys(d.scope).length
+        ? ` [${Object.entries(d.scope)
+            .map(([key, value]) => `${key}=${value}`)
+            .join(', ')}]`
+        : ''
+    }${d.criticality ? ` (${d.criticality})` : ''}${d.team ? `, team ${d.team}` : ''}`;
+  const lines: string[] = [
+    `${title}:`,
+    'Potential exposure from known call evidence, not observed outages. Async calls and circuit breakers do not prove protection.',
+  ];
+  const { direct, indirect, insulated, unclassified = [] } = br.dependents;
+  if (br.note) lines.push(br.note);
+  if (direct.length + indirect.length + insulated.length + unclassified.length === 0) {
+    lines.push('- No known dependents in this evidence. Dependency coverage may be incomplete.');
   } else {
-    if (direct.length) lines.push('- Direct (hard down):', ...direct.map(fmt));
-    if (indirect.length) lines.push('- Indirect (degraded, async):', ...indirect.map(fmt));
-    if (insulated.length) lines.push('- Insulated (circuit breaker):', ...insulated.map(fmt));
+    if (direct.length) lines.push('- Synchronous exposure:', ...direct.map(fmt));
+    if (unclassified.length)
+      lines.push('- Call-path exposure (sync/async behaviour unknown):', ...unclassified.map(fmt));
+    if (indirect.length)
+      lines.push('- Exposure through async calls (impact may be delayed):', ...indirect.map(fmt));
+    if (insulated.length)
+      lines.push(
+        '- Exposure through declared circuit breakers (verify fallback):',
+        ...insulated.map(fmt),
+      );
   }
   if (br.truncated) lines.push('- (depth cap reached; the blast radius may extend further)');
   if (br.suspects.length) {
@@ -69,19 +66,67 @@ export function renderBlastRadius(br: BlastRadius): string {
 /**
  * Computes affected callers and candidate dependencies for a failing service.
  *
- * @remarks Traversal stops at asynchronous or circuit-broken boundaries and is depth-bounded.
+ * @remarks Traversal includes all declared calls, retaining uncertainty across resilience boundaries.
  * @param db - Database connection used for topology reads.
  * @param tenantId - Tenant whose topology graph should be traversed.
  * @param service - Failing service at the center of the traversal.
- * @param opts - Optional traversal depth limit.
+ * @param opts - Traversal depth and exact identity or scope constraints.
  */
 export async function computeBlastRadius(
   db: Db,
   tenantId: string,
   service: string,
-  opts: { maxDepth?: number } = {},
+  opts: {
+    maxDepth?: number;
+    environment?: string;
+    subjectKey?: string;
+    scope?: Record<string, string>;
+  } = {},
 ): Promise<BlastRadius> {
+  const environment = opts.environment || opts.scope?.environment;
+  const requestedScope = { ...opts.scope, ...(environment ? { environment } : {}) };
+  const discovery = await readDiscoveredTopology(db, tenantId);
+  const selected = selectTopologySubject(discovery.operational, {
+    key: opts.subjectKey,
+    name: service,
+    kind: 'service',
+    scope: requestedScope,
+  });
+  if (selected.status === 'ambiguous' || (opts.subjectKey && selected.status === 'unmapped'))
+    return {
+      service,
+      mapped: false,
+      dependents: { direct: [], indirect: [], insulated: [] },
+      suspects: [],
+      truncated: false,
+      candidates:
+        selected.status === 'ambiguous'
+          ? selected.candidates.map(({ key, name, scope }) => ({ key, name, scope }))
+          : [],
+      note:
+        selected.status === 'ambiguous'
+          ? 'Service identity is ambiguous. Select its environment or exact topology identity.'
+          : 'The selected topology identity is unavailable in this workspace or scope.',
+    };
+  if (selected.status === 'resolved') {
+    const declared = await withTenant(db, tenantId, async (tx) => ({
+      services: await tx.select().from(services),
+      edges: await tx.select().from(serviceDependencies),
+    }));
+    return discoveredBlastRadius(discovery.operational, selected.subject, declared, opts.maxDepth);
+  }
+  if (Object.entries(requestedScope).some(([key, value]) => key !== 'environment' && value))
+    return {
+      service,
+      scope: requestedScope,
+      mapped: false,
+      dependents: { direct: [], indirect: [], insulated: [] },
+      suspects: [],
+      truncated: false,
+      note: 'No discovered service matches the requested resource scope. Catalog names alone cannot establish its cluster, namespace or source identity.',
+    };
   const maxDepth = opts.maxDepth ?? DEFAULT_MAX_DEPTH;
+  const scope = environment ? sql`(environment = ${environment} or environment = '')` : sql`true`;
 
   return withTenant(db, tenantId, async (tx) => {
     // Bound this read: the worker runs it on every triage job, and a very large or pathological graph
@@ -104,61 +149,50 @@ export async function computeBlastRadius(
     }
 
     const depRows = (await tx.execute(sql`
-      with recursive reach as (
-        -- Callers reachable through an unbroken chain of conducting (sync, non-breaker) edges. UNION
-        -- de-duplicates (node, depth), so a dense graph cannot enumerate one row per simple path
-        -- (that grows exponentially); the depth cap terminates cycles.
-        select sd.upstream as node, 1 as depth
-        from service_dependencies sd
+      with recursive scoped_dependencies as (
+        select * from service_dependencies where ${scope}
+      ), reach as (
+        -- Bound states by node, depth and exposure tier instead of enumerating every path.
+        select sd.upstream as node, 1 as depth,
+          case when sd.circuit_breaker then 2 when sd.sync_type = 'async' then 1 else 0 end as tier
+        from scoped_dependencies sd
         where sd.downstream = ${service}
-          and sd.sync_type = 'sync' and sd.circuit_breaker = false
         union
-        select sd.upstream, r.depth + 1
-        from service_dependencies sd
+        select sd.upstream, r.depth + 1,
+          greatest(r.tier, case when sd.circuit_breaker then 2 when sd.sync_type = 'async' then 1 else 0 end)
+        from scoped_dependencies sd
         join reach r on sd.downstream = r.node
-        where sd.sync_type = 'sync' and sd.circuit_breaker = false
-          and r.depth < ${maxDepth}
-      ),
-      direct_nodes as (
-        select node, min(depth) as hops from reach group by node
-      ),
-      core as (
-        select ${service} as node, 0 as depth
-        union
-        select node, hops from direct_nodes
-      ),
-      boundary as (
-        select sd.upstream as node,
-               min(c.depth) + 1 as hops,
-               case when bool_or(not sd.circuit_breaker) then 'indirect' else 'insulated' end as tier
-        from service_dependencies sd
-        join core c on sd.downstream = c.node
-        where not (sd.sync_type = 'sync' and sd.circuit_breaker = false)
+        where r.depth < ${maxDepth}
           and sd.upstream <> ${service}
-          and sd.upstream not in (select node from direct_nodes)
-        group by sd.upstream
+      ),
+      exposure as (
+        select node, min(tier) as tier from reach group by node
+      ),
+      reached as (
+        select r.node, e.tier, min(r.depth) as hops
+        from reach r join exposure e on e.node = r.node and e.tier = r.tier
+        group by r.node, e.tier
       ),
       truncation as (
-        -- The walk was cut iff a node whose shortest distance is exactly the cap has a conducting edge
-        -- to a caller not reached by any shorter path. Excluding known direct nodes avoids a false
-        -- "truncated" when the deeper edge only loops back to an already-included node.
+        -- Reaching a known caller matters when the omitted path has stronger exposure.
         select exists (
-          select 1 from service_dependencies sd
-          join direct_nodes dn on sd.downstream = dn.node
-          where sd.sync_type = 'sync' and sd.circuit_breaker = false
-            and dn.hops = ${maxDepth}
-            and sd.upstream not in (select node from direct_nodes)
+          select 1 from scoped_dependencies sd
+          join reach r on sd.downstream = r.node
+          where r.depth = ${maxDepth}
+            and sd.upstream <> ${service}
+            and not exists (
+              select 1 from reached known where known.node = sd.upstream
+                and known.tier <= greatest(r.tier,
+                  case when sd.circuit_breaker then 2 when sd.sync_type = 'async' then 1 else 0 end)
+            )
         ) as truncated
       )
-      select d.node as name, 'direct' as tier, d.hops as hops,
+      select d.node as name,
+             case d.tier when 0 then 'direct' when 1 then 'indirect' else 'insulated' end as tier,
+             d.hops as hops,
              s.criticality, s.team, (select truncated from truncation) as truncated
-      from direct_nodes d
+      from reached d
       left join services s on s.name = d.node
-      union all
-      select b.node as name, b.tier, b.hops,
-             s.criticality, s.team, (select truncated from truncation) as truncated
-      from boundary b
-      left join services s on s.name = b.node
     `)) as unknown as Array<Record<string, unknown>>;
 
     const dependents: BlastRadius['dependents'] = { direct: [], indirect: [], insulated: [] };
@@ -186,6 +220,7 @@ export async function computeBlastRadius(
       from service_dependencies sd
       left join services s on s.name = sd.downstream
       where sd.upstream = ${service}
+        and ${scope}
       order by sd.downstream
     `)) as unknown as Array<Record<string, unknown>>;
     const suspects: BlastRadiusSuspect[] = suspectRows.map((r) => ({
@@ -194,6 +229,13 @@ export async function computeBlastRadius(
       criticality: (r.criticality as string | null) ?? null,
     }));
 
-    return { service, mapped: true, dependents, suspects, truncated };
+    return {
+      service,
+      ...(environment ? { scope: { environment } } : {}),
+      mapped: true,
+      dependents,
+      suspects,
+      truncated,
+    };
   });
 }

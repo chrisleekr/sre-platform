@@ -1,0 +1,1 @@
+CREATE INDEX "agent_tool_calls_tenant_created_id_idx" ON "agent_tool_calls" USING btree ("tenant_id","created_at" DESC NULLS LAST,"id" DESC NULLS LAST);

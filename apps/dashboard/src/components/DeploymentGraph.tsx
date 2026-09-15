@@ -33,6 +33,7 @@ const HIGHLIGHT_STROKE: Record<BlastHighlight, string> = {
   affected: 'var(--sre-critical-solid)',
   direct: 'var(--sre-warning-solid)',
   indirect: 'var(--sre-warning)',
+  unclassified: 'var(--sre-info)',
 };
 
 const EDGE_STROKE = 'var(--sre-line-strong)';
@@ -102,39 +103,26 @@ function TopologyLegend() {
           strokeWidth="2.5"
         />
       </LegendItem>
-      <LegendItem label="Affected service">
-        <circle
-          data-legend="affected"
-          cx="16"
-          cy="10"
-          r="8"
-          fill="none"
-          stroke={HIGHLIGHT_STROKE.affected}
-          strokeWidth="2.5"
-        />
-      </LegendItem>
-      <LegendItem label="Direct dependent">
-        <circle
-          data-legend="direct"
-          cx="16"
-          cy="10"
-          r="8"
-          fill="none"
-          stroke={HIGHLIGHT_STROKE.direct}
-          strokeWidth="2.5"
-        />
-      </LegendItem>
-      <LegendItem label="Indirect dependent">
-        <circle
-          data-legend="indirect"
-          cx="16"
-          cy="10"
-          r="8"
-          fill="none"
-          stroke={HIGHLIGHT_STROKE.indirect}
-          strokeWidth="2.5"
-        />
-      </LegendItem>
+      {(
+        [
+          ['affected', 'Affected service'],
+          ['direct', 'Direct dependent'],
+          ['unclassified', 'Unclassified exposure'],
+          ['indirect', 'Indirect dependent'],
+        ] as const
+      ).map(([tier, label]) => (
+        <LegendItem key={tier} label={label}>
+          <circle
+            data-legend={tier}
+            cx="16"
+            cy="10"
+            r="8"
+            fill="none"
+            stroke={HIGHLIGHT_STROKE[tier]}
+            strokeWidth="2.5"
+          />
+        </LegendItem>
+      ))}
       <LegendItem label="Synchronous dependency">
         <line data-legend="sync" x1="3" y1="10" x2="29" y2="10" stroke={EDGE_STROKE} />
       </LegendItem>

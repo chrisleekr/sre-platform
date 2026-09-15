@@ -39,10 +39,10 @@ There is exactly one sub-tenant **change** tier, and it is drawn by HTTP method 
 
 It follows that, within a tenant, **Slack channels are an organisational convenience, not a security boundary**. Three consequences. Correlation may consolidate a public-channel mention into an incident born in a private channel: the candidate set (`listActiveIncidents`) filters tenant, status and recency, never channel. A human may therefore be told about — and deep-linked to — an incident thread they cannot open; the link carries an opaque channel id, and Slack renders nothing of a private channel's name, members or content to a non-member. And it is the **bot's** channel memberships, not the human's, that bound what can be correlated. Treating a channel as a privacy control is a category error: the tenant is the boundary. A change to this boundary needs a deliberate, recorded decision, not a glossary edit.
 
-The boundary governs **acting**, not only seeing — the distinction is worth stating because it has been re-derived twice. Deciding an Approval is the one place the platform takes a consequential action on a human's say-so, and the decider is authorized by their access to the tenant's Slack workspace and to the channel the prompt was posted in, plus Slack's request signature. The platform does not additionally prove the decider is a member of the tenant, and that is deliberate rather than an oversight: members are equal and the domain models no per-user authorization, so there is no tier a decider could be checked against. `author_user_id` on a decision is **attribution, never authorization**: it records who we believe acted, and the decision applies whether or not that resolves.
+The boundary governs **acting**, not only seeing — the distinction is worth stating because it has been re-derived twice. Deciding an Approval is the one place the platform takes a consequential action on a human's say-so, and the decider is authorized by their access to the tenant's Slack workspace and to the channel the prompt was posted in, plus Slack's request signature. The platform does not additionally prove the decider is a member of the tenant, still less an owner or administrator, and that is deliberate rather than an oversight: an Approval records consent to a recommendation a human then executes themselves, so it changes no durable workspace configuration and falls outside the one change tier named above. `author_user_id` on a decision is **attribution, never authorization**: it records who we believe acted, and the decision applies whether or not that resolves.
 
 The accepted cost, stated plainly rather than sold: someone removed from the tenant but still present in its Slack workspace can decide an Approval, and the audit line will honestly say we do not know who. Offboarding from the workspace is the control, and it sits outside the platform. Revisiting this needs a deliberate, recorded decision rather than a patch, because refusing an unproven decider means inverting the platform's rule that identity resolution degrades to null and never blocks: a Slack outage would then refuse approvals at exactly the moment a human is trying to unblock an incident.
-_Avoid_: Security boundary, permission scope, ACL, role, admin
+_Avoid_: Security boundary, permission scope, ACL
 
 **Triage Engine**:
 The pluggable component that drives an AI investigation of an incident. A platform operator selects one active runtime/provider/model in Settings; a worker resolves that durable setting at the start of every invocation, so a change needs no restart and never changes a run already in progress. Claude uses the Agent SDK with only tenant-scoped audited MCP tools; OpenAI uses the platform's bounded tool loop. There is no cross-provider fallback.
@@ -225,12 +225,40 @@ A tenant-registered operational service with ownership, criticality, dependencie
 _Avoid_: Service guess, monitor job, namespace, app label
 
 **Service Dependency**:
-A directed edge in the topology graph (`service_dependencies`): the `upstream` service depends on / calls the `downstream` service, so a `downstream` failure puts `upstream` in the blast radius. Carries `sync_type`, `circuit_breaker`, and `protocol` — an async or circuit-broken edge insulates the caller. Both endpoints must be registered Services (composite FK).
+A declared call from a registered caller to a registered dependency, with environment scope and attributed confirmation evidence. Synchronous, asynchronous and circuit-breaker properties describe possible exposure, not proven outages or protection.
 _Avoid_: Edge, link, relation, connection
 
 **Blast Radius**:
-The set of Services affected by an incident on a given Service: its transitive `upstream` callers, tiered by how the failure reaches each. **Direct** — reached through an unbroken chain of synchronous, non-circuit-broken calls (hard down). **Indirect** — reached across an async edge (degraded, still up). **Insulated** — protected by a circuit breaker (serves a fallback). A hard failure conducts only through synchronous non-breaker edges and stops at the first async or circuit-broken edge, so the radius is bounded at that boundary; a Service reachable by several paths takes its worst tier. Depth-bounded. Injected at triage time so the engine scopes impact before its first tool call.
+The potential exposure of services reachable through service-call evidence or dependency declarations, including services beyond asynchronous and circuit-breaker boundaries. It is bounded by available relationship evidence and traversal depth, and does not establish observed customer impact.
 _Avoid_: Impact, fallout, scope
+
+**Runtime Mapping**:
+A responder-confirmed association between a logical Catalog Service and resources in a specific connection, namespace and environment, optionally selected by an application label. Equal names do not establish this association.
+_Avoid_: Namespace service, automatic identity match
+
+**Collection Coverage**:
+Evidence of whether a source's current inventory is complete, partial, unavailable or of unknown completeness. Healthy returned resources cannot establish healthy runtime when relevant collection coverage is missing.
+_Avoid_: Service availability, dependency completeness
+
+**Discovered Resource**:
+An identifiable workload, repository, endpoint or other operational entity reported by a connected system. A discovered resource does not imply a confirmed logical service identity.
+_Avoid_: Service guess, automatically registered service
+
+**Resource Relationship**:
+A directed, typed association between discovered resources, supported by attributed observations or declarations. Ownership, deployment, routing and monitoring relationships do not imply that one service calls another.
+_Avoid_: Untyped edge, name match
+
+**Declared Dependency**:
+An attributed assertion that one identified service requires another. It describes possible dependency exposure without claiming that traffic was observed or that the dependency is synchronous.
+_Avoid_: Observed call, confirmed outage, ownership
+
+**Service Declaration**:
+An attributed source statement identifying a logical service and its declared dependencies. It does not establish a deployed instance, runtime health or observed traffic.
+_Avoid_: Running service, observed call
+
+**Runtime Association**:
+Evidence that an identified service executes on a particular runtime resource. It is distinct from controller ownership, network routing and a call to a dependency.
+_Avoid_: Ownership, service name match
 
 **Suspect**:
 A direct (one-hop) `downstream` dependency of the failing Service, surfaced alongside the Blast Radius as a candidate root cause — the failing Service may itself be a victim of one of the things it calls. Not tiered.

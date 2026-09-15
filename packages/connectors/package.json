@@ -6,6 +6,7 @@
   "main": "src/index.ts",
   "dependencies": {
     "@sre/contracts": "workspace:*",
+    "yaml": "^2.9.0",
     "zod": "^4.0.0"
   },
   "scripts": {

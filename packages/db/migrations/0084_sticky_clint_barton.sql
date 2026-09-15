@@ -1,0 +1,1 @@
+ALTER TABLE "service_runtime_bindings" ADD CONSTRAINT "runtime_binding_membership_fk" FOREIGN KEY ("confirmed_by_user_id","tenant_id") REFERENCES "public"."memberships"("user_id","tenant_id") ON DELETE no action ON UPDATE no action;

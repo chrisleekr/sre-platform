@@ -55,6 +55,8 @@ export {
   makeNetworkProbeConnector,
   networkProbeConnectorDefinition,
 } from './data-sources/networkprobe';
+export { networkProbeTopologyEvidence } from './data-sources/networkprobe/topology';
+export { topologyReadIssue } from './topology-transport';
 export { makePrometheusConnector, prometheusConnectorDefinition } from './data-sources/prometheus';
 export {
   alertmanagerEventCredential,
@@ -111,6 +113,7 @@ export {
   normalizeConnectorVerificationObservation,
   normalizeInfrastructureObservation,
   normalizeTopologyServiceObservation,
+  normalizeDiscoveredRuntimeObservation,
   type CanonicalSubjectObservation,
   type ConnectorVerificationObservationInput,
   type InfrastructureObservation,

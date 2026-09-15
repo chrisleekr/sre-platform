@@ -149,6 +149,7 @@ export function topologyRoutes(deps: TopologyRoutesDeps): Hono<{ Variables: Tena
     const edges = dependencies.map((d) => ({
       upstream: d.upstream,
       downstream: d.downstream,
+      ...(d.environment ? { environment: d.environment } : {}),
       syncType: d.syncType,
       circuitBreaker: d.circuitBreaker,
     }));
@@ -226,11 +227,15 @@ export function topologyRoutes(deps: TopologyRoutesDeps): Hono<{ Variables: Tena
       .json<{
         upstream?: string;
         downstream?: string;
+        environment?: string;
         syncType?: string;
         circuitBreaker?: boolean;
         protocol?: string;
       }>()
       .catch(() => ({}) as Record<string, never>);
+    if (body.environment !== undefined && typeof body.environment !== 'string') {
+      return c.json({ error: 'environment must be a string' }, 400);
+    }
     if (!body.upstream || !body.downstream) {
       return c.json({ error: 'upstream and downstream are required' }, 400);
     }
@@ -244,6 +249,7 @@ export function topologyRoutes(deps: TopologyRoutesDeps): Hono<{ Variables: Tena
       const dependency = await addDependency(deps.db, tenantId, {
         upstream: body.upstream,
         downstream: body.downstream,
+        environment: body.environment ?? '',
         syncType: body.syncType,
         circuitBreaker: body.circuitBreaker,
         protocol: body.protocol ?? null,
@@ -265,11 +271,15 @@ export function topologyRoutes(deps: TopologyRoutesDeps): Hono<{ Variables: Tena
       .json<{
         upstream?: string;
         downstream?: string;
+        environment?: string;
         syncType?: string;
         circuitBreaker?: boolean;
         protocol?: string | null;
       }>()
       .catch(() => ({}) as Record<string, never>);
+    if (body.environment !== undefined && typeof body.environment !== 'string') {
+      return c.json({ error: 'environment must be a string' }, 400);
+    }
     if (!body.upstream || !body.downstream) {
       return c.json({ error: 'upstream and downstream are required to identify the edge' }, 400);
     }
@@ -290,6 +300,7 @@ export function topologyRoutes(deps: TopologyRoutesDeps): Hono<{ Variables: Tena
       body.upstream,
       body.downstream,
       patch,
+      body.environment ?? '',
     );
     if (!dependency) return c.json({ error: 'dependency not found' }, 404);
     return c.json({ dependency });
@@ -298,12 +309,22 @@ export function topologyRoutes(deps: TopologyRoutesDeps): Hono<{ Variables: Tena
   r.delete('/dependencies', async (c) => {
     const { tenantId } = c.get('tenant');
     const body = await c.req
-      .json<{ upstream?: string; downstream?: string }>()
+      .json<{ upstream?: string; downstream?: string; environment?: string }>()
       .catch(() => ({}) as Record<string, never>);
+    if (body.environment !== undefined && typeof body.environment !== 'string') {
+      return c.json({ error: 'environment must be a string' }, 400);
+    }
     if (!body.upstream || !body.downstream) {
       return c.json({ error: 'upstream and downstream are required' }, 400);
     }
-    await removeDependency(deps.db, tenantId, body.upstream, body.downstream);
+    const removed = await removeDependency(
+      deps.db,
+      tenantId,
+      body.upstream,
+      body.downstream,
+      body.environment ?? '',
+    );
+    if (!removed) return c.json({ error: 'dependency not found' }, 404);
     return c.json({ ok: true });
   });
 

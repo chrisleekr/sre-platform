@@ -75,7 +75,12 @@ export interface BlastDep {
 export interface BlastRadius {
   service: string;
   mapped: boolean; // false when the service is not a graph node
-  dependents: { direct: BlastDep[]; indirect: BlastDep[]; insulated: BlastDep[] };
+  dependents: {
+    direct: BlastDep[];
+    indirect: BlastDep[];
+    insulated: BlastDep[];
+    unclassified?: BlastDep[];
+  };
   suspects: { name: string; syncType: string; criticality: string | null }[];
   truncated: boolean;
   note?: string;
@@ -186,11 +191,10 @@ export function filterTopologyGraph(
 }
 
 /** How a node is highlighted by the blast-radius overlay. */
-export type BlastHighlight = 'affected' | 'direct' | 'indirect';
+export type BlastHighlight = 'affected' | 'direct' | 'indirect' | 'unclassified';
 
 /**
- * Map service name -> blast-radius highlight. The affected service wins over direct, direct over
- * indirect (a node can appear at multiple hop distances; the closest tier is the strongest signal).
+ * Map service name to potential exposure. Precedence is affected, direct, unclassified, indirect.
  * Pure so the overlay can be tested without rendering.
  */
 export function blastHighlights(
@@ -199,6 +203,7 @@ export function blastHighlights(
   const m = new Map<string, BlastHighlight>();
   if (!blastRadius) return m;
   for (const d of blastRadius.dependents.indirect) m.set(d.name, 'indirect');
+  for (const d of blastRadius.dependents.unclassified ?? []) m.set(d.name, 'unclassified');
   for (const d of blastRadius.dependents.direct) m.set(d.name, 'direct');
   m.set(blastRadius.service, 'affected'); // the origin service always wins
   return m;

@@ -111,7 +111,7 @@ describe('topology repo + RLS', () => {
     await upsertService(app.db, tenantA, { name: 'y' });
     await addDependency(app.db, tenantA, { upstream: 'x', downstream: 'y' });
     // The edge references x and y, so removing the edge first is required.
-    await removeDependency(app.db, tenantA, 'x', 'y');
+    await removeDependency(app.db, tenantA, 'x', 'y', '');
     await deleteService(app.db, tenantA, 'x');
     const svcs = await listServices(app.db, tenantA);
     expect(svcs.some((s) => s.name === 'x')).toBe(false);
@@ -146,9 +146,16 @@ describe('topology repo + RLS', () => {
       circuitBreaker: true,
       protocol: 'grpc',
     });
-    const updated = await updateDependency(app.db, tenantA, 'patch-up', 'patch-down', {
-      circuitBreaker: false,
-    });
+    const updated = await updateDependency(
+      app.db,
+      tenantA,
+      'patch-up',
+      'patch-down',
+      {
+        circuitBreaker: false,
+      },
+      '',
+    );
     expect(updated?.circuitBreaker).toBe(false);
     // syncType and protocol were omitted, so they must survive.
     expect(updated?.syncType).toBe('async');
@@ -156,9 +163,16 @@ describe('topology repo + RLS', () => {
   });
 
   test('updateDependency returns null for a missing edge', async () => {
-    const updated = await updateDependency(app.db, tenantA, 'patch-up', 'nope', {
-      circuitBreaker: true,
-    });
+    const updated = await updateDependency(
+      app.db,
+      tenantA,
+      'patch-up',
+      'nope',
+      {
+        circuitBreaker: true,
+      },
+      '',
+    );
     expect(updated).toBeNull();
   });
 });

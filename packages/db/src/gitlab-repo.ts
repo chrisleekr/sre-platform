@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { withTenant, type Executor } from './rls';
 import { gitlabEvents, gitlabProjects, serviceRepositories } from './schema';
@@ -209,7 +209,10 @@ export async function markGitLabProjectRemoved(
 }
 
 /**
- * Lists git lab projects.
+ * Search ranked projects, or page by project ID when an explicit cursor is supplied.
+ *
+ * @remarks Start ID-ordered pagination with afterRepositoryId: '', then pass the last returned ID.
+ * Ranked search without a cursor is a bounded result, not the first page of an ID traversal.
  *
  * @param db - Database connection used for the operation.
  * @param tenantId - Tenant whose records are read or changed.
@@ -220,9 +223,10 @@ export async function listGitLabProjects(
   db: Db,
   tenantId: string,
   connectorId: string,
-  options: { query?: string; limit?: number } = {},
+  options: { query?: string; limit?: number; afterRepositoryId?: string } = {},
 ) {
-  const query = options.query?.trim().toLowerCase();
+  const normalized = options.query?.trim().toLowerCase();
+  const query = normalized === '*' ? '' : normalized;
   const limit = Math.min(Math.max(1, options.limit ?? 50), 100);
   return withTenant(db, tenantId, (tx) =>
     tx
@@ -241,10 +245,27 @@ export async function listGitLabProjects(
         and(
           eq(gitlabProjects.connectorId, connectorId),
           isNull(gitlabProjects.removedAt),
-          query ? sql`position(${query} in lower(${gitlabProjects.fullPath})) > 0` : undefined,
+          options.afterRepositoryId
+            ? gt(gitlabProjects.projectId, options.afterRepositoryId)
+            : undefined,
+          query
+            ? or(
+                eq(gitlabProjects.projectId, query),
+                sql`position(${query} in lower(${gitlabProjects.fullPath})) > 0`,
+              )
+            : undefined,
         ),
       )
-      .orderBy(gitlabProjects.fullPath)
+      .orderBy(
+        ...(query && options.afterRepositoryId === undefined
+          ? [
+              sql`case when ${gitlabProjects.projectId} = ${query} then 0 when lower(${gitlabProjects.fullPath}) = ${query} then 1 else 2 end`,
+            ]
+          : []),
+        options.afterRepositoryId !== undefined
+          ? gitlabProjects.projectId
+          : gitlabProjects.fullPath,
+      )
       .limit(limit),
   );
 }

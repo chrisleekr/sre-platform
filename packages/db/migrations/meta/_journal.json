@@ -547,6 +547,55 @@
       "when": 1789035030907,
       "tag": "0077_melodic_rachel_grey",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1789170962775,
+      "tag": "0078_lyrical_typhoid_mary",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1789171492171,
+      "tag": "0079_ambiguous_betty_ross",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1789172377700,
+      "tag": "0080_lethal_unicorn",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1789184338696,
+      "tag": "0081_wise_scarecrow",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1789194648182,
+      "tag": "0082_worried_blade",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1789196463850,
+      "tag": "0083_bouncy_quasimodo",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1789470647925,
+      "tag": "0084_sticky_clint_barton",
+      "breakpoints": true
     }
   ]
 }

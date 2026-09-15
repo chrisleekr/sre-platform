@@ -15,6 +15,12 @@ SRE Platform ships one image. Deploy each process as its own workload and select
 The default role is `api`. An unknown role exits with status 64 instead of starting the wrong process.
 Run migrations as a one-shot deployment task before starting a new application version.
 
+For upgrades, schedule a maintenance window. Stop the API, triage worker, and surface worker before
+running the migration role, and start the new application version only after migrations succeed.
+Schema changes and index builds can lock existing tables while the migration transaction runs.
+Allow in-flight work to finish before stopping these processes; requests and background processing
+remain unavailable during the migration. This migration runner does not provide online index builds.
+
 On a brand new deployment, run the `bootstrap` role once after the migration task and before the
 application processes start. It registers the first installation sign-in method and the first
 platform administrators, but deliberately does not create an organisation. See

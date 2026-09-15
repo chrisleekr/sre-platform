@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { NormalizedSnapshot } from './types';
+import type { TopologyRuntimeEvidence } from '@sre/contracts';
 
 export type ObservationState = 'firing' | 'unknown' | 'resolved';
 export type ObservationTextScrubber = (value: string) => string;
@@ -295,4 +296,41 @@ export function normalizeTopologyServiceObservation(
       ? new Date(Math.max(...validObservedAt.map((value) => value.getTime())))
       : now,
   );
+}
+
+/** Preserve incomplete service coverage when observed runtime resources improve.
+ * @param evidence - Identity-matched resource observations and explicit coverage limits.
+ * @param now - Observation time when no runtime timestamp is available.
+ * @param scrub - Safe text projection applied before persistence.
+ */
+export function normalizeDiscoveredRuntimeObservation(
+  evidence: TopologyRuntimeEvidence,
+  now: Date,
+  scrub: ObservationTextScrubber = identity,
+): CanonicalSubjectObservation {
+  const unhealthy = evidence.observations.filter(
+    (observation) => !observation.stale && observation.state === 'attention',
+  );
+  const state = unhealthy.length ? 'firing' : 'unknown';
+  const summary = unhealthy.length
+    ? `${unhealthy.length} observed runtime resources need attention. Service coverage is incomplete.`
+    : 'Observed runtime does not establish service recovery. Coverage is incomplete or unavailable.';
+  const snapshot = {
+    service: text(evidence.subject?.name, 200, scrub) ?? 'service',
+    topologySubjectKey: evidence.subject?.key ?? null,
+    coverage: evidence.status,
+    resources: evidence.observations.length,
+    unhealthyResources: unhealthy.length,
+    summaries: strings(
+      unhealthy.map((observation) => observation.name),
+      20,
+      200,
+      scrub,
+    ),
+  };
+  const latest = evidence.observations.reduce(
+    (at, observation) => Math.max(at, Date.parse(observation.observedAt) || 0),
+    0,
+  );
+  return material(state, summary, snapshot, latest ? new Date(latest) : now);
 }

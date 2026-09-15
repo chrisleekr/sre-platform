@@ -9,3 +9,5 @@ export * from './slo';
 export * from './postmortem';
 export * from './gitlab-management';
 export * from './argocd';
+export * from './topology';
+export * from './topology-impact';

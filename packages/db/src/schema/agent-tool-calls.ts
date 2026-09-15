@@ -51,6 +51,7 @@ export const agentToolCalls = pgTable(
       t.createdAt.desc(),
       t.id.desc(),
     ),
+    index('agent_tool_calls_tenant_created_id_idx').on(t.tenantId, t.createdAt.desc(), t.id.desc()),
     tenantIsolation(),
   ],
 );

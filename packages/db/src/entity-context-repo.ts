@@ -11,6 +11,7 @@ import {
   deployments,
   entityServiceMappings,
   incidentSignals,
+  incidentServiceAssignments,
   incidents,
   knowledgeChunks,
   serviceDependencies,
@@ -125,9 +126,21 @@ function incidentResolvesToService(serviceName: string) {
         )
       )
   )`;
+  const assigned = (name?: string) => sql`exists (
+    select 1 from ${incidentServiceAssignments}
+    where ${incidentServiceAssignments.tenantId} = ${incidents.tenantId}
+      and ${incidentServiceAssignments.incidentId} = ${incidents.id}
+      ${name === undefined ? sql`` : sql`and ${incidentServiceAssignments.serviceName} = ${name}`}
+  )`;
   return or(
-    structuredMatch,
-    and(eq(incidents.service, serviceName), sql`not (${hasStructuredResolution})`),
+    assigned(serviceName),
+    and(
+      sql`not (${assigned()})`,
+      or(
+        structuredMatch,
+        and(eq(incidents.service, serviceName), sql`not (${hasStructuredResolution})`),
+      ),
+    ),
   );
 }
 
@@ -265,7 +278,21 @@ export async function resolveIncidentEntityContext(
         : Promise.resolve([]),
       tx.select().from(services).orderBy(services.name),
     ]);
-    const mappings = resolvedMappings(candidates, human, catalog);
+    const assignments = await tx
+      .select()
+      .from(incidentServiceAssignments)
+      .where(eq(incidentServiceAssignments.incidentId, incidentId));
+    const mappings: EntityMapping[] = assignments.length
+      ? assignments.map((assignment) => ({
+          candidateKey: `incident-service:${incidentId}:${assignment.serviceName}`,
+          candidateKind: 'service',
+          serviceName: assignment.serviceName,
+          method: 'human',
+          confirmedByUserId: assignment.confirmedByUserId,
+          rationale: assignment.rationale,
+          updatedAt: assignment.updatedAt.toISOString(),
+        }))
+      : resolvedMappings(candidates, human, catalog);
     const serviceNames = [...new Set(mappings.map((mapping) => mapping.serviceName))];
     if (serviceNames.length === 0) return { observations, mappings, services: [] };
 

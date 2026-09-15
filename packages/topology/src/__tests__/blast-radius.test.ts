@@ -60,7 +60,59 @@ afterAll(async () => {
 });
 
 describe('computeBlastRadius', () => {
-  test('direct: hard failure conducts through sync calls, multi-hop, with hop distance', async () => {
+  test('does not discard an unresolved resource scope when falling back to catalog names', async () => {
+    await reg(tenantA, ['scoped-db', 'scoped-caller']);
+    await dep(tenantA, 'scoped-caller', 'scoped-db');
+    for (const field of ['cluster', 'namespace', 'dataSourceId', 'serviceNamespace', 'project']) {
+      const scope = { [field]: 'unmatched', environment: 'production' };
+      const result = await computeBlastRadius(app.db, tenantA, 'scoped-db', { scope });
+      expect(result).toMatchObject({ mapped: false, scope });
+      expect(Object.values(result.dependents).flat()).toEqual([]);
+      expect(result.suspects).toEqual([]);
+      expect(result.note).toMatch(/scope/i);
+    }
+    const catalog = await computeBlastRadius(app.db, tenantA, 'scoped-db');
+    expect(catalog.mapped).toBe(true);
+    expect(catalog.dependents.direct.map((item) => item.name)).toEqual(['scoped-caller']);
+  });
+
+  test('applies environment supplied through the shared scope to catalog dependency traversal', async () => {
+    await reg(tenantA, ['env-db', 'env-prod', 'env-stage']);
+    await addDependency(app.db, tenantA, {
+      upstream: 'env-prod',
+      downstream: 'env-db',
+      environment: 'production',
+    });
+    await addDependency(app.db, tenantA, {
+      upstream: 'env-stage',
+      downstream: 'env-db',
+      environment: 'staging',
+    });
+    const result = await computeBlastRadius(app.db, tenantA, 'env-db', {
+      scope: { environment: 'production' },
+    });
+    expect(result.mapped).toBe(true);
+    expect(result.dependents.direct.map((item) => item.name)).toEqual(['env-prod']);
+    const legacy = await computeBlastRadius(app.db, tenantA, 'env-db', {
+      environment: 'production',
+    });
+    expect(result).toEqual(legacy);
+  });
+
+  test('marks omitted stronger paths as truncated even when every caller was reached', async () => {
+    await reg(tenantA, ['depth-root', 'depth-a', 'depth-b', 'depth-c']);
+    await dep(tenantA, 'depth-a', 'depth-root');
+    await dep(tenantA, 'depth-b', 'depth-a');
+    await dep(tenantA, 'depth-c', 'depth-b');
+    await dep(tenantA, 'depth-c', 'depth-root', { circuitBreaker: true });
+    const bounded = await computeBlastRadius(app.db, tenantA, 'depth-root', { maxDepth: 2 });
+    expect(bounded.truncated).toBe(true);
+    expect(bounded.dependents.insulated.map((node) => node.name)).toEqual(['depth-c']);
+    const complete = await computeBlastRadius(app.db, tenantA, 'depth-root', { maxDepth: 3 });
+    expect(complete.truncated).toBe(false);
+    expect(complete.dependents.direct.map((node) => node.name)).toContain('depth-c');
+  });
+  test('reports synchronous exposure across multiple hops', async () => {
     await reg(tenantA, ['d_db', 'd_web', 'd_front']);
     await dep(tenantA, 'd_web', 'd_db'); // web calls db (sync)
     await dep(tenantA, 'd_front', 'd_web'); // front calls web (sync)
@@ -76,28 +128,28 @@ describe('computeBlastRadius', () => {
     expect(br.truncated).toBe(false);
   });
 
-  test('boundary: an async edge is the wall — the async caller is indirect, ITS caller is spared', async () => {
+  test('retains transitive callers beyond an async boundary as uncertain exposure', async () => {
     await reg(tenantA, ['b_db', 'b_analytics', 'b_reports']);
     await dep(tenantA, 'b_analytics', 'b_db', { syncType: 'async' }); // analytics reads db async
     await dep(tenantA, 'b_reports', 'b_analytics'); // reports calls analytics (sync)
 
     const br = await computeBlastRadius(app.db, tenantA, 'b_db');
 
-    expect(br.dependents.indirect.map((d) => d.name)).toEqual(['b_analytics']);
+    expect(br.dependents.indirect.map((d) => d.name)).toEqual(['b_analytics', 'b_reports']);
     expect(br.dependents.indirect[0]?.via).toBe('async');
     expect(br.dependents.direct).toHaveLength(0);
-    // reports is behind the async wall — not affected.
     const all = [...br.dependents.direct, ...br.dependents.indirect, ...br.dependents.insulated];
-    expect(all.some((d) => d.name === 'b_reports')).toBe(false);
+    expect(all.find((d) => d.name === 'b_reports')).toMatchObject({ hops: 2, via: 'async' });
   });
 
-  test('insulated: a circuit-breaker edge tags the caller insulated and stops there', async () => {
-    await reg(tenantA, ['c_db', 'c_cache']);
+  test('retains callers beyond a declared breaker because its fallback is not proven', async () => {
+    await reg(tenantA, ['c_db', 'c_cache', 'c_web']);
     await dep(tenantA, 'c_cache', 'c_db', { circuitBreaker: true }); // sync but breaker-protected
+    await dep(tenantA, 'c_web', 'c_cache');
 
     const br = await computeBlastRadius(app.db, tenantA, 'c_db');
 
-    expect(br.dependents.insulated.map((d) => d.name)).toEqual(['c_cache']);
+    expect(br.dependents.insulated.map((d) => d.name)).toEqual(['c_cache', 'c_web']);
     expect(br.dependents.insulated[0]?.via).toBe('circuit_breaker');
     expect(br.dependents.direct).toHaveLength(0);
   });
@@ -173,6 +225,17 @@ describe('computeBlastRadius', () => {
     expect(b.dependents.direct.map((d) => d.name).sort()).toEqual(['rls_extra', 'rls_web']);
   });
 
+  test('a cycle through the failing service never lists itself or falsely truncates', async () => {
+    await reg(tenantA, ['origin-cycle', 'caller-cycle']);
+    await dep(tenantA, 'caller-cycle', 'origin-cycle');
+    await dep(tenantA, 'origin-cycle', 'caller-cycle');
+    for (const maxDepth of [1, 10]) {
+      const result = await computeBlastRadius(app.db, tenantA, 'origin-cycle', { maxDepth });
+      expect(result.dependents.direct.map((node) => node.name)).toEqual(['caller-cycle']);
+      expect(result.truncated).toBe(false);
+    }
+  });
+
   test('depth cap: the walk is bounded and flags truncation', async () => {
     await reg(tenantA, ['t0', 't1', 't2', 't3', 't4']);
     await dep(tenantA, 't1', 't0');
@@ -219,10 +282,12 @@ describe('renderBlastRadius', () => {
       truncated: true,
     });
     expect(text).toContain('Blast radius for "checkout"');
-    expect(text).toContain('Direct (hard down):');
+    expect(text).toContain('Synchronous exposure:');
     expect(text).toContain('web (tier1), team payments');
-    expect(text).toContain('Indirect (degraded, async):');
-    expect(text).toContain('Insulated (circuit breaker):');
+    expect(text).toContain('Exposure through async calls');
+    expect(text).toContain('Exposure through declared circuit breakers');
+    expect(text).toContain('not observed outages');
+    expect(text).not.toContain('hard down');
     expect(text).toContain('depth cap reached');
     expect(text).toContain('orders-db (sync, tier1)');
   });
@@ -249,5 +314,7 @@ describe('renderBlastRadius', () => {
       truncated: false,
     });
     expect(text).toContain('No known dependents');
+    expect(text).toContain('coverage may be incomplete');
+    expect(text).not.toContain('nothing calls');
   });
 });

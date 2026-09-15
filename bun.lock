@@ -156,6 +156,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@sre/contracts": "workspace:*",
+        "yaml": "^2.9.0",
         "zod": "^4.0.0",
       },
     },
@@ -238,6 +239,8 @@
       "name": "@sre/topology",
       "version": "0.0.0",
       "dependencies": {
+        "@sre/connectors": "workspace:*",
+        "@sre/contracts": "workspace:*",
         "@sre/db": "workspace:*",
         "drizzle-orm": "^0.45.2",
       },
