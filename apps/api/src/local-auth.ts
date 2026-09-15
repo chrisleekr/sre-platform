@@ -241,11 +241,11 @@ async function createLocalSession(deps: LocalAuthDeps) {
     subject: deps.local.email,
     email: deps.local.email,
   };
+  const userId = await upsertIdentity(deps.db, identity);
   const providerId = await ensureLocalProvider(deps.db, {
     issuer: LOCAL_ISSUER,
     audience: deps.local.audience,
   });
-  const userId = await upsertIdentity(deps.db, identity);
   const existingTenantId = await getLocalProviderTenant(deps.db, LOCAL_ISSUER);
   let tenantId: string;
   if (existingTenantId) {

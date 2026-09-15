@@ -18,6 +18,8 @@ type ConnectorFixture = Omit<ConnectorSummary, 'id' | 'name'> &
   Partial<Pick<ConnectorSummary, 'id' | 'name'>>;
 
 const h = vi.hoisted(() => ({
+  role: 'admin' as string | undefined,
+  impersonation: null as object | null,
   connectors: [] as ConnectorFixture[],
   loading: false,
   error: false,
@@ -46,6 +48,10 @@ const h = vi.hoisted(() => ({
 }));
 
 // The shared auth boundary is a hard dependency of the panel; stub it so the hook wiring doesn't run.
+vi.mock('../../lib/me-store', () => ({
+  useMe: () => ({ data: { tenant: { role: h.role, impersonation: h.impersonation } } }),
+}));
+
 vi.mock('../../auth', () => ({
   useSession: () => ({ getCredentials: async () => ({ kind: 'bearer' as const, token: 'tok' }) }),
 }));
@@ -108,6 +114,8 @@ let dialogMethods: ReturnType<typeof installDialogMethods>;
 const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
 
 beforeEach(() => {
+  h.role = 'admin';
+  h.impersonation = null;
   dialogMethods = installDialogMethods();
 });
 
@@ -307,3 +315,25 @@ describe('ConnectorsPanel', () => {
     expect(h.refetch).toHaveBeenCalledTimes(1);
   });
 });
+
+test.each(['member', undefined, 'support'])(
+  'keeps connection details readable and configuration disabled for %s',
+  (role) => {
+    h.role = role === 'support' ? 'owner' : role;
+    h.impersonation = role === 'support' ? { sessionId: 'support' } : null;
+    h.connectors = [
+      { id: 'k8s', name: 'Production cluster', type: 'kubernetes', settings: {}, enabled: true },
+    ];
+    render(<ConnectorsPanel />);
+    expect(screen.queryByRole('button', { name: 'Add connection' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Review setup' }));
+    for (const name of ['Manage', 'Retest', 'Disconnect']) {
+      const button = screen.getByRole('button', { name, hidden: true }) as HTMLButtonElement;
+      expect(button.disabled).toBe(true);
+      fireEvent.click(button);
+    }
+    expect(h.testKubernetes).not.toHaveBeenCalled();
+    expect(h.disconnectKubernetes).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  },
+);

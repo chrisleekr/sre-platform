@@ -1,3 +1,4 @@
+import { useMe } from '../../lib/me-store';
 import { Link } from 'react-router-dom';
 import { useSession } from '../../auth';
 import { config } from '../../config';
@@ -11,7 +12,12 @@ import { inboundOutcomePresentation } from './outcome';
 
 /** Intake controls are separate from the credentials that enable the connection. */
 export function InboundOverview() {
-  const { getCredentials } = useSession();
+  const session = useSession();
+  const { getCredentials } = session;
+  const me = useMe(getCredentials, session.status === 'authenticated', session.sessionKey);
+  const canConfigure =
+    !me.data?.tenant?.impersonation &&
+    (me.data?.tenant?.role === 'owner' || me.data?.tenant?.role === 'admin');
   const { surfaces, loading, error, refetch } = useSurfaces({
     apiBaseUrl: config.apiBaseUrl,
     getCredentials,
@@ -31,10 +37,19 @@ export function InboundOverview() {
             to="/w/connectors?connection=slack"
             className="inline-flex min-h-10 items-center rounded-md border border-line-strong bg-surface px-3 py-2 text-sm font-medium"
           >
-            {slack ? 'Manage Slack connection' : 'Connect Slack'}
+            {!canConfigure
+              ? 'View Slack connection'
+              : slack
+                ? 'Manage Slack connection'
+                : 'Connect Slack'}
           </Link>
         }
       />
+      {!canConfigure && (
+        <p className="mb-4 text-sm text-ink-muted">
+          Only workspace owners and admins can change Slack configuration and subscriptions.
+        </p>
+      )}
       {error && (
         <InlineAlert
           message="Could not refresh inbound status. Previously loaded information may be outdated."
@@ -109,7 +124,11 @@ export function InboundOverview() {
             )}
           </details>
           {slack.hasBotToken ? (
-            <ChannelManager key={slack.id} getCredentials={getCredentials} />
+            <ChannelManager
+              key={slack.id}
+              getCredentials={getCredentials}
+              canConfigure={canConfigure}
+            />
           ) : (
             <StatePanel
               state="access"

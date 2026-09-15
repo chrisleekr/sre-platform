@@ -1,3 +1,4 @@
+import { useMe } from '../lib/me-store';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from '../auth';
 import { config } from '../config';
@@ -70,7 +71,12 @@ function initialRepresentation(): Representation {
  * Data owner: it calls the topology/incident hooks and passes plain props to its views.
  */
 export function TopologyPanel() {
-  const { getCredentials } = useSession();
+  const session = useSession();
+  const { getCredentials } = session;
+  const me = useMe(getCredentials, session.status === 'authenticated', session.sessionKey);
+  const canConfigure =
+    !me.data?.tenant?.impersonation &&
+    (me.data?.tenant?.role === 'owner' || me.data?.tenant?.role === 'admin');
 
   const { graph, loading, error, refetch } = useTopology({
     apiBaseUrl: config.apiBaseUrl,
@@ -193,12 +199,18 @@ export function TopologyPanel() {
       <PageHeader
         title="Service topology"
         action={
-          <TopologyCatalogManager
-            graph={graph}
-            apiBaseUrl={config.apiBaseUrl}
-            getCredentials={getCredentials}
-            onSaved={refetch}
-          />
+          canConfigure ? (
+            <TopologyCatalogManager
+              graph={graph}
+              apiBaseUrl={config.apiBaseUrl}
+              getCredentials={getCredentials}
+              onSaved={refetch}
+            />
+          ) : (
+            <p className="text-sm text-ink-muted">
+              Only workspace owners and admins can edit the service catalog.
+            </p>
+          )
         }
       />
       <p className="mb-4 max-w-4xl text-sm text-ink-muted">

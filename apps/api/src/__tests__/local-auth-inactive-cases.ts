@@ -1,7 +1,7 @@
 import { test, describe, expect, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
 import type { Context, Hono } from 'hono';
-import { users, isPlatformOperator, type DbHandle } from '@sre/db';
+import { users, identityProviders, isPlatformOperator, type DbHandle } from '@sre/db';
 import { LOCAL_ISSUER, localAuthRoutes, type LocalLogin } from '../local-auth';
 
 export function registerInactiveLocalAuthCases(
@@ -43,6 +43,12 @@ export function registerInactiveLocalAuthCases(
               body: JSON.stringify({ email: LOCAL_EMAIL, password: LOCAL_PASSWORD }),
             });
             expect(response.status).toBe(401);
+            expect(
+              await admin.db
+                .select()
+                .from(identityProviders)
+                .where(eq(identityProviders.issuer, LOCAL_ISSUER)),
+            ).toHaveLength(0);
             expect(await response.json()).toEqual({ error: 'invalid credentials' });
             expect(response.headers.get('cache-control')).toBe('no-store');
           }

@@ -1,3 +1,4 @@
+import { useMe } from '../lib/me-store';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useSession } from '../auth';
@@ -67,7 +68,12 @@ export function ConnectorsPanel() {
     savedDuringSetup.current = true;
     return result;
   };
-  const { getCredentials } = useSession();
+  const session = useSession();
+  const { getCredentials } = session;
+  const me = useMe(getCredentials, session.status === 'authenticated', session.sessionKey);
+  const canConfigure =
+    !me.data?.tenant?.impersonation &&
+    (me.data?.tenant?.role === 'owner' || me.data?.tenant?.role === 'admin');
   const managementApi = useMemo(
     () => gitLabManagementApi(config.apiBaseUrl, getCredentials),
     [getCredentials],
@@ -98,7 +104,7 @@ export function ConnectorsPanel() {
     const state = params.get('state');
     return code && state ? { code, state } : undefined;
   });
-  const [wizardMode, setWizardMode] = useState<
+  const [requestedWizardMode, setWizardMode] = useState<
     | 'kubernetes-connect'
     | 'kubernetes-edit'
     | 'gitlab-connect'
@@ -117,6 +123,7 @@ export function ConnectorsPanel() {
     | 'grafana-edit'
     | null
   >(manifestCallback ? 'github-connect' : null);
+  const wizardMode = canConfigure ? requestedWizardMode : null;
   const [selectedConnectorId, setSelectedConnectorId] = useState<string | null>(null);
   const wizardTriggerRef = useRef<HTMLButtonElement>(null);
   const [confirmDisconnect, setConfirmDisconnect] = useState<string | null>(null);
@@ -256,6 +263,7 @@ export function ConnectorsPanel() {
     <section>
       {mutationError && <InlineAlert message={mutationError} />}
       <ConnectionsContent
+        canConfigure={canConfigure}
         loading={loading}
         error={error}
         refetch={refetch}
