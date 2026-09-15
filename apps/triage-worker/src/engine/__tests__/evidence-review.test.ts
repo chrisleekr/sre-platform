@@ -20,6 +20,58 @@ const candidate: TriageResult = {
   evidenceReceipts: [{ evidenceId, tool: 'logs', outcome: 'complete' }],
 };
 
+test.each(['x', '\\"\n'])(
+  'budgets repeated context and escaped evidence slices for %j',
+  async (text) => {
+    const prompts: string[] = [];
+    const generator = makeFakeGenerator((prompt) => {
+      prompts.push(prompt);
+      return { supported: true, summary: 'Checked', reason: 'Covered', evidenceIds: [evidenceId] };
+    });
+    const largeCandidate = { ...candidate, detail: 'context '.repeat(5_000) };
+    const record = {
+      ...evidence[0]!,
+      output: text.repeat(text === 'x' ? 240_000 : 20_000) + 'END',
+    };
+    const result = await reviewInvestigation(
+      generator,
+      largeCandidate,
+      [record],
+      new AbortController().signal,
+    );
+    expect(result).toBe(largeCandidate);
+    expect(prompts.length).toBeGreaterThan(1);
+    expect(prompts.length).toBeLessThanOrEqual(7);
+    expect(prompts.every((prompt) => prompt.length <= 96_000)).toBe(true);
+    const slices = prompts.flatMap((prompt) => JSON.parse(prompt).evidenceSlices ?? []);
+    expect(slices.map((slice) => slice.content).join('')).toBe(JSON.stringify(record));
+  },
+);
+
+test.each([10, 200_000])('identifies missing evidence IDs at %i characters', async (size) => {
+  const script = vi.fn();
+  const result = await reviewInvestigation(
+    makeFakeGenerator(script),
+    candidate,
+    [{ ...evidence[0]!, id: undefined, output: 'x'.repeat(size) }],
+    new AbortController().signal,
+  );
+  expect(script).not.toHaveBeenCalled();
+  expect(result.unknowns?.at(-1)?.question).toMatch(/missing.*id/i);
+});
+
+test('rejects context that leaves no chunk capacity before calling the provider', async () => {
+  const script = vi.fn();
+  const result = await reviewInvestigation(
+    makeFakeGenerator(script),
+    { ...candidate, detail: 'x'.repeat(96_000) },
+    [{ ...evidence[0]!, output: 'x'.repeat(100_000) }],
+    new AbortController().signal,
+  );
+  expect(script).not.toHaveBeenCalled();
+  expect(result.unknowns?.at(-1)?.question).toMatch(/context.*budget/i);
+});
+
 test('unsupported findings become nonpromoting while preserving evidence receipts', async () => {
   const generator = makeFakeGenerator(() => ({
     supported: false,
@@ -314,3 +366,21 @@ test('stops large-record review on its first rate limit without synthesis or ret
   ).rejects.toBeInstanceOf(ProviderRateLimitError);
   expect(script).toHaveBeenCalledTimes(1);
 });
+
+test.each([
+  [95_000, 100_000, /chunk budget/i],
+  [80_000, 81_000, /synthesis budget/i],
+] as const)(
+  'preflights review cost for %i characters of context',
+  async (contextSize, evidenceSize, reason) => {
+    const script = vi.fn();
+    const result = await reviewInvestigation(
+      makeFakeGenerator(script),
+      { ...candidate, detail: 'x'.repeat(contextSize) },
+      [{ ...evidence[0]!, output: 'x'.repeat(evidenceSize) }],
+      new AbortController().signal,
+    );
+    expect(script).not.toHaveBeenCalled();
+    expect(result.unknowns?.at(-1)?.question).toMatch(reason);
+  },
+);

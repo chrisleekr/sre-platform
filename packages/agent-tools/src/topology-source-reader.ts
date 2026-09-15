@@ -117,7 +117,7 @@ export async function readTopologySourceFile(
           !request.path.startsWith(`${currentPrefix}/`))
       )
         return unavailable('Source access changed while reading. Refresh source evidence.');
-      const redacted = scrubSecrets(file.text, { preserveLines: true });
+      const redacted = scrubSecrets(file.text);
       const lines = redacted.split('\n');
       if (request.startLine > lines.length)
         return unavailable('The requested line is past the end of this file.');

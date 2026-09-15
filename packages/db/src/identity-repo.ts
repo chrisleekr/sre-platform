@@ -50,11 +50,12 @@ export async function upsertIdentity(db: Db, identity: Identity): Promise<string
   if (inserted) return inserted.id;
 
   const [existing] = await db
-    .select({ id: users.id })
+    .select({ id: users.id, status: users.status })
     .from(users)
     .where(and(eq(users.issuer, issuer), eq(users.subject, subject)))
     .limit(1);
   if (!existing) throw new Error('user upsert returned no row');
+  if (existing.status !== 'active') throw new Error('cannot upsert an inactive account');
   return existing.id;
 }
 
@@ -116,7 +117,7 @@ export async function resolveTenantByBinding(
       return { status: 'directory_required', tenantId: binding.tenantId };
     }
 
-    await lockOwnershipWorkspaces(tx, [binding.tenantId]);
+    await lockOwnershipWorkspaces(tx, [binding.tenantId], 'share');
     const [workspace] = await tx
       .select({ status: tenants.status, requireDirectory: tenants.requireDirectory })
       .from(tenants)
@@ -423,7 +424,7 @@ export async function attachMembership(
 ): Promise<{ userId: string; created: boolean }> {
   const userId = await upsertIdentity(db, identity);
   return db.transaction(async (tx) => {
-    await lockOwnershipWorkspaces(tx, [tenantId]);
+    await lockOwnershipWorkspaces(tx, [tenantId], 'share');
     const [user] = await tx
       .select({ status: users.status })
       .from(users)

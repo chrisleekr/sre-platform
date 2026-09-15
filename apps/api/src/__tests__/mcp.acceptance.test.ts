@@ -218,6 +218,25 @@ afterAll(async () => {
 });
 
 describe('incident-scoped MCP facade', () => {
+  test.each(['GET', 'POST', 'DELETE'])(
+    'explains retired MCP addresses for %s without disclosing incidents',
+    async (method) => {
+      for (const path of [
+        '/mcp/incidents/',
+        '/.well-known/oauth-protected-resource/mcp/incidents/',
+      ]) {
+        for (const id of [incidentId, foreignIncidentId, randomUUID(), 'invalid']) {
+          const response = await api.request(`${path}${id}`, { method });
+          expect(response.status).toBe(410);
+          expect(await response.json()).toEqual({
+            error:
+              'This MCP address has been retired. Update your client to /mcp/providers/{providerId}/incidents/{incidentId}, using the sign-in method that issued your token.',
+          });
+          expect(response.headers.get('location')).toBeNull();
+        }
+      }
+    },
+  );
   test('challenges unauthenticated clients and exposes protected-resource metadata', async () => {
     const response = await api.request(`/mcp/providers/${providerId}/incidents/${incidentId}`, {
       method: 'POST',

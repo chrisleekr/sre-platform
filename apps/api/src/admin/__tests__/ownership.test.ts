@@ -36,6 +36,64 @@ const direct = (userId = f.memberId) =>
     reason: 'Verified legacy owner recovery',
   });
 
+test('a stalled admission does not serialize other accounts in the workspace', async () => {
+  let release!: () => void;
+  let locked!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    locked = resolve;
+  });
+  const hold = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const blocker = f.db.db.transaction(async (tx) => {
+    await tx.select().from(users).where(eq(users.id, f.memberId)).for('no key update');
+    locked();
+    await hold;
+  });
+  await ready;
+  const stalled = resolveTenantByBinding(f.appDb.db, {
+    providerId: f.providerId,
+    claimValue: 'member',
+    userId: f.memberId,
+  });
+  let concurrent: ReturnType<typeof resolveTenantByBinding> | undefined;
+  let attached: ReturnType<typeof attachMembership> | undefined;
+  try {
+    await expect
+      .poll(async () => {
+        const rows = await f.db.db.execute(
+          sql`select exists (select 1 from pg_stat_activity where wait_event_type = 'Lock' and query like '%"users"%' and query like '%for no key update%') as waiting`,
+        );
+        return rows[0]?.waiting;
+      })
+      .toBe(true);
+    let admitted = false;
+    concurrent = resolveTenantByBinding(f.appDb.db, {
+      providerId: f.providerId,
+      claimValue: 'member',
+      userId: f.peerId,
+    }).then((result) => {
+      admitted = result.status === 'ok';
+      return result;
+    });
+    await expect.poll(() => admitted).toBe(true);
+    const [peer] = await f.db.db.select().from(users).where(eq(users.id, f.peerId));
+    let attachedDone = false;
+    attached = attachMembership(
+      f.db.db,
+      { issuer: peer!.issuer, subject: peer!.subject },
+      f.tenantId,
+    ).then((result) => {
+      attachedDone = true;
+      return result;
+    });
+    await expect.poll(() => attachedDone).toBe(true);
+  } finally {
+    release();
+    await Promise.all([blocker, stalled, concurrent, attached]);
+  }
+});
+
 test('provider updates can append their actor audit while recovery waits on the provider', async () => {
   let release!: () => void;
   let locked!: () => void;
@@ -150,7 +208,7 @@ test('admission waiting on a workspace lock rechecks suspension after acquiring 
     await expect
       .poll(async () => {
         const rows = await f.db.db.execute(
-          sql`select exists (select 1 from pg_stat_activity where wait_event_type = 'Lock' and query like '%"tenants"%' and query like '%for update%') as waiting`,
+          sql`select exists (select 1 from pg_stat_activity where wait_event_type = 'Lock' and query like '%"tenants"%' and query like '%for share%') as waiting`,
         );
         return rows[0]?.waiting;
       })
