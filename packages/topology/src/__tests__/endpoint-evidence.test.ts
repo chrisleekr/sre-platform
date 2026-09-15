@@ -10,6 +10,7 @@ import {
   tenants,
   type DbHandle,
 } from '@sre/db';
+import { networkProbeTopologyEvidence } from '@sre/connectors';
 import { topologyRefKey } from '@sre/contracts';
 import { readTopologyEndpointEvidence } from '../endpoint-evidence';
 
@@ -166,4 +167,93 @@ test('a newer failed probe is not hidden behind an earlier successful observatio
     state: 'unavailable',
     facts: {},
   });
+});
+
+test('one probe kind and wrong-port repeats cannot hide other matching evidence', async () => {
+  await admin.db.delete(agentToolCalls).where(eq(agentToolCalls.tenantId, tenantId));
+  const expected = [
+    await record(
+      'resolve_dns',
+      { host: 'service.example' },
+      { addresses: [{ ip: '93.184.216.34' }] },
+      5000,
+    ),
+    await record(
+      'check_reachable',
+      { host: 'service.example', port: 443 },
+      { reachable: true },
+      5000,
+    ),
+    await record('inspect_tls', { host: 'service.example', port: 443 }, { authorized: true }, 5000),
+  ];
+  await admin.db.insert(agentToolCalls).values(
+    Array.from({ length: 120 }, (_, index) => ({
+      id: randomUUID(),
+      tenantId,
+      incidentId,
+      tool: tool('http_meta'),
+      input: { url: endpoint.id },
+      output: { status: 200 },
+      outcome: 'data',
+      latencyMs: 1,
+      createdAt: new Date(Date.now() - 3000 - index),
+    })),
+  );
+  await admin.db.insert(agentToolCalls).values(
+    Array.from({ length: 120 }, () => ({
+      id: randomUUID(),
+      tenantId,
+      incidentId,
+      tool: tool('check_reachable'),
+      input: { host: 'service.example', port: 443 },
+      output: { host: 'service.example', port: 8443, reachable: false },
+      outcome: 'data',
+      latencyMs: 1,
+      createdAt: new Date(Date.now() - 1000),
+    })),
+  );
+  await record(
+    'check_reachable',
+    { host: 'service.example', port: 443 },
+    { host: 123, port: 443, reachable: false },
+  );
+  await record(
+    'check_reachable',
+    { host: 'service.example', port: 443 },
+    { host: 'service.example', port: '443', reachable: false },
+  );
+  await record(
+    'http_meta',
+    { url: endpoint.id },
+    { url: 'https://other.example/status', status: 201 },
+  );
+  const result = await readTopologyEndpointEvidence(app.db, tenantId, topologyRefKey(endpoint));
+  expect(result.probes.map((probe) => probe.kind).sort()).toEqual(['dns', 'http', 'tcp', 'tls']);
+  expect(result.probes.map((probe) => probe.evidenceId)).toEqual(expect.arrayContaining(expected));
+  expect(result.probes.find((probe) => probe.kind === 'http')?.facts.status).toBe(200);
+  expect(result.note).not.toContain('lookup reached its limit');
+});
+
+test('omitted probe ports retain the audited operation default rather than the endpoint port', () => {
+  const now = new Date();
+  const row = {
+    id: randomUUID(),
+    incidentId,
+    tool: tool('check_reachable'),
+    input: { host: 'service.example' },
+    output: { reachable: true },
+    outcome: 'data',
+    createdAt: now,
+  };
+  expect(networkProbeTopologyEvidence(new URL('http://service.example'), row, now)).toBeNull();
+  expect(
+    networkProbeTopologyEvidence(new URL('https://service.example'), row, now)?.facts.reachable,
+  ).toBe(true);
+  expect(
+    networkProbeTopologyEvidence(
+      new URL('http://service.example'),
+      { ...row, input: { ...row.input, port: 80 } },
+      now,
+    )?.facts.reachable,
+  ).toBe(true);
 });

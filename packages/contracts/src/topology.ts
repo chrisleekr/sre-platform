@@ -286,6 +286,6 @@ export function topologyRelationKey(relation: TopologyRelation): string {
     relation.kind,
     topologyRefKey(relation.to),
     relation.evidence,
-    Object.entries(relation.scope ?? {}).sort(([a], [b]) => a.localeCompare(b)),
+    Object.entries(relation.scope ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
   ]);
 }

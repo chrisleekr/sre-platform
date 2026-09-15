@@ -174,7 +174,7 @@ export function resolveDiscoveredTopology(
         toKey ?? topologyRefKey(relation.to),
         relation.kind,
         relation.evidence,
-        Object.entries(relation.scope ?? {}).sort(([a], [b]) => a.localeCompare(b)),
+        Object.entries(relation.scope ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
       ]);
       const old = relations.get(key);
       const source = sourceFor(collection, fact.observedAt);

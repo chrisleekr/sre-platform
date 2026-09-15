@@ -1,5 +1,10 @@
 import { expect, test } from 'vitest';
-import { topologyRefKey, type TopologyEntity, type TopologyRelation } from '@sre/contracts';
+import {
+  topologyRelationKey,
+  topologyRefKey,
+  type TopologyEntity,
+  type TopologyRelation,
+} from '@sre/contracts';
 import { resolveDiscoveredTopology } from '../discovery';
 import { discoveredOperationalTopology } from '../operational';
 import { discoveredBlastRadius } from '../discovered-impact';
@@ -230,7 +235,7 @@ test.each(['entity', 'relation'])(
       { services: [], edges: [] },
     );
     expect(impact.dependents.unclassified).toEqual([]);
-    expect(impact.note).toContain('1 stale, inferred or ambiguous');
+    expect(impact.note).toContain('1 stale, inferred, ambiguous or non-service');
   },
 );
 
@@ -295,3 +300,40 @@ test.each([false, true])(
     ]);
   },
 );
+
+test('relation identities use code-unit scope ordering independent of insertion order', () => {
+  const from = entity('from'),
+    to = entity('to');
+  const scopes = [
+    { componentid: 'one', 'component-id': 'two', Zone: 'three', zone: 'four' },
+    { zone: 'four', Zone: 'three', 'component-id': 'two', componentid: 'one' },
+  ];
+  const edges = scopes.map((scope) => ({
+    from: from.ref,
+    to: to.ref,
+    kind: 'calls' as const,
+    evidence: 'observed' as const,
+    description: '',
+    scope,
+  }));
+  const ordered = [
+    ['Zone', 'three'],
+    ['component-id', 'two'],
+    ['componentid', 'one'],
+    ['zone', 'four'],
+  ];
+  const expected = JSON.stringify([
+    topologyRefKey(from.ref),
+    'calls',
+    topologyRefKey(to.ref),
+    'observed',
+    ordered,
+  ]);
+  expect(edges.map(topologyRelationKey)).toEqual([expected, expected]);
+  const resolved = resolveDiscoveredTopology(
+    [collection('source', [from, to], edges)],
+    now,
+  ).relations;
+  expect(resolved).toHaveLength(1);
+  expect(JSON.parse(resolved[0]!.key).at(-1)).toEqual(ordered);
+});

@@ -7,14 +7,18 @@ import {
   services,
   connectorConfigs,
   serviceRuntimeBindings,
+  users,
   type DbHandle,
 } from '@sre/db';
 import type { NormalizedSnapshot } from '@sre/connectors';
+import { seedMembership } from '@sre/db/test-support';
 import { readServiceRuntime } from '../runtime';
 
 let admin: DbHandle;
 let app: DbHandle;
 const tenantId = randomUUID();
+const foreignTenantId = randomUUID();
+let ownerUserId: string, foreignUserId: string;
 const sourceId = randomUUID();
 const otherId = randomUUID();
 const snapshots = (source: string, completeness = 'complete'): NormalizedSnapshot[] => [
@@ -41,6 +45,19 @@ beforeAll(async () => {
   admin = makeDb(process.env.DATABASE_URL!);
   app = makeDb(process.env.APP_DATABASE_URL!);
   await admin.db.insert(tenants).values({ id: tenantId, name: 'Runtime identity test' });
+  await admin.db.insert(tenants).values({ id: foreignTenantId, name: 'Foreign runtime owner' });
+  ownerUserId = await seedMembership(
+    admin.db,
+    { issuer: 'https://runtime-binding.test', subject: randomUUID() },
+    tenantId,
+    'owner',
+  );
+  foreignUserId = await seedMembership(
+    admin.db,
+    { issuer: 'https://runtime-binding.test', subject: randomUUID() },
+    foreignTenantId,
+    'owner',
+  );
   await admin.db.insert(services).values({ tenantId, name: 'checkout' });
   for (const id of [sourceId, otherId]) {
     await admin.db
@@ -54,7 +71,7 @@ beforeAll(async () => {
       labelKey: 'app',
       labelValue: 'checkout',
       environment: id,
-      confirmedByUserId: randomUUID(),
+      confirmedByUserId: ownerUserId,
       rationale: 'Confirmed labels',
     });
   }
@@ -66,6 +83,8 @@ afterAll(async () => {
   await admin.db.delete(connectorConfigs).where(eq(connectorConfigs.tenantId, tenantId));
   await admin.db.delete(services).where(eq(services.tenantId, tenantId));
   await admin.db.delete(tenants).where(eq(tenants.id, tenantId));
+  await admin.db.delete(tenants).where(eq(tenants.id, foreignTenantId));
+  await admin.db.delete(users).where(sql`id in (${ownerUserId}, ${foreignUserId})`);
   await admin.close();
   await app.close();
 });
@@ -121,4 +140,15 @@ test('failed or disabled sources cannot disappear behind healthy cached pods', a
       sql`update connector_configs set enabled = true, poll_failure_category = null where id = ${otherId}`,
     );
   }
+});
+
+test('runtime confirmation cannot name a member of another tenant', async () => {
+  await expect(
+    admin.db
+      .update(serviceRuntimeBindings)
+      .set({ confirmedByUserId: foreignUserId })
+      .where(eq(serviceRuntimeBindings.connectorId, sourceId)),
+  ).rejects.toMatchObject({
+    cause: { code: '23503', constraint_name: 'runtime_binding_membership_fk' },
+  });
 });

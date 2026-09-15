@@ -24,6 +24,7 @@ export function observedTopologySubject(
   if (candidate.provenance.kind !== 'platform_snapshot' || !candidate.topologyRef)
     return unresolved;
   const reference = topologyRefKey(candidate.topologyRef);
+  const now = Date.now();
   const matches = discovery.entities.filter(
     (entity) =>
       [entity.ref, ...(entity.aliases ?? [])].some((ref) => topologyRefKey(ref) === reference) &&
@@ -33,7 +34,12 @@ export function observedTopologySubject(
           !value ||
           (key === 'dataSourceId'
             ? entity.sources.some(
-                (source) => source.connectorId === value && source.completeness !== 'unavailable',
+                (source) =>
+                  source.connectorId === value &&
+                  !source.retired &&
+                  source.completeness !== 'unavailable' &&
+                  Date.parse(source.observedAt) <= now &&
+                  now - Date.parse(source.observedAt) <= 600_000,
               )
             : entity.scope[key] === value),
       ),

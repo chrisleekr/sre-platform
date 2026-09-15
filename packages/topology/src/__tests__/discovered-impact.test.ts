@@ -74,7 +74,7 @@ test('excludes monitoring, stale and inferred links from service-call exposure',
     }),
   ]);
   expect(result.dependents.direct).toEqual([]);
-  expect(result.note).toContain('2 stale, inferred or ambiguous');
+  expect(result.note).toContain('2 stale, inferred, ambiguous or non-service');
   expect(discoveredBlastRadius(graph, api, none).suspects).toEqual([
     expect.objectContaining({ subjectKey: queue.key, syncType: 'unknown' }),
   ]);
@@ -164,7 +164,7 @@ test('a catalog declaration cannot bridge an ambiguous same-name identity', () =
     ],
   });
   expect(Object.values(result.dependents).flat()).toEqual([]);
-  expect(result.note).toContain('1 stale, inferred or ambiguous');
+  expect(result.note).toContain('1 stale, inferred, ambiguous or non-service');
 });
 
 test('bounds cyclic traversal and reports only genuinely missing paths at the depth boundary', () => {
@@ -215,3 +215,17 @@ test.each([false, true])(
     ]);
   },
 );
+
+test('the omission note includes fresh calls to non-service subjects', () => {
+  const api = service('api');
+  const endpoint = { ...service('endpoint'), kind: 'endpoint' as const };
+  const result = discoveredBlastRadius(
+    { subjects: [api, endpoint], relations: [call(api, endpoint)] },
+    api,
+    none,
+  );
+  expect(result.suspects).toEqual([]);
+  expect(result.note).toContain(
+    '1 stale, inferred, ambiguous or non-service dependency relationships were excluded',
+  );
+});

@@ -142,3 +142,32 @@ test.each(['stale', 'conflicted'] as const)(
     });
   },
 );
+
+test.each(['retired', 'expired', 'future', 'invalid', 'fresh'] as const)(
+  'a %s scoped source cannot borrow freshness from another connector',
+  (state) => {
+    const discovery = graph();
+    const operational = discoveredOperationalTopology(discovery);
+    for (const resource of discovery.entities) {
+      const original = resource.sources[0]!;
+      resource.sources = [
+        { ...original, connectorId: 'other' },
+        {
+          ...original,
+          retired: state === 'retired',
+          observedAt:
+            state === 'expired'
+              ? new Date(Date.now() - 700_000).toISOString()
+              : state === 'future'
+                ? new Date(Date.now() + 60_000).toISOString()
+                : state === 'invalid'
+                  ? 'invalid'
+                  : original.observedAt,
+        },
+      ];
+    }
+    expect(observedTopologySubject(candidate, discovery, operational).status).toBe(
+      state === 'fresh' ? 'resolved' : 'needs_evidence',
+    );
+  },
+);

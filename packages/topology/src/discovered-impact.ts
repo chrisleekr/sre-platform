@@ -183,6 +183,6 @@ export function discoveredBlastRadius(
       criticality: (metadata.get(key) ?? catalog.get(nodes.get(key)!.name))?.criticality ?? null,
       evidenceKeys: [...new Set(paths.flatMap((path) => path.evidenceKeys))],
     })),
-    note: `Known service-call evidence and dependency declarations, not observed outages. Coverage may be incomplete.${omitted ? ` ${omitted} stale, inferred or ambiguous dependency relationships were excluded.` : ''}`,
+    note: `Known service-call evidence and dependency declarations, not observed outages. Coverage may be incomplete.${omitted ? ` ${omitted} stale, inferred, ambiguous or non-service dependency relationships were excluded.` : ''}`,
   };
 }
