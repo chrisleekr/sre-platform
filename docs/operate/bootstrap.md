@@ -130,7 +130,8 @@ Upgrading does not alter existing tenants, memberships, or customer identities. 
 declaration to register the installation sign-in method and platform administrators. An existing
 installation sign-in method and existing administrator grants or invitations are reported as already
 present. Provider rows remain unchanged except for the one-time browser-endpoint backfill described
-above.
+above. Disabled or deleted administrator identities are reported as unusable by subject; bootstrap
+continues with the remaining declarations and does not restore those accounts or grant them access.
 
 The previous tenant-creating bootstrap contract is not accepted. Deployment configuration must supply
 `BOOTSTRAP_STAFF_PROVIDER` and `BOOTSTRAP_PLATFORM_ADMINS` before running the new image.

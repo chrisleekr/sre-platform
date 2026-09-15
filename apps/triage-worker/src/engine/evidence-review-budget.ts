@@ -9,6 +9,7 @@ import type {
 
 interface Review {
   supported: boolean;
+  rejection?: 'insufficient_evidence' | 'contradictory_evidence';
   summary: string;
   detail?: string;
   reason: string;
@@ -112,7 +113,7 @@ export async function boundedEvidenceReview(
       signal.throwIfAborted();
       if (chunks.length === 6)
         throw new EvidenceReviewFailure(
-          'Evidence review chunk budget exceeded; coverage is incomplete.',
+          `Evidence review chunk budget exceeded; repeated context uses ${scrubSecrets(JSON.stringify(context)).length} characters of each 96,000-character prompt. Coverage is incomplete.`,
         );
       const slice = (endOffset: number): Slice => ({
         evidenceId: record.id!,

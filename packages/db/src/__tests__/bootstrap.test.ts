@@ -1,3 +1,4 @@
+import { registerInactiveBootstrapCases } from './bootstrap-inactive-cases';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import { formatBootstrapReport, parseBootstrapInput, runBootstrap } from '../bootstrap';
 import { makeDb, type DbHandle } from '../index';
@@ -596,3 +597,4 @@ describe('db:bootstrap CLI', () => {
     });
   }, 30_000);
 });
+registerInactiveBootstrapCases(() => admin);

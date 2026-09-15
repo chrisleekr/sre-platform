@@ -14,7 +14,6 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import type { AdminRoutesDeps, AdminVariables } from './contracts';
 import { adminBody, adminMutationResponse } from './support';
-import { refuseImpersonatedChange } from '../auth';
 
 const reasonBody = z.object({ reason: z.string().trim().min(3).max(2_000) }).strict();
 const bindingBody = z
@@ -28,7 +27,6 @@ async function publishRevocations(deps: AdminRoutesDeps, userIds: string[], tena
 /** Builds platform-administrator workspace lifecycle routes. */
 export function adminTenantRoutes(deps: AdminRoutesDeps) {
   const routes = new Hono<{ Variables: AdminVariables }>();
-  routes.use('/:id/recover-owner', refuseImpersonatedChange());
   routes.get('/:id/recovery-members', async (c) => {
     if (!z.uuid().safeParse(c.req.param('id')).success)
       return c.json({ error: 'valid workspace ID is required' }, 400);
