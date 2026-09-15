@@ -172,7 +172,8 @@ export async function pget(
     tls: client.serverTls,
   });
   const res = await fetchImpl(url, init);
-  if (!res.ok) throw new Error(`prometheus api ${res.status}`);
+  if (!res.ok)
+    throw Object.assign(new Error(`prometheus api ${res.status}`), { status: res.status });
   return res.json();
 }
 

@@ -121,11 +121,13 @@ export function makeGitLabTools(
       gtool({
         name: 'search_projects',
         description:
-          'Search the synchronized group-wide project catalog when service resolution is ambiguous.',
+          'Search the synchronized group-wide catalog by project ID or path. An empty query or standalone * lists a bounded scoped inventory; no match does not mean the provider lacks a capability.',
         inputSchema: z.object({ query: z.string(), limit: z.number().optional() }),
         run: ({ query, limit }) =>
-          config.repositories?.search(query, Math.min(Math.max(1, limit ?? 20), 50)) ??
-          Promise.resolve([]),
+          config.repositories?.search(
+            query.trim() === '*' ? '' : query.trim(),
+            Math.min(Math.max(1, Math.floor(limit ?? 20)), 50),
+          ) ?? Promise.resolve([]),
       }),
       gtool({
         name: 'list_recent_events',

@@ -14,6 +14,7 @@ import {
   recordSurfaceBinding,
   recordToolCall,
   services,
+  serviceRuntimeBindings,
   subscribeChannel,
   syncGitHubRepositories,
   tenants,
@@ -391,6 +392,14 @@ export function createFixture() {
         },
         observedAt: new Date(),
       },
+      {
+        tenantId: state.tenantC,
+        source: 'kubernetes',
+        entityId: 'collection/pods',
+        metrics: {},
+        metadata: { kind: 'collection', resource: 'pods', completeness: 'complete' },
+        observedAt: new Date(),
+      },
     ]);
     await upsertDeployments(state.app.db, state.tenantC, [
       {
@@ -414,6 +423,15 @@ export function createFixture() {
       name: 'argocd',
       team: 'platform',
       criticality: 'tier1',
+    });
+    await state.admin.db.insert(serviceRuntimeBindings).values({
+      tenantId: state.tenantC,
+      serviceName: 'argocd',
+      connectorId: observationSourceId,
+      namespace: 'argocd',
+      environment: 'test',
+      confirmedByUserId: state.tenantCUserId,
+      rationale: 'Confirmed fixture runtime',
     });
     await syncGitHubRepositories(state.app.db, state.tenantC, codeSourceId, '7001', [
       {

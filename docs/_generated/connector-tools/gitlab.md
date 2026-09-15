@@ -17,7 +17,7 @@
 | Tool | What it does |
 | --- | --- |
 | `resolve_projects` | Resolve projects associated with an incident service from confirmed topology, Argo CD sources, and exact catalog matches. |
-| `search_projects` | Search the synchronized group-wide project catalog when service resolution is ambiguous. |
+| `search_projects` | Search the synchronized group-wide catalog by project ID or path. An empty query or standalone * lists a bounded scoped inventory; no match does not mean the provider lacks a capability. |
 | `list_recent_events` | List synchronized push, merge-request, pipeline, job, deployment, and release evidence for selected projects since an ISO timestamp. |
 | `api_get` | GET a read-only REST endpoint beneath one synchronized project. The request cannot escape that project. |
 | `list_commits` | List recent commits in one synchronized project. |

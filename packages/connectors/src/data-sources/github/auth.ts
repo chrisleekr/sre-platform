@@ -1,6 +1,8 @@
 import { createPrivateKey, createSign } from 'node:crypto';
 import * as z from 'zod';
 import type { ConnectorConfig } from '../../registry';
+import { SourceRateLimitError } from '../../source-file-error';
+import { TopologyReadError } from '../../topology-transport';
 
 /** Legacy opaque credential shape. New saves keep app/installation IDs in settings and encrypt only
  * the private key; the parser retains this shape until existing rows are rewritten. */
@@ -93,7 +95,8 @@ async function runtimeTokenScope(
         redirect: 'error',
       },
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof SourceRateLimitError || error instanceof TopologyReadError) throw error;
     throw new GitHubAuthError('github connector: installation metadata did not respond', null);
   }
   const rateLimit = rateLimitEvidence(response.headers);
@@ -365,7 +368,8 @@ export async function mintInstallationToken(
       signal: AbortSignal.timeout(MINT_TIMEOUT_MS),
       redirect: 'error',
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof SourceRateLimitError || error instanceof TopologyReadError) throw error;
     throw new GitHubAuthError('github connector: token endpoint did not respond', null);
   }
   if (res.status !== 201) {

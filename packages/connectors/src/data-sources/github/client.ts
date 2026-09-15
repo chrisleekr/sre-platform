@@ -1,4 +1,6 @@
 import { str } from '../../values';
+import { SourceRateLimitError } from '../../source-file-error';
+import { TopologyReadError } from '../../topology-transport';
 import { rateLimitEvidence, type GitHubRateLimitEvidence } from './auth';
 
 /**
@@ -158,7 +160,8 @@ export async function boundedPage(
       signal: AbortSignal.timeout(API_TIMEOUT_MS),
       redirect: 'error',
     });
-  } catch {
+  } catch (error) {
+    if (error instanceof SourceRateLimitError || error instanceof TopologyReadError) throw error;
     throw new GitHubApiError('github api did not respond', 'unreachable');
   }
   if (!response.ok) {

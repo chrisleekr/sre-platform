@@ -15,10 +15,12 @@ import {
   type GrafanaConnectorOptions,
 } from './client';
 import { makeGrafanaTools } from './tools';
+import { grafanaTopology } from './topology';
 
 const GRAFANA_CONNECTOR = {
   type: 'grafana',
   capabilities: {
+    topology: 'inventory',
     availability: 'ready',
     configuration: 'tenant',
     instances: 'multiple',
@@ -44,6 +46,7 @@ export function makeGrafanaConnector(
   options: GrafanaConnectorOptions = {},
 ): IDataSourceConnector {
   return createDataSourceConnector(config, GRAFANA_CONNECTOR, {
+    topology: grafanaTopology(config, fetchImpl, lookup, options),
     entityCoverage: dataSourceEntityCoverage(
       config.id,
       ['alert_context'],

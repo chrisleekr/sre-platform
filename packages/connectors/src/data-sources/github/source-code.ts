@@ -1,8 +1,18 @@
 import type { ConnectorConfig } from '../../registry';
 import type { SourceCodeReader, SourceComparison, SourceRepository } from '../../types';
 import { obj, str } from '../../values';
+import { resolveSourceRepository } from '../../source-repository';
+import { SourceFileNotFoundError } from '../../source-file-error';
+import { topologyFetch } from '../../topology-transport';
 import type { InstallationTokenProvider } from './auth';
-import { GITHUB_API, boundedPage, ghHeaders, parseRepo, type FetchLike } from './client';
+import {
+  GITHUB_API,
+  GitHubApiError,
+  boundedPage,
+  ghHeaders,
+  parseRepo,
+  type FetchLike,
+} from './client';
 
 const MAX_SOURCE_BYTES = 256 * 1024;
 
@@ -71,7 +81,7 @@ function githubSourceUrl(repository: SourceRepository, revision: string, path?: 
 
 function decodeGitHubSource(raw: unknown): string {
   const file = obj(raw);
-  if (file.type !== 'file' || file.encoding !== 'base64' || typeof file.content !== 'string')
+  if (file.encoding !== 'base64' || typeof file.content !== 'string')
     throw new Error('github connector: expected a Base64 repository file');
   const normalized = file.content.replace(/\s+/g, '');
   if (!/^[A-Za-z0-9+/]*={0,2}$/.test(normalized))
@@ -95,6 +105,41 @@ function assertGitHubRepository(config: ConnectorConfig, repository: SourceRepos
   parseRepo(repository.fullName);
 }
 
+async function readRegularBlob(
+  fetchImpl: FetchLike,
+  token: string,
+  repo: string,
+  revision: string,
+  path: string,
+) {
+  const parts = path.split('/');
+  if (parts.length > 32) throw new Error('github connector: source path exceeds depth limit');
+  const bounded = topologyFetch(fetchImpl);
+  const commit = obj(await ghGet(bounded, token, `${repo}/git/commits/${revision}`));
+  if (str(commit.sha)?.toLowerCase() !== revision.toLowerCase())
+    throw new Error('github connector: source commit did not match requested revision');
+  let sha = immutableGitRevision(str(obj(commit.tree).sha) ?? '');
+  // Contents dereferences symlinks. Walk pinned nonrecursive trees so path confinement is real.
+  for (let index = 0; index < parts.length; index++) {
+    const tree = obj(await ghGet(bounded, token, `${repo}/git/trees/${sha}`));
+    if (tree.truncated !== false || !Array.isArray(tree.tree))
+      throw new Error('github connector: incomplete source tree');
+    const entries = tree.tree.map(obj).filter((entry) => entry.path === parts[index]);
+    if (!entries.length) throw new SourceFileNotFoundError();
+    if (entries.length !== 1) throw new Error('github connector: ambiguous source tree entry');
+    const entry = entries[0]!;
+    const leaf = index === parts.length - 1;
+    if (
+      leaf
+        ? entry.type !== 'blob' || !['100644', '100755'].includes(String(entry.mode))
+        : entry.type !== 'tree' || entry.mode !== '040000'
+    )
+      throw new Error('github connector: source path is not a regular file');
+    sha = immutableGitRevision(str(entry.sha) ?? '');
+  }
+  return ghGet(bounded, token, `${repo}/git/blobs/${sha}`);
+}
+
 export function makeGitHubSourceCodeReader(
   config: ConnectorConfig,
   fetchImpl: FetchLike,
@@ -105,6 +150,7 @@ export function makeGitHubSourceCodeReader(
     return auth.token([repository.fullName]);
   };
   return {
+    resolveRepository: (reference) => resolveSourceRepository(config, 'github', reference),
     async resolve(service) {
       const repositories = (await config.repositories?.resolve(service)) ?? [];
       return repositories.map((repository) => ({
@@ -176,12 +222,17 @@ export function makeGitHubSourceCodeReader(
       const immutable = immutableGitRevision(revision);
       const { owner, repo } = parseRepo(repository.fullName);
       const safePath = sourcePath(path);
-      const raw = await ghGet(
+      const raw = await readRegularBlob(
         fetchImpl,
         await tokenFor(repository),
-        `repos/${owner}/${repo}/contents/${safePath.split('/').map(encodeURIComponent).join('/')}`,
-        { ref: immutable },
-      );
+        `repos/${owner}/${repo}`,
+        immutable,
+        safePath,
+      ).catch((error) => {
+        if (error instanceof GitHubApiError && error.status === 404)
+          throw new SourceFileNotFoundError();
+        throw error;
+      });
       return {
         path: safePath,
         revision: immutable,

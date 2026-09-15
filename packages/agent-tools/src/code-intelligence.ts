@@ -25,6 +25,10 @@ import {
   stackAnchors,
 } from './code-intelligence/helpers';
 import type { ToolContext, ToolDefinition } from './types';
+import {
+  resolveTopologyRepositories,
+  topologyRepositoryIdentity,
+} from './code-intelligence/topology';
 
 export * from './code-intelligence/contracts';
 
@@ -40,7 +44,7 @@ export function makeInvestigateCodeTool(
   return {
     name: 'investigate_code',
     description:
-      'Resolve the incident service to authorized repositories and exact revisions, then locate stack paths, symbols, or error text as bounded line-addressed source evidence. Repository and connector selection come from trusted incident context. Default-branch matches are labelled candidate evidence, never deployed proof.',
+      'Use the incident’s exact topology source associations when available, otherwise its legacy catalog context, to locate stack paths, symbols, or error text in authorized repositories. Ambiguous topology never falls back to a similar repository name. Declared revisions are not verified runtime provenance; legacy default-branch matches remain candidate evidence.',
     inputSchema: investigateCodeInput,
     async handler(ctx: ToolContext, input) {
       const incident = await context.incident(ctx.tenantId, ctx.incidentId);
@@ -51,6 +55,7 @@ export function makeInvestigateCodeTool(
         ? ((await context.evidenceIds?.(ctx.tenantId, ctx.incidentId, input.evidenceIds)) ?? [])
         : [];
       const connectors = await ctx.resolveConnectors();
+      const topologySources = await context.sources?.(ctx.tenantId, ctx.incidentId, ctx.service);
       const [
         {
           artifacts,
@@ -60,12 +65,22 @@ export function makeInvestigateCodeTool(
         },
         { repositories, failed: repositoryReadFailed },
       ] = await Promise.all([
-        observeArtifacts(connectors, ctx.service),
-        resolveRepositories(connectors, ctx.service),
+        topologySources
+          ? Promise.resolve({
+              artifacts: [],
+              failed: false,
+              countTruncated: false,
+              readerIncomplete: false,
+            })
+          : observeArtifacts(connectors, ctx.service),
+        topologySources
+          ? resolveTopologyRepositories(connectors, topologySources)
+          : resolveRepositories(connectors, ctx.service),
       ]);
       const anchors = stackAnchors(normalizedText(input.stackTrace));
       const searches = queryAnchors(input, anchors);
       const baseUncertainties = [
+        ...(topologySources ? [topologySources.note] : []),
         ...(artifactReadFailed ? ['one or more runtime artifact readers were unavailable'] : []),
         ...(artifactsCountTruncated
           ? [`runtime artifacts were capped at ${MAX_RUNTIME_ARTIFACTS}`]
@@ -103,7 +118,12 @@ export function makeInvestigateCodeTool(
         return {
           available: true,
           data: {
-            status: candidates.length === 0 ? 'missing_mapping' : 'ambiguous',
+            status:
+              topologySources?.status === 'ambiguous'
+                ? 'ambiguous'
+                : candidates.length === 0
+                  ? 'missing_mapping'
+                  : 'ambiguous',
             artifacts,
             revisions: [],
             evidence: [],
@@ -114,7 +134,9 @@ export function makeInvestigateCodeTool(
                 : `repository candidates tie at the automatic limit of ${MAX_REPOSITORIES}`,
             ],
             requiredSetup: [
-              'confirm the service repository mapping and monorepo path in the service catalog',
+              topologySources
+                ? 'inspect the incident topology matches and source evidence; verify connection scope and resource source declarations'
+                : 'confirm the service repository mapping and monorepo path in the service catalog',
             ],
           },
         };
@@ -132,12 +154,14 @@ export function makeInvestigateCodeTool(
       const uncertainties = [...baseUncertainties];
       for (const target of targets) {
         try {
-          const boundary = await context.deploymentBoundary(
-            ctx.tenantId,
-            ctx.service,
-            target.repository,
-            incidentAt,
-          );
+          const boundary = target.topology
+            ? { current: null, previous: null, firstAfter: null }
+            : await context.deploymentBoundary(
+                ctx.tenantId,
+                ctx.service,
+                target.repository,
+                incidentAt,
+              );
           const resolved = await resolveRevision(target, artifacts, boundary, consume);
           if (resolved) revisions.push({ target, resolved });
         } catch (error) {
@@ -249,6 +273,40 @@ export function makeInvestigateCodeTool(
         uncertainties.push('code investigation provider-call budget exhausted');
 
       const revisionEvidence = revisions.map(({ resolved }) => resolved.evidence);
+      if (topologySources) {
+        let current = false;
+        try {
+          const sources = await context.sources?.(ctx.tenantId, ctx.incidentId, ctx.service);
+          if (sources) {
+            const admitted = await resolveTopologyRepositories(
+              await ctx.resolveConnectors(),
+              sources,
+            );
+            const identities = new Set(admitted.repositories.map(topologyRepositoryIdentity));
+            current = revisions.every(({ target }) =>
+              identities.has(topologyRepositoryIdentity(target)),
+            );
+          }
+        } catch {
+          // A failed authorization recheck cannot release the captured source content.
+        }
+        if (!current)
+          return {
+            available: true,
+            data: {
+              status: 'source_changed',
+              artifacts: [],
+              revisions: [],
+              evidence: [],
+              uncertainties: [
+                'Source access or topology associations changed or could not be revalidated during the read.',
+              ],
+              requiredSetup: [
+                'Refresh topology source evidence before reading this configuration again.',
+              ],
+            },
+          };
+      }
       for (const revision of revisionEvidence) uncertainties.push(...revision.uncertainties);
       return {
         available: true,

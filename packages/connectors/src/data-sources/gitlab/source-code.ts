@@ -2,6 +2,8 @@ import type { ConnectorConfig } from '../../registry';
 import type { HostLookup } from '../../ssrf';
 import type { SourceCodeReader, SourceComparison, SourceRepository } from '../../types';
 import { obj, str } from '../../values';
+import { resolveSourceRepository } from '../../source-repository';
+import { SourceFileNotFoundError } from '../../source-file-error';
 import { connectorToken } from './auth';
 import {
   API_TIMEOUT_MS,
@@ -102,6 +104,7 @@ export async function makeGitLabSourceCodeReader(
     return sanitizeGitLab(new URL(projectUrl(repository, suffix, query)).pathname, response.json);
   };
   return {
+    resolveRepository: (reference) => resolveSourceRepository(config, 'gitlab', reference),
     async resolve(service) {
       const repositories = (await config.repositories?.resolve(service)) ?? [];
       return repositories.map((repository) => ({
@@ -175,6 +178,7 @@ export async function makeGitLabSourceCodeReader(
           redirect: 'error',
         },
       );
+      if (response.status === 404) throw new SourceFileNotFoundError();
       if (!response.ok) throw new Error(`gitlab api ${response.status}`);
       const text = await readBoundedText(response, MAX_SOURCE_BYTES);
       if (text.includes('\0')) throw new Error('gitlab connector: repository file is binary');

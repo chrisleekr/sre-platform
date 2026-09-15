@@ -78,6 +78,8 @@ export interface TopologyCollection {
 }
 
 export interface TopologyScanProgress {
+  /** Fixed provider identities for APIs without list pagination. No provider payloads or credentials. */
+  inventory?: Array<{ id: string; name: string; namespace?: string }>;
   cursor: string | null;
   incomplete: boolean;
 }
@@ -88,6 +90,8 @@ export interface TopologyRuntimeScope {
 }
 
 export interface TopologyDiscoveryOptions {
+  /** Previously persisted Kubernetes authority from this connector generation. */
+  clusterAuthority?: string;
   /** Verified Kubernetes namespaces from this tenant's enabled inventory connections. */
   runtimeScopes?: TopologyRuntimeScope[];
   scans?: Record<string, TopologyScanProgress>;

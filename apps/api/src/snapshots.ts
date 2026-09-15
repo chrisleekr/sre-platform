@@ -51,6 +51,7 @@ export interface InfraSnapshotDto {
   error?: string;
   kind?: 'pod' | 'node';
   namespace?: string;
+  labels?: Record<string, string>;
   phase?: string;
   containers?: InfraContainerDto[];
   pressures?: string[];
@@ -289,18 +290,18 @@ export function toGitOpsApplication(
   };
 }
 
-/** A valid ISO timestamp from a possibly-malformed value, else undefined — avoids a `toISOString`
- *  RangeError on non-ISO connector data (these values flow in from a tenant's own external API). */
+/** Reject invalid connector timestamps instead of inventing fresh evidence. */
 function isoOrNull(v: unknown): string | undefined {
-  const s = typeof v === 'string' ? v : v instanceof Date ? v.toISOString() : '';
-  const t = Date.parse(s);
+  const t = v instanceof Date ? v.getTime() : Date.parse(typeof v === 'string' ? v : '');
   return Number.isNaN(t) ? undefined : new Date(t).toISOString();
 }
 
 export function toInfraSnapshot(
   s: NormalizedSnapshot,
   dataSource: { id: string; name: string } = { id: '', name: 'Kubernetes' },
-): InfraSnapshotDto {
+): InfraSnapshotDto | null {
+  const observedAt = isoOrNull(s.observedAt);
+  if (!observedAt) return null;
   const error = metaStr(s.metadata.error);
   const kind =
     s.metadata.kind === 'pod' || s.metadata.kind === 'node' ? s.metadata.kind : undefined;
@@ -308,18 +309,33 @@ export function toInfraSnapshot(
   const phase = metaStr(s.metadata.phase);
   const containers = infraContainers(s.metadata.containers);
   const pressures = infraPressures(s.metadata.pressures);
+  const labels =
+    s.metadata.labels && typeof s.metadata.labels === 'object' && !Array.isArray(s.metadata.labels)
+      ? (Object.fromEntries(
+          Object.entries(s.metadata.labels).filter(
+            ([key, value]) =>
+              [
+                'app.kubernetes.io/name',
+                'app.kubernetes.io/instance',
+                'app.kubernetes.io/component',
+                'app',
+              ].includes(key) &&
+              typeof value === 'string' &&
+              value.length <= 63,
+          ),
+        ) as Record<string, string>)
+      : undefined;
   return {
     dataSourceId: dataSource.id,
     dataSourceName: dataSource.name,
     source: s.source,
     entityId: s.entityId,
     metrics: s.metrics,
-    // observedAt arrives from the cache as an ISO string; validate before serializing (an invalid
-    // value would otherwise throw a RangeError and 500 the panel).
-    observedAt: isoOrNull(s.observedAt) ?? new Date().toISOString(),
+    observedAt,
     ...(error ? { error } : {}),
     ...(kind ? { kind } : {}),
     ...(namespace ? { namespace } : {}),
+    ...(labels ? { labels } : {}),
     ...(phase ? { phase } : {}),
     ...(containers ? { containers } : {}),
     ...(pressures ? { pressures } : {}),
@@ -390,7 +406,9 @@ export function snapshotRoutes(deps: SnapshotRouteDeps): Hono<{ Variables: Tenan
       })),
     );
     const infrastructure = lists.flatMap(({ dataSource, snapshots }) =>
-      snapshots.map((snapshot) => toInfraSnapshot(snapshot, dataSource)),
+      snapshots
+        .filter((snapshot) => snapshot.metadata.kind !== 'collection')
+        .flatMap((snapshot) => toInfraSnapshot(snapshot, dataSource) ?? []),
     );
     return c.json({ infrastructure });
   });

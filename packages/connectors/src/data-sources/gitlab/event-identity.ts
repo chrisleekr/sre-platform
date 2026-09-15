@@ -21,8 +21,9 @@ export function gitLabRevisionKey(
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.(\d{1,9}))?(?:Z|[+-]\d{2}:\d{2})$/,
   );
   if (!timestamp) return undefined;
-  // Date normalizes offsets but truncates sub-millisecond provider precision.
-  const instant = `${new Date(revisedAt).toISOString().slice(0, 19)}.${timestamp[1]?.replace(/0+$/, '') || '0'}Z`;
+  // Date normalizes offsets but truncates sub-millisecond provider precision. The trailing-zero
+  // trim is bounded to the 9 digits the capture above allows, so it cannot backtrack superlinearly.
+  const instant = `${new Date(revisedAt).toISOString().slice(0, 19)}.${timestamp[1]?.replace(/0{1,9}$/, '') || '0'}Z`;
   return `revision:${createHash('sha256')
     .update(JSON.stringify([eventType, projectId, objectId, state, instant]))
     .digest('hex')}`;

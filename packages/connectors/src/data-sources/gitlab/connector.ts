@@ -1,5 +1,7 @@
 import { createDataSourceConnector, defineConnector, type ConnectorConfig } from '../../registry';
 import { repositoryEntityCoverage } from '../../entity-coverage';
+import { repositoryTopology } from '../../repository-topology';
+import { sourceTopologyFetch } from '../../topology-transport';
 import { dnsLookup, type HostLookup } from '../../ssrf';
 import type {
   IDataSourceConnector,
@@ -39,6 +41,7 @@ import { pollGitLabGroup } from './polling';
 const GITLAB_CONNECTOR = {
   type: 'gitlab',
   capabilities: {
+    topology: 'inventory',
     availability: 'ready',
     configuration: 'tenant',
     instances: 'multiple',
@@ -74,6 +77,8 @@ export function makeGitLabConnector(
     return sourceCode;
   };
   const sourceReader: SourceCodeReader = {
+    resolveRepository: (...args) =>
+      getSourceCode().then((reader) => reader.resolveRepository!(...args)),
     resolve: (...args) => getSourceCode().then((reader) => reader.resolve(...args)),
     verifyRevision: (...args) => getSourceCode().then((reader) => reader.verifyRevision(...args)),
     search: (...args) => getSourceCode().then((reader) => reader.search(...args)),
@@ -83,6 +88,9 @@ export function makeGitLabConnector(
   return createDataSourceConnector(config, GITLAB_CONNECTOR, {
     entityCoverage: repositoryEntityCoverage(config.repositories),
     sourceCode: sourceReader,
+    topology: repositoryTopology(config, () =>
+      makeGitLabSourceCodeReader(config, sourceTopologyFetch(fetchImpl), lookup),
+    ),
     pollEvidence: () => pollEvidence,
     async snapshot(): Promise<NormalizedSnapshot[]> {
       pollEvidence = undefined;

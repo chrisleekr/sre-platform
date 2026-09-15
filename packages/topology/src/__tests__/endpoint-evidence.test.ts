@@ -13,6 +13,7 @@ import {
 import { networkProbeTopologyEvidence } from '@sre/connectors';
 import { topologyRefKey } from '@sre/contracts';
 import { readTopologyEndpointEvidence } from '../endpoint-evidence';
+import { readDiscoveredTopology } from '../discovery-repo';
 
 const tenantId = randomUUID(),
   otherTenant = randomUUID(),
@@ -100,6 +101,28 @@ const record = async (
   });
   return id;
 };
+
+test('distinguishes configured pending disabled builtin and unsupported capabilities without tenant leakage', async () => {
+  const graph = await readDiscoveredTopology(app.db, tenantId);
+  expect(graph.capabilities).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ type: 'kubernetes', state: 'pending' }),
+      expect.objectContaining({ type: 'prometheus', state: 'collected' }),
+      expect.objectContaining({ type: 'gitlab', state: 'disabled' }),
+      expect.objectContaining({
+        type: 'networkprobe',
+        connectorId: null,
+        mode: 'on_demand',
+        state: 'on_demand',
+      }),
+      expect.objectContaining({ type: 'aws', mode: 'unsupported', state: 'unsupported' }),
+      expect.objectContaining({ type: 'confluence', mode: 'unsupported', state: 'unsupported' }),
+    ]),
+  );
+  expect(
+    JSON.stringify((await readDiscoveredTopology(app.db, otherTenant)).capabilities),
+  ).not.toContain('Private source name');
+});
 
 test('uses audited endpoint facts without a networkprobe connector row or shared-IP identity inference', async () => {
   await record(

@@ -17,10 +17,12 @@ import {
 } from './client';
 import { makePrometheusSli } from './sli';
 import { makePrometheusTools } from './tools';
+import { prometheusTopology } from './topology';
 
 const PROMETHEUS_CONNECTOR = {
   type: 'prometheus',
   capabilities: {
+    topology: 'inventory',
     availability: 'ready',
     configuration: 'tenant',
     instances: 'multiple',
@@ -46,6 +48,7 @@ export function makePrometheusConnector(
   options: PrometheusConnectorOptions = {},
 ): IDataSourceConnector {
   return createDataSourceConnector(config, PROMETHEUS_CONNECTOR, {
+    topology: prometheusTopology(config, fetchImpl, lookup, options),
     entityCoverage: dataSourceEntityCoverage(
       config.id,
       ['metrics'],

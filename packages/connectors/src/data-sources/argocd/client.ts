@@ -2,6 +2,7 @@ import type { ConnectorConfig } from '../../registry';
 import { argoCdUrlError } from '@sre/contracts';
 import { assertSafeHttpOrHttpsUrl, type HostLookup } from '../../ssrf';
 import { obj, str } from '../../values';
+import { topologyReadIssue } from '../../topology-transport';
 
 /** Injectable so the REST calls are unit-testable without the network. */
 export type FetchLike = typeof fetch;
@@ -374,6 +375,7 @@ export async function checkedGet(
   try {
     response = await fetchImpl(buildGetUrl(client.base, path, query), aInit(client));
   } catch (error) {
+    if (topologyReadIssue(error)) throw error;
     const tls = isTlsFailure(error);
     throw new ArgoApiError(
       tls ? 'argocd TLS verification failed' : 'argocd did not respond',

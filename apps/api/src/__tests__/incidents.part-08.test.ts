@@ -10,6 +10,7 @@ import {
   investigationSubjects,
   jobs,
   services,
+  serviceRuntimeBindings,
   transitionIncidentTx,
   withTenant,
 } from '@sre/db';
@@ -270,6 +271,15 @@ describe('POST /incidents/from-observation', () => {
       criticality: 'tier2',
     });
     const current = __fixture.observationSnapshots.get(`${__fixture.tenantC}:kubernetes`) ?? [];
+    await __fixture.admin.db.insert(serviceRuntimeBindings).values({
+      tenantId: __fixture.tenantC,
+      serviceName,
+      connectorId: __fixture.observationSourceId,
+      namespace: serviceName,
+      environment: 'test',
+      confirmedByUserId: __fixture.tenantCUserId,
+      rationale: 'Confirmed fixture runtime',
+    });
     __fixture.observationSnapshots.set(`${__fixture.tenantC}:kubernetes`, [
       ...current,
       {
@@ -360,13 +370,13 @@ describe('POST /incidents/from-observation', () => {
       headers: {
         authorization: `Bearer ${token}`,
         'content-type': 'application/json',
-        'content-length': String(2 * 1024 + 1),
+        'content-length': String(16 * 1024 + 1),
       },
       body: '{}',
     });
     expect(declared.status).toBe(413);
 
-    const chunk = new TextEncoder().encode('x'.repeat(2 * 1024 + 1));
+    const chunk = new TextEncoder().encode('x'.repeat(16 * 1024 + 1));
     const streamed = await __fixture.api.request(
       new Request('http://localhost/incidents/from-observation', {
         method: 'POST',

@@ -31,9 +31,16 @@ export type ObservationSubject =
   | { kind: 'connector_verification'; connectorId: string }
   | { kind: 'topology_service'; service: string };
 
-export class ObservationNotFoundError extends Error {}
-export class ObservationNotActionableError extends Error {}
-export class ObservationUnavailableError extends Error {}
+import {
+  ObservationNotFoundError,
+  ObservationNotActionableError,
+  ObservationUnavailableError,
+} from './observation-errors';
+export {
+  ObservationNotFoundError,
+  ObservationNotActionableError,
+  ObservationUnavailableError,
+} from './observation-errors';
 
 export interface ResolvedObservation {
   source: string;

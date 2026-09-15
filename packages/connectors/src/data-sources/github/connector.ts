@@ -1,5 +1,7 @@
 import { createDataSourceConnector, defineConnector, type ConnectorConfig } from '../../registry';
 import { repositoryEntityCoverage } from '../../entity-coverage';
+import { repositoryTopology } from '../../repository-topology';
+import { sourceTopologyFetch } from '../../topology-transport';
 import { dnsLookup, type HostLookup } from '../../ssrf';
 import type {
   ConnectorPollEvidence,
@@ -34,6 +36,7 @@ import { makeGitHubTools, mapCommit, mapRun } from './tools';
 const GITHUB_CONNECTOR = {
   type: 'github',
   capabilities: {
+    topology: 'inventory',
     availability: 'ready',
     configuration: 'tenant',
     instances: 'multiple',
@@ -61,6 +64,18 @@ export function makeGitHubConnector(
   return createDataSourceConnector(config, GITHUB_CONNECTOR, {
     entityCoverage: repositoryEntityCoverage(config.repositories),
     sourceCode: makeGitHubSourceCodeReader(config, fetchImpl, auth),
+    topology: repositoryTopology(config, () => {
+      const bounded = sourceTopologyFetch(
+        fetchImpl,
+        (response) =>
+          response.status === 403 && response.headers.get('x-ratelimit-remaining') === '0',
+      );
+      return makeGitHubSourceCodeReader(
+        config,
+        bounded,
+        makeInstallationTokenProvider(config, bounded, GITHUB_API),
+      );
+    }),
     async snapshot(): Promise<NormalizedSnapshot[]> {
       const startedAt = Date.now();
       let rateLimit: GitHubRateLimitEvidence = {};

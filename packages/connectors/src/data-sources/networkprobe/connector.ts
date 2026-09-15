@@ -29,6 +29,7 @@ const DEFAULT_PORT = 443;
 const NETWORK_PROBE_CONNECTOR = {
   type: 'networkprobe',
   capabilities: {
+    topology: 'on_demand',
     availability: 'ready',
     configuration: 'builtin',
     instances: 'singleton',
@@ -235,6 +236,9 @@ const defaultHttpHead: ProbeSocketDeps['httpHead'] = (
 ) =>
   new Promise<{ status: number; headers: Record<string, string> }>((resolve, reject) => {
     const settle = settleOnce();
+    // rejectUnauthorized:false for the same reason as the TLS probe above: a HEAD reachability
+    // check must still report the status of a host whose certificate is expired or self-signed.
+    // Nothing authenticating is sent, so a peer that fails validation learns only the request line.
     const socket =
       scheme === 'https'
         ? tls.connect({ host: ip, port, servername, rejectUnauthorized: false })

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { sourceFileReply } from './source-file.fixture';
 import {
   CRED,
   PEM,
@@ -37,22 +38,88 @@ describe('GitHub source-code capability', () => {
     recentEvents: async () => [],
   };
 
+  it('discovers source-declared services through the actual GitHub reader at an immutable commit', async () => {
+    const entries = await catalog.resolve();
+    const { fetchImpl, calls } = makeFetch(
+      withMint((url) =>
+        sourceFileReply(
+          url,
+          'services/app/catalog-info.yaml',
+          'apiVersion: backstage.io/v1alpha1\nkind: Component\nmetadata:\n  name: checkout\nspec:\n  type: service\n  lifecycle: production\n  owner: team\n',
+        ),
+      ),
+    );
+    const connector = makeGitHubConnector(
+      { ...cfg(), repositories: { ...catalog, search: async () => entries } },
+      fetchImpl,
+      publicLookup,
+    );
+    const result = await connector.topology!.discover();
+    expect(result.collections.find((row) => row.key === 'service-declarations')).toMatchObject({
+      completeness: 'complete',
+      entities: [expect.objectContaining({ name: 'checkout', kind: 'service' })],
+      relations: [
+        expect.objectContaining({
+          kind: 'declared_in',
+          attributes: expect.objectContaining({ revision: sha }),
+        }),
+      ],
+    });
+    const commitCalls = calls.filter((call) => call.url.includes('/git/commits/'));
+    expect(commitCalls.length).toBeGreaterThan(0);
+    expect(commitCalls.every((call) => call.url.endsWith(`/git/commits/${sha}`))).toBe(true);
+  });
+
+  it('retains rate-limit classification through the GitHub client without continuing the source scan', async () => {
+    const entries = await catalog.resolve();
+    const { fetchImpl, calls } = makeFetch(
+      withMint((url) => (url.includes('/commits/') ? { status: 429 } : { status: 404 })),
+    );
+    const connector = makeGitHubConnector(
+      { ...cfg(), repositories: { ...catalog, search: async () => entries } },
+      fetchImpl,
+      publicLookup,
+    );
+    const result = await connector.topology!.discover();
+    expect(result.collections.find((row) => row.key === 'service-declarations')?.issue).toBe(
+      'rate_limited',
+    );
+    expect(calls.filter((call) => call.url.includes('/commits/'))).toHaveLength(1);
+    expect(calls.some((call) => call.url.includes('/contents/'))).toBe(false);
+  });
+
+  it.each(['metadata', 'token'])(
+    'stops source discovery when installation %s requests are rate limited',
+    async (stage) => {
+      const entries = await catalog.resolve();
+      const fallback = withMint(() => ({ status: 404 }));
+      const { fetchImpl, calls } = makeFetch((url, init) => {
+        if (
+          (stage === 'metadata' && /\/app\/installations\/[^/]+$/.test(url)) ||
+          (stage === 'token' && url.includes('/access_tokens'))
+        )
+          return { status: 429 };
+        return fallback(url, init);
+      });
+      const connector = makeGitHubConnector(
+        { ...cfg(), repositories: { ...catalog, search: async () => entries } },
+        fetchImpl,
+        publicLookup,
+      );
+      const result = await connector.topology!.discover();
+      expect(result.collections.find((row) => row.key === 'service-declarations')?.issue).toBe(
+        'rate_limited',
+      );
+      expect(
+        calls.some((call) => call.url.includes('/commits/') || call.url.includes('/contents/')),
+      ).toBe(false);
+    },
+  );
+
   it('normalizes exact-revision source instead of returning Base64 provider data', async () => {
     const source = 'export function checkout() { return "ok"; }\n';
     const { fetchImpl, calls } = makeFetch(
-      withMint((url) => {
-        if (url.includes('/commits/')) return { status: 200, json: { sha } };
-        if (url.includes('/contents/services/app/src/index.ts'))
-          return {
-            status: 200,
-            json: {
-              type: 'file',
-              encoding: 'base64',
-              content: Buffer.from(source).toString('base64'),
-            },
-          };
-        return { status: 404 };
-      }),
+      withMint((url) => sourceFileReply(url, 'services/app/src/index.ts', source)),
     );
     const connector = makeGitHubConnector(
       { ...cfg(), repositories: catalog },
@@ -77,7 +144,7 @@ describe('GitHub source-code capability', () => {
       text: source,
       providerUrl: `https://github.com/octo/app/blob/${sha}/services/app/src/index.ts`,
     });
-    expect(calls.some((call) => call.url.endsWith(`?ref=${sha}`))).toBe(true);
+    expect(calls.some((call) => call.url.endsWith(`/git/commits/${sha}`))).toBe(true);
   });
 
   it('requests text-match discovery metadata and preserves incomplete search state', async () => {

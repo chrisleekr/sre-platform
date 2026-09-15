@@ -4,6 +4,8 @@ import { dataSourceEntityCoverage } from '../../entity-coverage';
 import { resolveTimeMs } from '../../time';
 import type { ConnectorTool, IDataSourceConnector, ProbeResult, TriageContext } from '../../types';
 import { obj, str } from '../../values';
+import { datadogTopology } from './topology';
+import { topologyFetch } from '../../topology-transport';
 
 /** Injectable so the REST calls are unit-testable without the network. */
 type FetchLike = typeof fetch;
@@ -45,6 +47,7 @@ const DEFAULT_TO = 'now';
 const DATADOG_CONNECTOR = {
   type: 'datadog',
   capabilities: {
+    topology: 'inventory',
     availability: 'ready',
     configuration: 'tenant',
     instances: 'multiple',
@@ -125,7 +128,7 @@ async function ddGet(
     signal: AbortSignal.timeout(API_TIMEOUT_MS),
     redirect: 'error',
   });
-  if (!res.ok) throw new Error(`datadog api ${res.status}`);
+  if (!res.ok) throw datadogHttpError(res);
   return res.json();
 }
 
@@ -147,11 +150,31 @@ async function ddPost(
     signal: AbortSignal.timeout(API_TIMEOUT_MS),
     redirect: 'error',
   });
-  if (!res.ok) throw new Error(`datadog api ${res.status}`);
+  if (!res.ok) throw datadogHttpError(res);
   return res.json();
 }
 
 type SearchDomain = 'logs' | 'spans' | 'events' | 'error_tracking';
+
+function datadogHttpError(response: Response) {
+  const header = response.status === 429 ? response.headers.get('retry-after') : null;
+  const delay =
+    header && /^\d+$/.test(header)
+      ? Number(header) * 1000
+      : header
+        ? Date.parse(header) - Date.now()
+        : 300_000;
+  return Object.assign(new Error(`datadog api ${response.status}`), {
+    status: response.status,
+    ...(response.status === 429
+      ? {
+          retryAfterMs: Number.isFinite(delay)
+            ? Math.max(300_000, Math.min(delay, 86_400_000))
+            : 300_000,
+        }
+      : {}),
+  });
+}
 
 /**
  * Map a search domain to its fixed read path and request body. The bodies are NOT uniform across
@@ -319,7 +342,8 @@ function makeDatadogTools(config: ConnectorConfig, fetchImpl: FetchLike): Connec
 /**
  * Creates a Datadog adapter with bounded logs, metrics, events, and monitor reads.
  *
- * @remarks This adapter is on-demand; its probe validates both API and application keys.
+ * @remarks Investigation tools read on demand; topology discovery is scheduled separately.
+ * The probe validates both API and application keys, without requiring APM.
  * @param config - Tenant-scoped Datadog settings and credential accessor.
  * @param fetchImpl - HTTP transport used for Datadog API requests.
  */
@@ -328,6 +352,39 @@ export function makeDatadogConnector(
   fetchImpl: FetchLike = fetch,
 ): IDataSourceConnector {
   return createDataSourceConnector(config, DATADOG_CONNECTOR, {
+    topology: datadogTopology(config, () => {
+      const boundedFetch = topologyFetch(fetchImpl);
+      return {
+        async logs(body) {
+          return ddPost(
+            boundedFetch,
+            resolveBase(config.settings),
+            await resolveHeaders(config),
+            '/api/v2/logs/events/search',
+            body,
+          );
+        },
+        async spans() {
+          const { path, body } = buildSearch('spans', '*', 'now-15m', 'now', MAX_LIMIT, Date.now());
+          return ddPost(
+            boundedFetch,
+            resolveBase(config.settings),
+            await resolveHeaders(config),
+            path,
+            body,
+          );
+        },
+        async catalog(path, query) {
+          return ddGet(
+            boundedFetch,
+            resolveBase(config.settings),
+            await resolveHeaders(config),
+            path,
+            query,
+          );
+        },
+      };
+    }),
     entityCoverage: dataSourceEntityCoverage(
       config.id,
       ['metrics', 'logs'],

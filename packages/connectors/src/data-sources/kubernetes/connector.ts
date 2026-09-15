@@ -22,6 +22,7 @@ import {
   withinWindow,
 } from './runtime';
 import { makeK8sTools } from './tools';
+import { kubernetesTopology } from './topology';
 
 /** Injectable so the REST calls are unit-testable without the network. */
 type FetchLike = typeof fetch;
@@ -30,6 +31,7 @@ const MAX_RUNTIME_POD_PAGES = 5;
 const KUBERNETES_CONNECTOR = {
   type: 'kubernetes',
   capabilities: {
+    topology: 'inventory',
     availability: 'ready',
     configuration: 'tenant',
     instances: 'multiple',
@@ -55,6 +57,7 @@ export function makeKubernetesConnector(
   const namespace = str(config.settings.namespace) ?? null;
   const clusterName = str(config.settings.name) ?? null;
   return createDataSourceConnector(config, KUBERNETES_CONNECTOR, {
+    topology: kubernetesTopology(config, fetchImpl, lookup),
     entityCoverage: kubernetesEntityCoverage(namespace, clusterName, config.id),
     runtimeArtifacts: {
       async observe(service) {
@@ -84,14 +87,31 @@ export function makeKubernetesConnector(
       const out: NormalizedSnapshot[] = [];
       const ns = str(config.settings.namespace);
 
-      // A blank namespace means the cluster-wide collection, matching the setup wizard and the
-      // ClusterRoleBinding it installs. Both reads stay bounded to one page.
       const podPath = ns
         ? `/api/v1/namespaces/${encodeURIComponent(ns)}/pods?limit=200`
         : '/api/v1/pods?limit=200';
-      const podsRaw = await kjson(podPath);
-      for (const raw of itemsOf(podsRaw))
-        out.push(podSnapshot(config.tenantId, ns, raw, observedAt));
+      let nextPath: string | null = podPath;
+      for (let page = 0; nextPath && page < MAX_RUNTIME_POD_PAGES; page += 1) {
+        const response = await kjson(nextPath);
+        for (const raw of itemsOf(response))
+          out.push(podSnapshot(config.tenantId, ns, raw, observedAt));
+        const continuation = str(obj(obj(response).metadata).continue);
+        nextPath = continuation ? `${podPath}&continue=${encodeURIComponent(continuation)}` : null;
+      }
+      // An explicit empty success differs from an expired cache or a truncated collection.
+      out.push({
+        tenantId: config.tenantId,
+        source: 'kubernetes',
+        entityId: 'collection/pods',
+        metrics: {},
+        metadata: {
+          kind: 'collection',
+          resource: 'pods',
+          namespace: ns ?? null,
+          completeness: nextPath ? 'partial' : 'complete',
+        },
+        observedAt,
+      });
 
       // Node health is additive, so a failed cluster-scoped read must not discard healthy pods. It
       // still emits a sanitized marker so the dashboard does not silently imply complete coverage.

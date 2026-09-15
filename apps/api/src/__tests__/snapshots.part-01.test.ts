@@ -22,6 +22,7 @@ import {
 
 import { makeSnapshotCache } from '@sre/queue';
 
+import { toInfraSnapshot } from '../snapshots';
 import { createFixture } from './snapshots.fixture';
 import { bindTestIdentity } from './auth-test-support';
 
@@ -577,4 +578,21 @@ describe('GET /deployments limit clamp', () => {
     expect(body.deployments).toHaveLength(100); // clamped from 99999
     expect(body.nextCursor).not.toBeNull(); // the 101st row is on the next page
   });
+});
+
+test('infrastructure projection rejects invalid observation times and preserves valid timestamps', () => {
+  const snapshot = {
+    tenantId: 'tenant',
+    source: 'kubernetes' as const,
+    entityId: 'pod',
+    metrics: {},
+    metadata: {},
+  };
+  for (const observedAt of [new Date(NaN), 'invalid', ''])
+    expect(
+      toInfraSnapshot({ ...snapshot, observedAt } as Parameters<typeof toInfraSnapshot>[0]),
+    ).toBeNull();
+  expect(
+    toInfraSnapshot({ ...snapshot, observedAt: new Date('2026-09-01T01:00:00Z') }),
+  ).toMatchObject({ observedAt: '2026-09-01T01:00:00.000Z' });
 });

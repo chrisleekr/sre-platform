@@ -99,7 +99,7 @@ export function topologyRoutes(deps: TopologyRoutesDeps): Hono<{ Variables: Tena
         })),
       )
     ).flatMap(({ dataSource, snapshots }) =>
-      snapshots.map((snapshot) => toInfraSnapshot(snapshot, dataSource)),
+      snapshots.flatMap((snapshot) => toInfraSnapshot(snapshot, dataSource) ?? []),
     );
     const incidentServices = new Set(activeIncidentServices);
     const kubernetesServices = new Set(
