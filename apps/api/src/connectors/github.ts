@@ -1,4 +1,5 @@
 import { githubPrivateKey, githubWebhookSecret } from '@sre/connectors';
+import { issueManagementSchema } from '@sre/connectors';
 import { connectorConfigs, connectorCredentialKey, type SecretStore, type Tx } from '@sre/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { GitHubSettings } from './contracts';
@@ -68,6 +69,11 @@ export function parseGitHubRepositorySettings(
 export function parseGitHubSettings(input: unknown): GitHubSettings | null {
   const raw = requestObject(input);
   if (!raw) return null;
+  if (
+    raw.issueManagement !== undefined &&
+    !issueManagementSchema.safeParse(raw.issueManagement).success
+  )
+    return null;
   const appId = githubAppId(raw.appId);
   const installationId = positiveId(raw.installationId);
   if (!appId || !installationId) return null;
@@ -93,6 +99,9 @@ export function parseGitHubSettings(input: unknown): GitHubSettings | null {
   return {
     appId,
     installationId,
+    ...(raw.issueManagement !== undefined
+      ? { issueManagement: issueManagementSchema.parse(raw.issueManagement) }
+      : {}),
     ...(repo ? { repo } : {}),
     ...(service ? { service } : {}),
     ...(accountLogin ? { accountLogin } : {}),

@@ -1,20 +1,9 @@
-import type { Tx } from '@sre/db';
-import { sql } from 'drizzle-orm';
+export { lockConnectorLifecycle } from '@sre/db';
 
 export function requestObject(input: unknown): Record<string, unknown> | null {
   return input !== null && typeof input === 'object' && !Array.isArray(input)
     ? (input as Record<string, unknown>)
     : null;
-}
-
-export async function lockConnectorLifecycle(
-  tx: Tx,
-  tenantId: string,
-  connectorId: string,
-): Promise<void> {
-  await tx.execute(
-    sql`select pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${connectorId}))`,
-  );
 }
 
 export function dataSourceName(input: unknown): string | null {

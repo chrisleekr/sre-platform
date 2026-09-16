@@ -17,3 +17,4 @@ export * from './search-incident-evidence';
 export * from './search-runbooks';
 export * from './slo-status';
 export * from './types';
+export * from './issue-actions';

@@ -1,4 +1,6 @@
 import { createDataSourceConnector, defineConnector, type ConnectorConfig } from '../../registry';
+import { makeGitLabIssues } from './issues';
+import { issueReadTools } from '../../issue-read-tools';
 import { repositoryEntityCoverage } from '../../entity-coverage';
 import { repositoryTopology } from '../../repository-topology';
 import { sourceTopologyFetch } from '../../topology-transport';
@@ -88,6 +90,7 @@ export function makeGitLabConnector(
   return createDataSourceConnector(config, GITLAB_CONNECTOR, {
     entityCoverage: repositoryEntityCoverage(config.repositories),
     sourceCode: sourceReader,
+    issues: makeGitLabIssues(config, fetchImpl, lookup),
     topology: repositoryTopology(config, () =>
       makeGitLabSourceCodeReader(config, sourceTopologyFetch(fetchImpl), lookup),
     ),
@@ -236,7 +239,10 @@ export function makeGitLabConnector(
         },
       };
     },
-    tools: () => makeGitLabTools(config, fetchImpl, lookup),
+    tools: () => [
+      ...makeGitLabTools(config, fetchImpl, lookup),
+      ...issueReadTools(makeGitLabIssues(config, fetchImpl, lookup)),
+    ],
     async probe(): Promise<ProbeResult> {
       const warnings: string[] = [];
       let base: string;

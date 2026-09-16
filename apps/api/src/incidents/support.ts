@@ -70,6 +70,8 @@ export const MAX_ACTIVE_LOOKUP_BODY_BYTES = 384 * 1024;
 export const MAX_FEEDBACK_BODY_BYTES = 8 * 1024;
 export const MAX_ENTITY_MAPPING_BODY_BYTES = 16 * 1024;
 export const MAX_RELATIONSHIP_BODY_BYTES = 64 * 1024;
+// Allow six-byte JSON escapes for every bounded issue field plus envelope overhead.
+export const MAX_ISSUE_BODY_BYTES = 160 * 1024;
 export const MAX_POSTMORTEM_BODY_BYTES = 256 * 1024;
 export const MANUAL_SEVERITIES = new Set(['sev1', 'sev2', 'sev3']);
 export const DEFAULT_MANUAL_INCIDENTS_PER_MINUTE = 5;

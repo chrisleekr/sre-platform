@@ -4,6 +4,7 @@ import {
   countIncidentsByScope,
   listIncidents,
   listIncidentsPage,
+  presentIncidentTitles,
   readIncidentFreeStatus,
   type IncidentFreeStatusSnapshot,
   type IncidentListItem,
@@ -143,7 +144,11 @@ export function registerIncidentListRoutes(
         countIncidentsByScope(deps.db, tenantId, 'incident'),
       ]);
       return c.json({
-        incidents: page.incidents.map(incidentQueueState),
+        incidents: await presentIncidentTitles(
+          deps.db,
+          tenantId,
+          page.incidents.map(incidentQueueState),
+        ),
         nextCursor: state !== 'open' && page.nextCursor ? encodeCursor(page.nextCursor) : null,
         counts,
         operationalCounts,
@@ -159,7 +164,9 @@ export function registerIncidentListRoutes(
     const incidents = await listIncidents(deps.db, tenantId, {
       status,
     });
-    return c.json({ incidents: incidents.map(incidentQueueState) });
+    return c.json({
+      incidents: await presentIncidentTitles(deps.db, tenantId, incidents.map(incidentQueueState)),
+    });
   });
 
   app.post(

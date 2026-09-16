@@ -6,6 +6,7 @@ import { registerIncidentDetailRoutes } from './incidents/detail';
 import { registerIncidentFeedbackRoutes } from './incidents/feedback';
 import { registerIncidentLifecycleRoutes } from './incidents/lifecycle';
 import { registerIncidentListRoutes } from './incidents/list';
+import { registerIncidentIssueRoutes } from './incidents/issues';
 import { registerIncidentPostmortemRoutes } from './incidents/postmortem';
 import { registerPostmortemActionItemRoutes } from './incidents/postmortem-action-items';
 import { registerIncidentRelationshipRoutes } from './incidents/relationships';
@@ -80,6 +81,7 @@ export function incidentRoutes(deps: IncidentRouteDeps): Hono<{ Variables: Tenan
     );
 
   registerIncidentListRoutes(app, deps);
+  registerIncidentIssueRoutes(app, deps);
   registerIncidentDetailRoutes(app, deps);
   registerIncidentFeedbackRoutes(app, deps);
   registerIncidentLifecycleRoutes(app, deps);

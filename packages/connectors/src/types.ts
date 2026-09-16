@@ -213,6 +213,8 @@ export interface EntityCoverageReader {
 }
 
 export interface IDataSourceConnector {
+  /** External issue writes are callable only by the confirmed-action application, never tool binding. */
+  readonly issues?: import('./issues').IssueManager;
   /** Immutable tenant-owned data-source identity. */
   readonly id: string;
   /** Editable responder-facing label; never used as a persistence or routing key. */

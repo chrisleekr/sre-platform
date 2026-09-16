@@ -72,6 +72,32 @@ async function readCalls(tenant: string, incidentId: string) {
 }
 
 describe('recordToolCall persists a redacted output', () => {
+  test('lists only bounded scrubbed summaries without raw request or output payloads', async () => {
+    const id = await recordToolCall(app.db, tenantA, {
+      incidentId: incidentA,
+      tool: 'prometheus_query_range',
+      input: {
+        query: 'up{authorization="Bearer abcdef123456"}',
+        password: 'do-not-project',
+        irrelevant: 'x'.repeat(50_000),
+        namespace: { nested: 'not-a-scalar' },
+      },
+      output: { marker: 'output-must-stay-in-detail' },
+      latencyMs: 1,
+      outcome: 'data',
+    });
+    const page = await toolCallRepo.listIncidentEvidencePage(app.db, tenantA, incidentA);
+    const item = page.evidence.find((row) => row.id === id) as unknown as Record<string, unknown>;
+    expect(item.summary).toEqual(expect.stringContaining('up{'));
+    expect(JSON.stringify(item)).not.toContain('abcdef123456');
+    expect(JSON.stringify(item)).not.toContain('do-not-project');
+    expect(JSON.stringify(item)).not.toContain('output-must-stay-in-detail');
+    expect(item).not.toHaveProperty('input');
+    expect(item).not.toHaveProperty('output');
+    expect(
+      (await toolCallRepo.listIncidentEvidencePage(app.db, tenantB, incidentA)).evidence,
+    ).toEqual([]);
+  });
   test('C1 stores output in the SAME row as input, readable back under the owning tenant (RLS)', async () => {
     // The caller redacts before persist; a `token` key must never reach the store.
     const redactedOutput = { deploys: [{ changeId: 'deploy-marker-1', token: '[REDACTED]' }] };

@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom';
+import { productPath } from '../lib/routes';
 import type { CredentialGetter } from '../lib/request-credentials';
 import { config } from '../config';
 import type { ConnectorSummary } from '../lib/connectors';
@@ -229,7 +231,15 @@ export function SavedConnectors({
                       <div className="min-w-0">
                         <dt className="font-medium text-ink-secondary">Investigation access</dt>
                         <dd>On-demand, read-only tools</dd>
-                        <dd>No background polling</dd>
+                        <dd>
+                          {c.capabilities?.topology === 'inventory' ? (
+                            <Link to={productPath('topology')} className="text-info underline">
+                              Scheduled topology discovery, review coverage
+                            </Link>
+                          ) : (
+                            'No background snapshot polling'
+                          )}
+                        </dd>
                       </div>
                     )}
                   </dl>

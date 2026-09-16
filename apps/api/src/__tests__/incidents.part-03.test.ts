@@ -477,6 +477,8 @@ describe('GET /incidents/:id public detail', () => {
         'createdAt',
         'currentState',
         'deployCorrelated',
+        'displayTitle',
+        'titleSource',
         'engineModel',
         'engineProvider',
         'id',

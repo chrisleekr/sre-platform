@@ -2,6 +2,7 @@ import { isConnectorType } from '@sre/connectors';
 import {
   connectorConfigs,
   connectorCredentialKey,
+  connectorIssueCredentialKey,
   connectorEventCredentialKey,
   gitLabManagementCredentialKey,
   gitlabHookAuthorizations,
@@ -49,6 +50,7 @@ export function registerConnectorDeleteRoutes(
             .limit(1)
             .for('update');
           if (!rows[0]) return null;
+          await deps.secrets.delete(tenantId, connectorIssueCredentialKey(connectorId), tx);
           await deps.secrets.delete(tenantId, connectorCredentialKey(connectorId), tx);
           if (type === 'prometheus')
             await deps.secrets.delete(tenantId, connectorEventCredentialKey(connectorId), tx);

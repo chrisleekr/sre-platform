@@ -125,6 +125,7 @@ export interface KubernetesTestResult {
 }
 
 export interface GitLabSettings {
+  issueManagement?: import('@sre/contracts').IssueManagementSettings;
   baseUrl: string;
   groupId?: string | number;
   groupPath?: string;
@@ -181,6 +182,7 @@ export interface GitLabTestResult {
 }
 
 export interface GitHubSettings {
+  issueManagement?: import('@sre/contracts').IssueManagementSettings;
   appId: string;
   installationId?: string | number;
   accountLogin?: string;
@@ -229,6 +231,7 @@ export interface GitHubTestResult {
     canReadPullRequests?: boolean;
     canReadActions?: boolean;
     readOnlyApp?: boolean;
+    allowedPermissions?: boolean;
     webhookSecretConfigured?: boolean;
   };
   details?: { repositoryCount?: number };

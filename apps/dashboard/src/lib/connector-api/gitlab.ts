@@ -45,6 +45,7 @@ export async function saveGitLabConnector(
     setupId?: string;
     name: string;
     settings: GitLabSettings;
+    issueCredential?: string;
     credential?: string;
     webhookSecret?: string;
     webhookSigningToken?: string;
@@ -65,6 +66,7 @@ export async function saveGitLabConnector(
         name: body.name,
         ...(body.setupId ? { setupId: body.setupId } : {}),
         settings: body.settings,
+        ...(body.issueCredential ? { issueCredential: body.issueCredential } : {}),
         ...(body.credential ? { credential: body.credential } : {}),
         ...(body.webhookSecret ? { webhookSecret: body.webhookSecret } : {}),
         ...(body.webhookSigningToken ? { webhookSigningToken: body.webhookSigningToken } : {}),

@@ -146,6 +146,7 @@ export function registerGitHubManifestRoutes(
         pull_requests: 'read',
         actions: 'read',
         deployments: 'read',
+        issues: 'read',
       },
       default_events: [...GITHUB_APP_EVENTS],
     };

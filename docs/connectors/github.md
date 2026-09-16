@@ -85,7 +85,8 @@ shared with another product.
    replace it on both sides if necessary.
 5. Under **Permissions & events**, grant the read permissions listed above. Install the App on the
    account and repositories you want to investigate. Accept installation permission changes if you
-   edited an existing App. SRE Platform rejects write permissions.
+   edited an existing App. Write permissions are rejected except Issues when you explicitly enable
+   issue management below.
 6. Choose **Public HTTPS API** for a deployed platform. The webhook address is generated from the
    platform's deployment configuration. There is no API URL to enter. If public delivery is
    unavailable, ask the platform administrator to correct the deployment's public HTTPS API URL.
@@ -126,16 +127,31 @@ relays. No separate command or restart is needed.
 
 Install the App for all repositories responders may need, or a managed subset, then choose the
 installed account here. The panel shows which permissions that installation actually granted, and
-warns if any of them is write rather than read.
+warns about write permissions. Only Issues write can be enabled for confirmed issue management.
 
 ### 3. Coverage
 
 ![Installation-wide repository coverage](../assets/screenshots/add-github-3-coverage-light.png#only-light)
 ![Installation-wide repository coverage](../assets/screenshots/add-github-3-coverage-dark.png#only-dark)
 
-What the installation can actually see, so you find out here rather than mid-incident. There is no
-repository-by-repository selection inside the platform: the catalog follows the installation's
-current GitHub grant.
+The read catalog follows the installation's current GitHub grant. Issue writes use a separate
+explicit repository allowlist below.
+
+#### Optional issue management
+
+Issue reads need the App's **Issues → Read-only** permission. New Apps request this automatically;
+update an existing App's permissions and accept the change for its installation.
+
+To allow changes:
+
+1. In GitHub App **Permissions & events → Repository permissions**, set **Issues → Read and write**.
+2. Save and approve the installation's updated permissions. Keep other permissions read-only.
+3. In SRE Platform's connection coverage step, enable **Allow confirmed issue changes**.
+4. Enter allowed full repository paths, one per line, then save and verify the connection.
+
+Only catalog repositories on this list can be changed. Each issue request uses a token restricted
+to one repository and Issues permission. Investigation tools remain read-only. See
+[repository issues](../dashboard/incident-workspace.md#repository-issues) for the confirmation flow.
 
 ### 4. Review
 

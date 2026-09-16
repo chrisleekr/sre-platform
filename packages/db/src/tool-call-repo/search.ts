@@ -2,6 +2,7 @@ import { and, desc, eq, lt, or, sql } from 'drizzle-orm';
 import type { Db } from '../client';
 import { withTenant } from '../rls';
 import { agentToolCalls } from '../schema';
+import { evidenceSummary, evidenceSummaryFields } from './summary';
 
 import {
   projectEvidence,
@@ -110,6 +111,14 @@ export async function listIncidentEvidencePage(
         latencyMs: agentToolCalls.latencyMs,
         recordedAt: agentToolCalls.createdAt,
         hasOutput: sql<boolean>`${agentToolCalls.output} is not null`,
+        input: sql<unknown>`jsonb_strip_nulls(jsonb_build_object(${sql.join(
+          evidenceSummaryFields.flatMap((key) => [
+            sql`${key}::text`,
+            sql`case when jsonb_typeof(${agentToolCalls.input}->${key}::text) in ('string', 'number')
+              then ${agentToolCalls.input}->${key}::text else null end`,
+          ]),
+          sql`, `,
+        )}))`,
       })
       .from(agentToolCalls)
       .where(
@@ -129,7 +138,9 @@ export async function listIncidentEvidencePage(
       .orderBy(desc(agentToolCalls.createdAt), desc(agentToolCalls.id))
       .limit(limit + 1);
     const more = rows.length > limit;
-    const evidence = rows.slice(0, limit);
+    const evidence = rows
+      .slice(0, limit)
+      .map(({ input, ...row }) => ({ ...row, summary: evidenceSummary(row.tool, input) }));
     const last = evidence.at(-1);
     return {
       evidence,
@@ -172,6 +183,7 @@ export async function getIncidentEvidence(
     return row
       ? {
           ...row,
+          summary: evidenceSummary(row.tool, row.input),
           projection: projectEvidence(row.tool, row.input, row.output),
           referenceUrl: safeEvidenceReference(row.output, referenceBaseUrl),
         }

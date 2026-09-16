@@ -4,6 +4,7 @@ import {
   connectorConfigs,
   enforceIncidentFeedbackAdmissionTx,
   getIncidentDetail,
+  presentIncidentTitles,
   getIncidentEvidenceProgress,
   getIncidentSummary,
   getInvestigationSubject,
@@ -67,9 +68,9 @@ export function registerIncidentDetailRoutes(
       listIncidentRelations(deps.db, tenantId, id),
     ]);
     if (!incident) return c.json({ error: 'incident not found' }, 404);
+    const [presented] = await presentIncidentTitles(deps.db, tenantId, [incident]);
     return c.json({
-      ...incident,
-      title: publicIncidentTitle(incident.title),
+      ...presented,
       relations: publicIncidentRelations(relations),
     });
   });
@@ -239,11 +240,9 @@ export function registerIncidentDetailRoutes(
       ...signal,
       alertName: signal.alertName ? scrubSecrets(signal.alertName) : signal.alertName,
     }));
+    const [presented] = await presentIncidentTitles(deps.db, tenantId, [incident]);
     return c.json({
-      ...safeAssessment({
-        ...incident,
-        title: publicIncidentTitle(incident.title),
-      })!,
+      ...safeAssessment(presented!)!,
       viewerUserId: userId ?? null,
       progress,
       signals: publicSignals,

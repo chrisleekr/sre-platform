@@ -1,4 +1,5 @@
 import { requestErrorMessage } from '../lib/request-error';
+import { IssueAccessSettings } from './connector-setup/IssueAccessSettings';
 import type { PrepareDelivery } from '../lib/connector-delivery';
 import { usePreparedDelivery } from './connector-setup/usePreparedDelivery';
 import { DeliveryPreparationStatus } from './connector-setup/DeliveryPreparationStatus';
@@ -91,6 +92,9 @@ export function GitHubConnectWizard({
   onClose,
 }: GitHubConnectWizardProps) {
   const [step, setStep] = useState(1);
+  const [issueManagement, setIssueManagement] = useState(
+    initialSettings?.issueManagement ?? { enabled: false, repositories: [] as string[] },
+  );
   const [dataSourceId, setDataSourceId] = useState(connectorId);
   const [dataSourceName, setDataSourceName] = useState(initialName ?? 'GitHub');
   const [setupPath, setSetupPath] = useState<SetupPath>('dedicated');
@@ -144,7 +148,9 @@ export function GitHubConnectWizard({
     () => installations.find((item) => String(item.id) === installationId),
     [installationId, installations],
   );
-  const writePermissions = selectedInstallation?.writePermissions ?? [];
+  const writePermissions = (selectedInstallation?.writePermissions ?? []).filter(
+    (name) => name !== 'issues' || !issueManagement.enabled,
+  );
 
   useEffect(() => {
     if (!manifestCallback || completionStarted.current) return;
@@ -335,6 +341,10 @@ export function GitHubConnectWizard({
       );
       return;
     }
+    if (issueManagement.enabled && !issueManagement.repositories.some((value) => value.trim())) {
+      setError('Select at least one repository for issue management.');
+      return;
+    }
     setError('');
     setStep(4);
   };
@@ -357,6 +367,12 @@ export function GitHubConnectWizard({
           name: dataSourceName.trim(),
           settings: {
             appId: appId.trim(),
+            issueManagement: {
+              ...issueManagement,
+              repositories: issueManagement.repositories
+                .map((value) => value.trim())
+                .filter(Boolean),
+            },
             installationId,
             accountLogin: selectedInstallation.accountLogin,
             repositorySelection: selectedInstallation.repositorySelection,
@@ -449,6 +465,13 @@ export function GitHubConnectWizard({
         retry={preparation.retry}
       />
       <GitHubAppStep view={view} />
+      {step === 3 && (
+        <IssueAccessSettings
+          provider="github"
+          value={issueManagement}
+          onChange={setIssueManagement}
+        />
+      )}
       <GitHubRemainingSteps view={view} />
     </SetupDialog>
   );

@@ -212,10 +212,20 @@ export async function listGitHubRepositories(
           options.afterRepositoryId
             ? gt(githubRepositories.repositoryId, options.afterRepositoryId)
             : undefined,
-          query ? sql`position(${query} in lower(${githubRepositories.fullName})) > 0` : undefined,
+          query
+            ? or(
+                eq(githubRepositories.repositoryId, query),
+                sql`position(${query} in lower(${githubRepositories.fullName})) > 0`,
+              )
+            : undefined,
         ),
       )
       .orderBy(
+        ...(query && options.afterRepositoryId === undefined
+          ? [
+              sql`case when ${githubRepositories.repositoryId} = ${query} or lower(${githubRepositories.fullName}) = ${query} then 0 else 1 end`,
+            ]
+          : []),
         options.afterRepositoryId !== undefined
           ? githubRepositories.repositoryId
           : githubRepositories.fullName,

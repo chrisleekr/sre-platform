@@ -45,6 +45,7 @@ export interface ConnectorRoutesDeps {
 }
 
 export interface GitLabSettings {
+  issueManagement?: import('@sre/contracts').IssueManagementSettings;
   baseUrl: string;
   groupId?: string | number;
   groupPath?: string;
@@ -58,6 +59,7 @@ export interface GitLabSettings {
 }
 
 export interface GitHubSettings {
+  issueManagement?: import('@sre/contracts').IssueManagementSettings;
   appId: string;
   installationId: string;
   accountLogin?: string;
