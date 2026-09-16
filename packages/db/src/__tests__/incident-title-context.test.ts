@@ -150,3 +150,68 @@ test('preserves useful titles and excludes arbitrary later messages from recover
     )[0]?.displayTitle,
   ).toBe('Possible database pressure');
 });
+
+test.each([2, 8])(
+  'does not shift provenance boundaries past %i irrelevant opening messages',
+  async (count) => {
+    const row = await createIncident(app.db, tenant, {
+      fingerprint: randomUUID(),
+      alertSource: 'slack',
+      service: 'slack:channel',
+      severity: 'sev3',
+    });
+    const base = 1_700_000_000_000;
+    await withTenant(app.db, tenant, async (tx) => {
+      await tx.insert(incidentMessages).values(
+        Array.from({ length: count }, (_, index) => ({
+          tenantId: tenant,
+          incidentId: row.id,
+          author: 'agent',
+          kind: 'reply',
+          content: 'Irrelevant diagnostic content'.repeat(1000),
+          createdAt: new Date(base + index * 1000),
+        })),
+      );
+      await tx.insert(incidentMessages).values(
+        count === 2
+          ? [
+              {
+                tenantId: tenant,
+                incidentId: row.id,
+                author: 'human',
+                kind: 'text',
+                content:
+                  'Human-initiated via @mention. Prior thread:\n[UROOT]: Later content must not become an opening title',
+                createdAt: new Date(base + count * 1000),
+              },
+            ]
+          : [
+              {
+                tenantId: tenant,
+                incidentId: row.id,
+                author: 'system',
+                kind: 'lifecycle',
+                lifecycleVersion: 0,
+                content: 'Incident open',
+                createdAt: new Date(base + count * 1000),
+              },
+              {
+                tenantId: tenant,
+                incidentId: row.id,
+                author: 'human',
+                kind: 'text',
+                originMessageId: 'late-opener',
+                content: 'Later content must not become an opening title',
+                createdAt: new Date(base + count * 1000),
+              },
+            ],
+      );
+    });
+    expect(
+      (await presentIncidentTitles(app.db, tenant, [{ ...row, title: null }]))[0],
+    ).toMatchObject({
+      title: null,
+      titleSource: 'unavailable',
+    });
+  },
+);

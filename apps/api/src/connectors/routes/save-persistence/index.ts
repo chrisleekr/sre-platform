@@ -163,8 +163,8 @@ export async function persistConnectorConfiguration(
     const identityChanged =
       old &&
       (old.baseUrl !== outcome.settings.baseUrl ||
-        old.groupId !== outcome.settings.groupId ||
-        old.projectId !== outcome.settings.projectId);
+        String(old.groupId ?? '') !== String(outcome.settings.groupId ?? '') ||
+        String(old.projectId ?? '') !== String(outcome.settings.projectId ?? ''));
     if (policy.enabled && identityChanged && !token)
       return 'provide a new issue-write credential when the GitLab target changes';
     if (

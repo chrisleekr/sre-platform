@@ -38,6 +38,9 @@ test('GitLab issue opt-in stores a separate encrypted credential, preserves blan
   const edited = await save({ settings });
   expect(edited.status, await edited.clone().text()).toBe(200);
   expect(await f.secrets.get(f.tenantA, key)).toBe('separate-issue-credential');
+  const normalized = await save({ settings: { ...settings, groupId: '7' } });
+  expect(normalized.status, await normalized.clone().text()).toBe(200);
+  expect(await f.secrets.get(f.tenantA, key)).toBe('separate-issue-credential');
   const moved = await save({ settings: { ...settings, groupId: 8 } });
   expect(moved.status).toBe(400);
   const disabled = await save({
@@ -45,4 +48,21 @@ test('GitLab issue opt-in stores a separate encrypted credential, preserves blan
   });
   expect(disabled.status).toBe(200);
   expect(await f.secrets.get(f.tenantA, key)).toBeNull();
+  const projectSettings = {
+    baseUrl: settings.baseUrl,
+    projectId: 71,
+    issueManagement: settings.issueManagement,
+  };
+  const project = await save({
+    settings: projectSettings,
+    credential: 'read-only-credential',
+    issueCredential: 'project-issue-credential',
+  });
+  expect(project.status, await project.clone().text()).toBe(200);
+  const normalizedProject = await save({ settings: { ...projectSettings, projectId: '71' } });
+  expect(normalizedProject.status, await normalizedProject.clone().text()).toBe(200);
+  expect(await f.secrets.get(f.tenantA, key)).toBe('project-issue-credential');
+  const movedProject = await save({ settings: { ...projectSettings, projectId: '72' } });
+  expect(movedProject.status).toBe(400);
+  expect(await f.secrets.get(f.tenantA, key)).toBe('project-issue-credential');
 });

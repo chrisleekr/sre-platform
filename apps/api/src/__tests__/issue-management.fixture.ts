@@ -41,14 +41,15 @@ export function issueFixture() {
   let provider: 'github' | 'gitlab' = 'github';
   let failure: number | 'network' | 'invalid-json' | 'invalid-shape' | 'partial' | null = null;
   let version = 1;
-  let issue = {
+  const initialIssue = () => ({
     title: 'Initial issue',
     body: 'Observed evidence',
     state: 'open',
     labels: ['ops'],
     assignees: [] as string[],
     updatedAt: '2026-09-13T00:00:00Z',
-  };
+  });
+  let issue = initialIssue();
   const writes: { method: string; body: Record<string, unknown>; token: string | null }[] = [];
   const transport = Object.assign(
     async (input: Parameters<typeof fetch>[0], init: RequestInit = {}) => {
@@ -283,6 +284,9 @@ export function issueFixture() {
       };
     },
     configure,
+    resetIssue() {
+      issue = initialIssue();
+    },
     fail(value: typeof failure) {
       failure = value;
     },

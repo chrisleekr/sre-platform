@@ -26,10 +26,12 @@ export const lifecycleIntentSchema = z
     if (value.kind !== 'action' && value.to !== null)
       context.addIssue({ code: 'custom', message: 'Non-actions cannot carry a lifecycle change.' });
     if (
-      (value.kind === 'capture_knowledge' || value.kind === 'offer_capture_knowledge') &&
+      (value.kind === 'capture_knowledge' ||
+        value.kind === 'offer_capture_knowledge' ||
+        value.kind === 'manage_issue') &&
       value.target !== 'current'
     )
-      context.addIssue({ code: 'custom', message: 'Knowledge capture requires the current case.' });
+      context.addIssue({ code: 'custom', message: 'Incident actions require the current case.' });
   });
 
 export type LifecycleIntent = z.infer<typeof lifecycleIntentSchema>;

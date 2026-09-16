@@ -309,6 +309,8 @@ describe('incident response workspace', () => {
 
     expect(await screen.findByRole('heading', { name: 'Checkout latency' })).toBeDefined();
     const breadcrumb = screen.getByRole('navigation', { name: 'Breadcrumb' });
+    expect(within(breadcrumb).queryByRole('button', { name: 'Issues' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Issues' })).toBeDefined();
     expect(within(breadcrumb).getByRole('link', { name: 'Dashboard' }).getAttribute('href')).toBe(
       '/w',
     );

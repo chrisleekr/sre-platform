@@ -235,12 +235,15 @@ describe.each(['github', 'gitlab'] as const)('%s issue management', (provider) =
 });
 
 test.each([
-  { enabled: true, otherWrite: false, healthy: true },
-  { enabled: false, otherWrite: false, healthy: false },
-  { enabled: true, otherWrite: true, healthy: false },
+  { enabled: true, otherWrite: false, healthy: true, issuePermission: 'write' },
+  { enabled: true, otherWrite: false, healthy: false, issuePermission: 'read' },
+  { enabled: true, otherWrite: false, healthy: false, issuePermission: undefined },
+  { enabled: false, otherWrite: false, healthy: true, issuePermission: 'read' },
+  { enabled: false, otherWrite: false, healthy: false, issuePermission: 'write' },
+  { enabled: true, otherWrite: true, healthy: false, issuePermission: 'write' },
 ])(
-  'GitHub probe enforces issue-only opt-in: $enabled, other write: $otherWrite',
-  async ({ enabled, otherWrite, healthy }) => {
+  'GitHub probe enforces issue-only opt-in: $enabled, issues: $issuePermission, other write: $otherWrite',
+  async ({ enabled, otherWrite, healthy, issuePermission }) => {
     const { fetchImpl, calls } = makeFetch(
       withMint(
         (url) =>
@@ -250,7 +253,7 @@ test.each([
         {
           contents: 'read',
           deployments: 'read',
-          issues: 'write',
+          ...(issuePermission ? { issues: issuePermission as 'read' | 'write' } : {}),
           ...(otherWrite ? { administration: 'write' as const } : {}),
         },
       ),
@@ -262,7 +265,9 @@ test.each([
     );
     const probe = await connector.probe();
     expect(probe.status).toBe(healthy ? 'healthy' : 'unhealthy');
-    expect(probe.checks?.readOnlyApp).toBe(false);
+    expect(probe.checks?.readOnlyApp).toBe(!otherWrite && issuePermission !== 'write');
+    if (enabled && issuePermission !== 'write')
+      expect(probe.warnings.join(' ')).toContain('requires Issues write permission');
     expect(
       calls
         .filter((call) => call.body)

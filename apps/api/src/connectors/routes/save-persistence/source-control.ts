@@ -42,7 +42,7 @@ export const saveGitLab: ProviderSaveHandler = async (input, current, initial) =
     (!savedSettings ||
       !requestedSettings ||
       savedSettings.baseUrl !== requestedSettings.baseUrl ||
-      savedSettings.groupId !== requestedSettings.groupId) &&
+      String(savedSettings.groupId ?? '') !== String(requestedSettings.groupId ?? '')) &&
     !credential
   )
     return 'a new credential is required when the GitLab URL or group changes';

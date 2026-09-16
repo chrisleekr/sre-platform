@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom';
+import { productPath } from '../lib/routes';
 import type { CredentialGetter } from '../lib/request-credentials';
 import { config } from '../config';
 import type { ConnectorSummary } from '../lib/connectors';
@@ -231,9 +233,9 @@ export function SavedConnectors({
                         <dd>On-demand, read-only tools</dd>
                         <dd>
                           {c.capabilities?.topology === 'inventory' ? (
-                            <a href="/w/topology" className="text-info underline">
+                            <Link to={productPath('topology')} className="text-info underline">
                               Scheduled topology discovery, review coverage
-                            </a>
+                            </Link>
                           ) : (
                             'No background snapshot polling'
                           )}

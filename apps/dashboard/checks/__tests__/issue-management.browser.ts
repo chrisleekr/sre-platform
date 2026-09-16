@@ -1,10 +1,11 @@
 import { resolve } from 'node:path';
-import { expect, test } from 'vitest';
+import { beforeEach, expect, test } from 'vitest';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { issueFixture } from '../../../api/src/__tests__/issue-management.fixture';
 
 const f = issueFixture();
+beforeEach(() => f.resetIssue());
 test.each(['github', 'gitlab'] as const)(
   '%s browser confirmation reaches authenticated API, database and provider adapter',
   async (provider) => {

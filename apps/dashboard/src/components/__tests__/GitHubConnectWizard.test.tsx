@@ -130,6 +130,54 @@ describe('GitHubConnectWizard', () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
+  test.each([false, true])(
+    'rejects issue writes without valid opt-in and repositories: %s',
+    async (enabled) => {
+      const input = props({
+        onDiscoverInstallations: async () => [
+          {
+            id: 101,
+            accountLogin: 'acme',
+            accountType: 'Organization',
+            repositorySelection: 'all',
+            permissions: { contents: 'read', issues: 'write' },
+            writePermissions: ['issues'],
+            appSlug: 'issue-app',
+          },
+        ],
+      });
+      render(<GitHubConnectWizard {...input} />);
+      fireEvent.click(screen.getByLabelText(/Existing dedicated App/i));
+      fireEvent.change(screen.getByLabelText('Smee channel URL'), {
+        target: { value: 'https://smee.io/issue-test' },
+      });
+      fireEvent.change(screen.getByLabelText('GitHub App ID or client ID'), {
+        target: { value: 'Iv1.test' },
+      });
+      fireEvent.change(screen.getByLabelText('Private key (PEM)'), {
+        target: { value: 'test-key' },
+      });
+      fireEvent.change(screen.getByLabelText('Webhook secret'), {
+        target: { value: 'test-webhook-secret' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Check existing App' }));
+      await screen.findByLabelText('Installation');
+      fireEvent.click(screen.getByRole('button', { name: 'Review repository coverage' }));
+      if (enabled) {
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Allow confirmed issue changes' }));
+        fireEvent.change(screen.getByLabelText('Repositories allowed for issue changes'), {
+          target: { value: '  \n  ' },
+        });
+      }
+      fireEvent.click(screen.getByRole('button', { name: 'Review connection' }));
+      expect(screen.getByRole('alert').textContent).toMatch(
+        enabled ? /Select at least one repository/ : /can write issues/,
+      );
+      expect(screen.queryByRole('button', { name: 'Save, sync, and verify' })).toBeNull();
+      expect(input.onSave).not.toHaveBeenCalled();
+    },
+  );
+
   test('shows the sanitized installation discovery reason returned by the API', async () => {
     const onDiscoverInstallations = vi.fn(async () => {
       throw new RequestError(

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { issueActions, memberships, withTenant, gitlabProjects } from '@sre/db';
 import { decideIssueAction } from '@sre/agent-tools';
@@ -9,6 +9,7 @@ import { issueFixture } from './issue-management.fixture';
 const f = issueFixture();
 let incidentId: string;
 beforeEach(async () => {
+  f.resetIssue();
   incidentId = await f.incident();
   f.fail(null);
   f.configure('github');
@@ -331,4 +332,71 @@ test.each([
   expect(response.status).toBe(409);
   expect(await response.text()).toContain('quick actions');
   expect(f.writes).toHaveLength(0);
+});
+
+test.each(['界'.repeat(20_000), 'λ'.repeat(20_000), '\u0001'.repeat(20_000), '😀'.repeat(10_000)])(
+  'accepts maximum-length descriptions regardless of JSON or UTF-8 expansion',
+  async (body) => {
+    const action = await draft({ title: 'Unicode description', body });
+    expect(action.status).toBe('draft');
+    expect(f.writes).toHaveLength(0);
+  },
+);
+test.each([
+  { body: '界'.repeat(20_001), status: 400 },
+  { body: 'x'.repeat(170_000), status: 413 },
+])('rejects an oversized description with status $status', async ({ body, status }) => {
+  const response = await f.request(incidentId, 'drafts', {
+    requestId: randomUUID(),
+    draft: {
+      connectorId: f.connectorId,
+      repository: 'team/service',
+      changes: { title: 'Too large', body },
+    },
+  });
+  expect(response.status).toBe(status);
+  expect(f.writes).toHaveLength(0);
+});
+
+test('holds connector authority until provider dispatch completes', async () => {
+  const action = await draft();
+  const deps = f.deps;
+  const original = deps.resolveConnectors;
+  const canAcquire = () =>
+    withTenant(f.admin.db, f.tenantId, async (tx) => {
+      const rows = await tx.execute<{ acquired: boolean }>(
+        sql`select pg_try_advisory_xact_lock(hashtext(${f.tenantId}), hashtext(${f.connectorId})) as acquired`,
+      );
+      return rows[0]!.acquired;
+    });
+  let checked = false;
+  deps.resolveConnectors = async (tenant) =>
+    (await original(tenant)).map((source) => ({
+      ...source,
+      issues: {
+        ...source.issues!,
+        prepareWrite: async (reference) => {
+          const prepared = await source.issues!.prepareWrite(reference);
+          return {
+            ...prepared,
+            create: async (...args) => {
+              expect(await canAcquire()).toBe(false);
+              checked = true;
+              return prepared.create(...args);
+            },
+          };
+        },
+      },
+    }));
+  const result = await decideIssueAction(
+    deps,
+    f.tenantId,
+    incidentId,
+    f.actor,
+    action.id,
+    'confirm',
+  );
+  expect(result.status).toBe('succeeded');
+  expect(checked).toBe(true);
+  expect(await canAcquire()).toBe(true);
 });

@@ -2,7 +2,7 @@ import { and, desc, eq, lt, or, sql } from 'drizzle-orm';
 import type { Db } from '../client';
 import { withTenant } from '../rls';
 import { agentToolCalls } from '../schema';
-import { evidenceSummary } from './summary';
+import { evidenceSummary, evidenceSummaryFields } from './summary';
 
 import {
   projectEvidence,
@@ -111,7 +111,14 @@ export async function listIncidentEvidencePage(
         latencyMs: agentToolCalls.latencyMs,
         recordedAt: agentToolCalls.createdAt,
         hasOutput: sql<boolean>`${agentToolCalls.output} is not null`,
-        input: agentToolCalls.input,
+        input: sql<unknown>`jsonb_strip_nulls(jsonb_build_object(${sql.join(
+          evidenceSummaryFields.flatMap((key) => [
+            sql`${key}::text`,
+            sql`case when jsonb_typeof(${agentToolCalls.input}->${key}::text) in ('string', 'number')
+              then ${agentToolCalls.input}->${key}::text else null end`,
+          ]),
+          sql`, `,
+        )}))`,
       })
       .from(agentToolCalls)
       .where(

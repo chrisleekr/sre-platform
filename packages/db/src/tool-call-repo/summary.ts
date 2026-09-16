@@ -47,6 +47,11 @@ const fields: Record<string, Record<string, string[]>> = {
   },
 };
 
+// Keep the list projection aligned with the summary's scalar allowlist.
+export const evidenceSummaryFields = [
+  ...new Set(Object.values(fields).flatMap((operations) => Object.values(operations).flat())),
+];
+
 /** Summarize only known scalar tool fields, never arbitrary request objects.
  * @param tool - Audited legacy or instance-qualified tool name.
  * @param input - Persisted tool input, treated as untrusted even after prior scrubbing.

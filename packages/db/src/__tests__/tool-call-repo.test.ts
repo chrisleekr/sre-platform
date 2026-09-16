@@ -76,7 +76,12 @@ describe('recordToolCall persists a redacted output', () => {
     const id = await recordToolCall(app.db, tenantA, {
       incidentId: incidentA,
       tool: 'prometheus_query_range',
-      input: { query: 'up{authorization="Bearer abcdef123456"}', password: 'do-not-project' },
+      input: {
+        query: 'up{authorization="Bearer abcdef123456"}',
+        password: 'do-not-project',
+        irrelevant: 'x'.repeat(50_000),
+        namespace: { nested: 'not-a-scalar' },
+      },
       output: { marker: 'output-must-stay-in-detail' },
       latencyMs: 1,
       outcome: 'data',

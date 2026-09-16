@@ -399,9 +399,12 @@ export function makeGitHubConnector(
       }
       const granted = minted.grantedPermissions;
       checks.readOnlyApp = minted.writePermissions.length === 0;
-      checks.allowedPermissions = minted.writePermissions.every(
-        (name) => name === 'issues' && issueManagement(config.settings).enabled,
+      const issueManagementEnabled = issueManagement(config.settings).enabled;
+      const unexpectedWrites = minted.writePermissions.filter(
+        (name) => name !== 'issues' || !issueManagementEnabled,
       );
+      checks.allowedPermissions =
+        unexpectedWrites.length === 0 && (!issueManagementEnabled || granted.issues === 'write');
       checks.canReadContents = granted.contents === 'read' || granted.contents === 'write';
       checks.canReadPullRequests =
         granted.pull_requests === 'read' || granted.pull_requests === 'write';
@@ -419,9 +422,13 @@ export function makeGitHubConnector(
       if (!checks.canReadActions) warnings.push('optional Actions read permission is missing');
       if (!checks.canReadDeployments)
         warnings.push('optional Deployments read permission is missing');
-      if (!checks.allowedPermissions)
+      if (issueManagementEnabled && granted.issues !== 'write')
         warnings.push(
-          `GitHub App has write permissions that SRE Platform does not require: ${minted.writePermissions.join(', ')}`,
+          'GitHub App requires Issues write permission when issue management is enabled',
+        );
+      if (unexpectedWrites.length)
+        warnings.push(
+          `GitHub App has write permissions that SRE Platform does not require: ${unexpectedWrites.join(', ')}`,
         );
       const enabled =
         checks.canEnumerateRepositories &&

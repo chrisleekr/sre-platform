@@ -21,6 +21,8 @@ test('structured interpretation receives only the current request, never an acto
 });
 
 test.each([
+  { kind: 'manage_issue', target: 'other', to: null, reason: 'Wrong issue context' },
+  { kind: 'manage_issue', target: 'ambiguous', to: null, reason: 'Ambiguous issue context' },
   { kind: 'action', target: 'other', to: 'closed', reason: 'Wrong target' },
   {
     kind: 'action',
@@ -54,4 +56,18 @@ test('accepts a capture-only alternative offer without granting external-write a
     new AbortController().signal,
   );
   expect(result).toMatchObject({ kind: 'offer_capture_knowledge', target: 'current', to: null });
+});
+
+test('accepts issue drafts for the current incident', async () => {
+  const result = await classifyLifecycleIntent(
+    makeFakeGenerator(() => ({
+      kind: 'manage_issue',
+      target: 'current',
+      to: null,
+      reason: 'Prepare a follow-up issue.',
+    })),
+    'Prepare a follow-up issue for this incident.',
+    new AbortController().signal,
+  );
+  expect(result.kind).toBe('manage_issue');
 });

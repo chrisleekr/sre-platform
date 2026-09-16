@@ -274,6 +274,7 @@ export async function decideIssueAction(
     const source = await connector(deps, tenantId, claim.row.connectorId);
     source.issues!.validateChanges(claim.row.changes);
     const prepared = await source.issues!.prepareWrite(claim.row.repository);
+    // Keep authority locks through dispatch so revocation cannot commit before the captured write.
     const completed = await withTenant(deps.db, tenantId, async (tx) => {
       await authorize(tx, tenantId, incidentId, userId);
       if (messageFence && !(await humanMessageFenceMatchesTx(tx, incidentId, messageFence)))

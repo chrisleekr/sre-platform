@@ -13,7 +13,7 @@ import { IssueRequestError } from '@sre/connectors';
 import { getIncident } from '@sre/db';
 import type { TenantAuthVariables } from '../auth';
 import type { IncidentRouteDeps } from './support';
-import { UUID_RE } from './support';
+import { MAX_ISSUE_BODY_BYTES, UUID_RE } from './support';
 
 /** Incident-scoped issue reads and confirmed changes, using authenticated requester identity.
  * @param parent - Authenticated incident router.
@@ -36,7 +36,7 @@ export function registerIncidentIssueRoutes(
   app.use(
     '/:id/issues/*',
     bodyLimit({
-      maxSize: 32 * 1024,
+      maxSize: MAX_ISSUE_BODY_BYTES,
       onError: (c) => c.json({ error: 'issue request is too large' }, 413),
     }),
   );

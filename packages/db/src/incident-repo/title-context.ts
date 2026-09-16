@@ -38,7 +38,12 @@ export async function presentIncidentTitles<T extends { id: string; title: strin
         m.created_at::text as "createdAt", m.lifecycle_version as "lifecycleVersion", m.signal_id as "signalId"
       from incidents i
       cross join lateral (
-        select author, kind, left(content, case when origin_message_id like 'thread-context:%' then 8192 else 2048 end) as content,
+        select author, kind,
+          case
+            when origin_message_id like 'thread-context:%' then left(content, 8192)
+            when author = 'human' or (kind = 'signal' and signal_id is not null) then left(content, 2048)
+            else ''
+          end as content,
           id, origin_message_id, created_at, lifecycle_version, signal_id
         from incident_messages
         where tenant_id = ${tenantId} and incident_id = i.id

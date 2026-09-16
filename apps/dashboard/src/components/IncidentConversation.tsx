@@ -33,22 +33,24 @@ export function IncidentConversation() {
 
   return (
     <section className="min-h-full min-w-0 overflow-x-hidden">
-      <nav aria-label="Breadcrumb" className="mb-3 flex flex-wrap items-center gap-2 text-sm">
-        <Link to={productPath()} className="font-medium text-ink-muted hover:text-ink">
-          Dashboard
-        </Link>
-        <span aria-hidden="true" className="text-ink-faint">
-          /
-        </span>
-        <Link to={productPath('incidents')} className="font-medium text-ink-muted hover:text-ink">
-          Incidents
-        </Link>
-        <span aria-hidden="true" className="text-ink-faint">
-          /
-        </span>
-        <span aria-current="page" className="text-ink-muted">
-          Incident
-        </span>
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+        <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2">
+          <Link to={productPath()} className="font-medium text-ink-muted hover:text-ink">
+            Dashboard
+          </Link>
+          <span aria-hidden="true" className="text-ink-faint">
+            /
+          </span>
+          <Link to={productPath('incidents')} className="font-medium text-ink-muted hover:text-ink">
+            Incidents
+          </Link>
+          <span aria-hidden="true" className="text-ink-faint">
+            /
+          </span>
+          <span aria-current="page" className="text-ink-muted">
+            Incident
+          </span>
+        </nav>
         {currentWorkspace && (
           <IssueManagement
             incidentId={incidentId}
@@ -56,7 +58,7 @@ export function IncidentConversation() {
             getCredentials={getCredentials}
           />
         )}
-      </nav>
+      </div>
       {!currentWorkspace && (loading || error) && <PageHeader title="Incident" />}
       {!currentWorkspace && loading && (
         <StatePanel state="loading" title="Loading incident…" skeleton="detail" />

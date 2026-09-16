@@ -245,3 +245,25 @@ describe('GitHub event evidence', () => {
     });
   });
 });
+
+test('catalog search admits numeric IDs and ranks exact paths before substring matches', async () => {
+  const source = randomUUID();
+  const entries = Array.from({ length: 60 }, (_, i) =>
+    repository('installation', String(i + 100), `aaa${i}-team/service-copy`),
+  );
+  entries.push(repository('installation', '71', 'team/service'));
+  await syncGitHubRepositories(app.db, tenantA, source, 'installation', entries);
+  expect(await listGitHubRepositories(app.db, tenantA, source, { query: '71' })).toMatchObject([
+    { repositoryId: '71', fullName: 'team/service' },
+  ]);
+  const result = await listGitHubRepositories(app.db, tenantA, source, {
+    query: 'TEAM/SERVICE',
+    limit: 50,
+  });
+  expect(result).toHaveLength(50);
+  expect(result[0]).toMatchObject({ repositoryId: '71', fullName: 'team/service' });
+  expect(await listGitHubRepositories(app.db, tenantB, source, { query: '71' })).toEqual([]);
+  expect(await listGitHubRepositories(app.db, tenantA, randomUUID(), { query: '71' })).toEqual([]);
+  await syncGitHubRepositories(app.db, tenantA, source, 'installation', entries.slice(0, 60));
+  expect(await listGitHubRepositories(app.db, tenantA, source, { query: '71' })).toEqual([]);
+});
