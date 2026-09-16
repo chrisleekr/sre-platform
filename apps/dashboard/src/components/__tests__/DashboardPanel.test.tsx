@@ -66,6 +66,22 @@ function renderDashboard() {
   );
 }
 
+test('uses opening context instead of transport-only incident labels', () => {
+  hooks.useIncidents.mockReturnValue({
+    ...hooks.useIncidents(),
+    incidents: [
+      incident({
+        title: '<@U12345678>',
+        displayTitle: 'Check checkout latency',
+        titleSource: 'opening_request',
+      }),
+    ],
+  });
+  const view = renderDashboard();
+  expect(view.getAllByText(/Check checkout latency/).length).toBeGreaterThan(0);
+  expect(view.container.textContent).not.toContain('<@U12345678>');
+});
+
 test('health checks count as response work without counting as active incidents', () => {
   hooks.useIncidents.mockReturnValue({
     ...hooks.useIncidents(),

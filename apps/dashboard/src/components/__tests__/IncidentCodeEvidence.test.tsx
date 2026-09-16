@@ -53,6 +53,30 @@ function projection(overrides: Partial<CodeProjection> = {}): CodeProjection {
 }
 
 describe('IncidentCodeEvidence', () => {
+  test('explains discarded source evidence without showing stale excerpts or links', () => {
+    render(
+      <IncidentCodeEvidence
+        projection={projection({
+          status: 'source_changed',
+          artifacts: [],
+          revisions: [],
+          matches: [],
+          uncertainties: ['Source access changed during the read.'],
+          requiredSetup: [
+            'Refresh topology source evidence before reading this configuration again.',
+          ],
+        })}
+      />,
+    );
+    expect(screen.getByText('source changed')).toBeDefined();
+    expect(screen.getByText('Source access changed during the read.')).toBeDefined();
+    expect(
+      screen.getByText('Refresh topology source evidence before reading this configuration again.'),
+    ).toBeDefined();
+    expect(screen.queryByRole('link', { name: /open exact source/i })).toBeNull();
+    expect(screen.queryByText('Repository provenance')).toBeNull();
+  });
+
   test('shows runtime provenance and exact source without overstating causality', () => {
     render(<IncidentCodeEvidence projection={projection()} />);
     const root = screen.getByText('1 source location found').closest('section')!;

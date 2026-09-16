@@ -15,8 +15,8 @@ export interface SurfaceInput {
  */
 export interface SurfaceAdapter {
   readonly surface: string;
-  /** Render a hub message on the surface. */
-  project(msg: HubMessage): void | Promise<void>;
+  /** Render a hub message on the surface; `replay` marks history sent on connect rather than live. */
+  project(msg: HubMessage, replay?: boolean): void | Promise<void>;
   /** Push human input from the surface into the hub; returns the appended message. */
   ingest(input: SurfaceInput): Promise<HubMessage>;
 }

@@ -42,7 +42,7 @@ function AutomationValue({
 }: {
   action: { description: string; scheduledAt: string | null } | null;
 }) {
-  if (!action) return <span>No automation remains.</span>;
+  if (!action) return <span>No active automation recorded</span>;
   return (
     <span>
       {action.description}
@@ -52,7 +52,13 @@ function AutomationValue({
 }
 
 /** Explicit responder handoff and the policy that governs the platform's next action. */
-export function IncidentOperatorPanel({ workspace }: { workspace: IncidentWorkspaceData }) {
+export function IncidentOperatorPanel({
+  workspace,
+  showTeam = true,
+}: {
+  workspace: IncidentWorkspaceData;
+  showTeam?: boolean;
+}) {
   const { attention, automation } = workspace;
   const budget = automation?.currentBudget;
   if (!attention && !automation) return null;
@@ -66,7 +72,8 @@ export function IncidentOperatorPanel({ workspace }: { workspace: IncidentWorksp
         <p
           className={`text-xs font-semibold uppercase tracking-wide ${attention ? 'text-warning' : 'text-success'}`}
         >
-          {attention ? 'Human decision required' : 'SRE Platform handling'}
+          {/* The body is the one statement of automation; a work label here could contradict it. */}
+          {attention ? 'Human decision required' : 'No human decision required'}
         </p>
         {attention ? (
           <dl className="mt-3 space-y-3 text-sm">
@@ -75,10 +82,12 @@ export function IncidentOperatorPanel({ workspace }: { workspace: IncidentWorksp
               <dd className="mt-0.5 text-ink">{attention.decision}</dd>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <dt className="font-semibold text-warning">Responsible owner</dt>
-                <dd className="mt-0.5 text-ink">{attention.owner ?? 'Owner not resolved'}</dd>
-              </div>
+              {showTeam && (
+                <div>
+                  <dt className="font-semibold text-warning">Service team</dt>
+                  <dd>{attention.owner ?? 'Team not established'}</dd>
+                </div>
+              )}
               <div>
                 <dt className="font-semibold text-warning">Next automation</dt>
                 <dd className="mt-0.5 text-ink">
@@ -94,10 +103,10 @@ export function IncidentOperatorPanel({ workspace }: { workspace: IncidentWorksp
         )}
       </div>
 
-      <div className="rounded-lg border border-line bg-surface p-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+      <details className="rounded-lg border border-line bg-surface p-4">
+        <summary className="min-h-11 cursor-pointer text-xs font-semibold uppercase tracking-wide text-ink-muted">
           Automation policy
-        </p>
+        </summary>
         <dl className="mt-3 space-y-3 text-sm">
           <div>
             <dt className="font-semibold text-ink-secondary">Episode boundary</dt>
@@ -150,7 +159,7 @@ export function IncidentOperatorPanel({ workspace }: { workspace: IncidentWorksp
             )}
           </div>
         </dl>
-      </div>
+      </details>
     </section>
   );
 }

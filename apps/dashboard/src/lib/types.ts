@@ -1,13 +1,15 @@
 import type {
   IncidentFeedbackRecord,
+  IncidentTitlePresentation,
   IncidentFindingPayload,
   InvestigationBudgetSnapshot,
   InvestigationGap,
   InvestigationTriggerReason,
+  WsMessageDelivery,
 } from '@sre/contracts';
 import type { IncidentEntityContext } from './entityContext';
 import type { PendingIncidentWork } from './investigationRuns';
-export interface HubMessage {
+export interface HubMessage extends WsMessageDelivery {
   id: string;
   incidentId: string;
   author: string;
@@ -55,7 +57,7 @@ export interface Attachment {
   messageId: string | null;
 }
 
-export interface Incident {
+export interface Incident extends Partial<IncidentTitlePresentation> {
   purpose?: 'incident' | 'health_check';
   id: string;
   service: string;
@@ -314,6 +316,7 @@ export interface IncidentCodeEvent {
 }
 
 export interface EvidenceListItem {
+  summary?: string | null;
   id: string;
   tool: string;
   outcome: string;

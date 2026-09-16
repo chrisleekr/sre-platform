@@ -83,15 +83,21 @@ export interface SeededConnectors {
   prometheus: string;
   gitlab: string;
   argocd: string;
+  datadog: string;
 }
 
 /**
- * Four connected data sources, all verified and polling. Settings carry no credentials: the real
+ * Connected demo data sources. Settings carry no credentials: the real
  * secrets live in the encrypted store, and a screenshot must never depend on one.
  */
 export async function seedConnectors(deps: DemoSeedDeps): Promise<SeededConnectors> {
   const { now } = deps;
   const rows = [
+    {
+      type: 'datadog',
+      name: 'Datadog request logs',
+      settings: { site: 'datadoghq.eu', collectLogs: true, collectApm: false },
+    },
     {
       type: 'kubernetes',
       name: 'Production cluster',
@@ -148,13 +154,14 @@ export async function seedConnectors(deps: DemoSeedDeps): Promise<SeededConnecto
     // shape that is checked rather than merely present: the card parses the blob as a per-project
     // token bundle, so a plain string reads as missing.
     for (const row of inserted) {
-      const credential =
-        row.type === 'argocd'
-          ? JSON.stringify({
-              version: 1,
-              tokens: [{ project: 'production', token: 'demo-not-a-real-credential' }],
-            })
-          : JSON.stringify({ token: 'demo-not-a-real-credential' });
+      let credential = JSON.stringify({ token: 'demo-not-a-real-credential' });
+      if (row.type === 'datadog')
+        credential = JSON.stringify({ apiKey: 'demo-api-key', appKey: 'demo-application-key' });
+      else if (row.type === 'argocd')
+        credential = JSON.stringify({
+          version: 1,
+          tokens: [{ project: 'production', token: 'demo-not-a-real-credential' }],
+        });
       await deps.secrets.put(deps.tenantId, connectorCredentialKey(row.id), credential, tx);
     }
 
@@ -168,6 +175,7 @@ export async function seedConnectors(deps: DemoSeedDeps): Promise<SeededConnecto
       prometheus: byType('prometheus'),
       gitlab: byType('gitlab'),
       argocd: byType('argocd'),
+      datadog: byType('datadog'),
     };
   });
 }

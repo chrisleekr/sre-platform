@@ -224,9 +224,11 @@ describe('incident response workspace', () => {
 
     const view = renderIncident();
 
-    expect(await screen.findByText(/monitoring recovery after check 1 of 3/i)).toBeDefined();
-    expect(screen.getByText(/next automated check/i)).toBeDefined();
-    expect(screen.getByText(/no human action is required yet/i)).toBeDefined();
+    expect(
+      (await screen.findAllByText(/scheduled recovery check overdue/i)).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText('Recovery not verified')).toBeDefined();
+    expect(screen.queryByText(/no human action is required yet/i)).toBeNull();
     view.unmount();
   });
 
@@ -323,6 +325,49 @@ describe('incident response workspace', () => {
 
     expect(await screen.findByRole('button', { name: 'Incident link copied' })).toBeDefined();
     expect(writeText).toHaveBeenCalledWith(window.location.href);
+    view.unmount();
+  });
+
+  test('does not count a post from this page as a new conversation update', async () => {
+    const live = (over: Partial<HubMessage>): HubMessage => ({
+      incidentId: detail().id,
+      author: 'human',
+      kind: 'reply',
+      content: 'Checking the rollout now',
+      createdAt: '2026-08-21T00:06:00Z',
+      replay: false,
+      id: 'own-post',
+      ...over,
+    });
+    wsState = { ...wsState, status: 'open' };
+    globalThis.fetch = vi.fn(async () => response(detail()));
+    const view = renderIncident();
+    expect(await screen.findByText('checkout')).toBeDefined();
+
+    // The live echo can precede the accepted frame that names its id.
+    wsState = {
+      ...wsState,
+      messages: [live({})],
+      postState: { clientMessageId: 'client-own', messageId: null, state: 'saving' },
+    };
+    view.rerender(incidentElement());
+    wsState = {
+      ...wsState,
+      postState: { clientMessageId: 'client-own', messageId: 'own-post', state: 'saved' },
+    };
+    view.rerender(incidentElement());
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /new conversation update/ })).toBeNull(),
+    );
+
+    wsState = {
+      ...wsState,
+      messages: [...wsState.messages, live({ id: 'agent-reply', author: 'agent' })],
+    };
+    view.rerender(incidentElement());
+    expect(
+      await screen.findByRole('button', { name: '1 new conversation update · View updates' }),
+    ).toBeDefined();
     view.unmount();
   });
 });

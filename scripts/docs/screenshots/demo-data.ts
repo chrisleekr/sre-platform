@@ -14,6 +14,7 @@ import { seedLeadIncident, seedSupportingIncidents } from './demo-incidents';
 import { seedNotifications } from './demo-notifications';
 import { seedSlackSurface } from './demo-slack';
 import { seedUsage } from './demo-usage';
+import { seedDiscoveredTopology } from './demo-topology';
 
 export type { DemoSeedDeps } from './demo-environment';
 
@@ -27,6 +28,7 @@ export async function seedDemoData(deps: DemoSeedDeps): Promise<void> {
   await seedTopology(deps);
   const connectors = await seedConnectors(deps);
   await seedSnapshots(deps, connectors);
+  await seedDiscoveredTopology(deps, connectors);
   await seedDeployments(deps, connectors);
   await seedChanges(deps, connectors);
   const leadIncidentId = await seedLeadIncident(deps);

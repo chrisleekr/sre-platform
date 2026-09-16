@@ -39,6 +39,22 @@ export function toolDisplayLabel(tool: string): string {
   return action ? `${provider} · ${action}` : provider;
 }
 
+/** Distinguish returned data from a proven finding.
+ * @param outcome - Stored evidence outcome.
+ */
+export function evidenceOutcomeLabel(outcome: string): string {
+  return (
+    (
+      {
+        data: 'Data returned',
+        no_data: 'No data returned',
+        error: 'Check failed',
+        unavailable: 'Source unavailable',
+      } as Record<string, string>
+    )[outcome] ?? outcome.replaceAll('_', ' ')
+  );
+}
+
 export function summarizeToolProviders(tools: string[]): string {
   const counts = new Map<string, number>();
   for (const tool of tools) {

@@ -1,89 +1,143 @@
+import { useContext, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { formatAbsoluteTime } from '../lib/time';
 import type { EvidenceDetail, EvidenceListItem } from '../lib/types';
-import { toolDisplayLabel } from '../lib/toolPresentation';
+import { evidenceOutcomeLabel, toolDisplayLabel } from '../lib/toolPresentation';
 import { IncidentCodeEvidence } from './IncidentCodeEvidence';
 import { IncidentTimeSeriesFigure } from './IncidentTimeSeriesFigure';
-import { SkeletonBlock, SkeletonRows } from './LoadingSkeleton';
+import { IncidentEvidenceText } from './IncidentEvidenceText';
+import { SkeletonRows } from './LoadingSkeleton';
+import { SetupDialog } from './SetupDialog';
+import { SetupActions, SetupDialogSlots } from './SetupDialogSlots';
+
+function EvidenceScrollPosition({
+  selectedId,
+  position,
+}: {
+  selectedId: string | null;
+  position: RefObject<number>;
+}) {
+  const body = useContext(SetupDialogSlots)?.body;
+  useLayoutEffect(() => {
+    if (!body) return;
+    body.scrollTop = selectedId ? 0 : position.current;
+    return () => {
+      if (!selectedId) position.current = body.scrollTop;
+    };
+  }, [body, selectedId, position]);
+  return null;
+}
 
 function EvidenceDetailView({ detail }: { detail: EvidenceDetail }) {
+  const [page, setPage] = useState(0);
+  const output =
+    detail.output && typeof detail.output === 'object' && !Array.isArray(detail.output)
+      ? (detail.output as Record<string, unknown>)
+      : null;
+  const log =
+    /^(?:kubernetes_(?:[A-Za-z0-9_-]{22}_)?get_pod_logs|argocd_(?:[A-Za-z0-9_-]{22}_)?get_application_logs)$/.test(
+      detail.tool,
+    ) && typeof output?.log === 'string'
+      ? output.log
+      : null;
   return (
     <div className="min-w-0 space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="min-w-0">
-          <h3 className="break-words text-sm font-semibold text-ink">
-            {toolDisplayLabel(detail.tool)}
-          </h3>
-          <p className="text-xs text-ink-muted">
-            Recorded {formatAbsoluteTime(detail.recordedAt)} · {detail.latencyMs} ms
-          </p>
-        </div>
-        {detail.referenceUrl && (
-          <a
-            href={detail.referenceUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="break-words text-xs font-semibold text-info underline"
-          >
-            Open provider reference ↗
-          </a>
-        )}
-      </div>
-      {detail.projection.kind === 'code' && <IncidentCodeEvidence projection={detail.projection} />}
-      <IncidentTimeSeriesFigure detail={detail} />
-      {detail.projection.kind === 'facts' && (
-        <div className="max-h-96 overflow-auto rounded-md border border-line">
-          <table className="w-full min-w-max text-left text-xs">
-            <caption className="sr-only">Human-readable evidence facts</caption>
-            <thead className="sticky top-0 bg-surface-subtle">
-              <tr>
-                {detail.projection.columns.map((column) => (
-                  <th key={column} className="px-2 py-2 font-semibold text-ink-secondary">
-                    {column}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {detail.projection.rows.length === 0 && (
-                <tr className="border-t border-line">
-                  <td
-                    colSpan={detail.projection.columns.length}
-                    className="px-2 py-3 text-ink-muted"
-                  >
-                    No rows returned.
-                  </td>
-                </tr>
-              )}
-              {detail.projection.rows.map((row, index) => (
-                <tr key={index} className="border-t border-line">
-                  {detail.projection.kind === 'facts' &&
-                    detail.projection.columns.map((column) => (
-                      <td key={column} className="max-w-80 break-words px-2 py-2 align-top">
-                        {String(row[column] ?? '')}
-                      </td>
-                    ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      <h3 className="break-words font-semibold">{toolDisplayLabel(detail.tool)}</h3>
+      {detail.summary && <p className="break-all text-sm">{detail.summary}</p>}
+      <p className="text-xs text-ink-muted">
+        Recorded {formatAbsoluteTime(detail.recordedAt)} · Execution {detail.latencyMs} ms ·{' '}
+        {evidenceOutcomeLabel(detail.outcome)}
+      </p>
+      {detail.referenceUrl && (
+        <a
+          href={detail.referenceUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex min-h-11 items-center break-all text-info underline"
+        >
+          Open provider reference ↗
+        </a>
       )}
-      <details className="rounded-md border border-line p-3 text-xs">
-        <summary className="cursor-pointer font-semibold text-ink-secondary">Raw evidence</summary>
-        <div className="mt-3 space-y-3">
-          <div>
-            <h4 className="font-semibold text-ink-muted">Input</h4>
-            <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-all rounded bg-code p-3 text-code-ink">
-              {JSON.stringify(detail.input, null, 2)}
-            </pre>
-          </div>
-          <div>
-            <h4 className="font-semibold text-ink-muted">Output</h4>
-            <pre className="mt-1 max-h-80 overflow-auto whitespace-pre-wrap break-all rounded bg-code p-3 text-code-ink">
-              {JSON.stringify(detail.output, null, 2)}
-            </pre>
-          </div>
-        </div>
+      {log !== null ? (
+        <IncidentEvidenceText key={detail.id} text={log} label="Logs" />
+      ) : (
+        <>
+          {detail.projection.kind === 'code' && (
+            <IncidentCodeEvidence projection={detail.projection} />
+          )}
+          <IncidentTimeSeriesFigure detail={detail} />
+          {detail.projection.kind === 'facts' && (
+            <>
+              <p className="text-xs text-ink-muted">
+                Projected facts: up to 50 rows, 12 columns and 240 characters per cell. Stored
+                output is available below.
+              </p>
+              <div className="overflow-x-auto rounded border border-line">
+                <table className="w-full text-left text-xs">
+                  <caption className="sr-only">Human-readable evidence facts</caption>
+                  <thead>
+                    <tr>
+                      {detail.projection.columns.map((column) => (
+                        <th key={column} className="p-2">
+                          {column}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.projection.rows.slice(page * 25, (page + 1) * 25).map((row, index) => (
+                      <tr key={index} className="border-t border-line">
+                        {detail.projection.kind === 'facts' &&
+                          detail.projection.columns.map((column) => (
+                            <td key={column} className="max-w-80 break-words p-2 align-top">
+                              {String(row[column] ?? '')}
+                            </td>
+                          ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {detail.projection.rows.length === 0 && <p>No rows returned.</p>}
+              {detail.projection.rows.length > 25 && (
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    disabled={page === 0}
+                    className="min-h-11 underline"
+                    onClick={() => setPage(page - 1)}
+                  >
+                    Previous facts
+                  </button>
+                  <span className="py-3">Facts page {page + 1}</span>
+                  <button
+                    type="button"
+                    disabled={(page + 1) * 25 >= detail.projection.rows.length}
+                    className="min-h-11 underline"
+                    onClick={() => setPage(page + 1)}
+                  >
+                    Next facts
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+      <details className="rounded border border-line p-3">
+        <summary className="min-h-11 cursor-pointer font-semibold">Raw evidence</summary>
+        <p className="mb-3 text-xs text-ink-muted">
+          Stored input/output returned by the API, not the provider's complete history.
+        </p>
+        <h4 className="mb-2 font-semibold">Input</h4>
+        <IncidentEvidenceText
+          text={JSON.stringify(detail.input, null, 2) ?? 'null'}
+          label="Input"
+        />
+        <h4 className="my-2 font-semibold">Output</h4>
+        <IncidentEvidenceText
+          text={JSON.stringify(detail.output, null, 2) ?? 'null'}
+          label="Output"
+        />
       </details>
     </div>
   );
@@ -101,6 +155,12 @@ export function IncidentEvidenceWorkspace({
   onOpen,
   onLoadOlder,
   onRetry,
+  loadingOlder = false,
+  open = true,
+  onClose,
+  onBack,
+  returnFocusTo,
+  context,
 }: {
   evidence: EvidenceListItem[];
   details: Record<string, EvidenceDetail | null>;
@@ -110,130 +170,223 @@ export function IncidentEvidenceWorkspace({
   error: boolean;
   paginationError: boolean;
   detailErrors: Record<string, boolean>;
+  loadingOlder?: boolean;
   onOpen: (id: string) => void;
   onLoadOlder: () => void;
   onRetry: () => void;
+  open?: boolean;
+  onClose?: () => void;
+  onBack?: () => void;
+  returnFocusTo?: HTMLElement | null;
+  context?: string | null;
 }) {
-  const selectedDetail = selectedId ? details[selectedId] : undefined;
-
-  return (
-    <div id="incident-evidence" className="min-w-0">
-      <section
-        id={selectedId ? `evidence-${selectedId}` : undefined}
-        className="@container min-w-0 rounded-lg border border-line bg-surface p-4"
-        aria-labelledby="evidence-title"
-      >
-        <h2 id="evidence-title" className="font-semibold text-ink">
-          Evidence ledger
-        </h2>
-        <p className="mt-1 text-xs text-ink-muted">
-          Redacted checks recorded by the investigation.
-        </p>
-        {loading && evidence.length === 0 ? (
-          <div className="mt-3">
+  const [query, setQuery] = useState('');
+  const [source, setSource] = useState('');
+  const [outcome, setOutcome] = useState('');
+  const [page, setPage] = useState(0);
+  const listPosition = useRef(0);
+  const filtered = evidence.filter(
+    (item) =>
+      (!source || toolDisplayLabel(item.tool).split(' · ')[0] === source) &&
+      (!outcome || item.outcome === outcome) &&
+      `${item.summary ?? ''} ${toolDisplayLabel(item.tool)} ${item.id}`
+        .toLowerCase()
+        .includes(query.toLowerCase()),
+  );
+  const currentPage = Math.min(page, Math.max(0, Math.ceil(filtered.length / 20) - 1));
+  if (!open) return null;
+  const content = (
+    <section className="min-w-0 space-y-3" aria-label="Evidence ledger">
+      {selectedId ? (
+        <div id={`evidence-${selectedId}`}>
+          {detailErrors[selectedId] ? (
+            <div role="alert">
+              <p>Evidence detail could not be loaded.</p>
+              <button
+                type="button"
+                className="min-h-11 underline"
+                onClick={() => onOpen(selectedId)}
+              >
+                Retry detail
+              </button>
+            </div>
+          ) : details[selectedId] ? (
+            <EvidenceDetailView key={selectedId} detail={details[selectedId]} />
+          ) : (
+            <SkeletonRows label="Loading evidence detail…" rows={4} />
+          )}
+        </div>
+      ) : (
+        <>
+          <p className="text-xs text-ink-muted">
+            {evidence.length} loaded records{nextCursor ? ' · Older records available' : ''}.
+            Filters apply to loaded records only.
+          </p>
+          <div className="grid min-w-0 gap-3 sm:grid-cols-3">
+            <label className="min-w-0 text-xs">
+              Search loaded evidence
+              <input
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setPage(0);
+                }}
+                className="mt-1 min-h-11 w-full min-w-0 rounded border border-line-strong p-2"
+              />
+            </label>
+            <label className="min-w-0 text-xs">
+              Source
+              <select
+                value={source}
+                onChange={(event) => {
+                  setSource(event.target.value);
+                  setPage(0);
+                }}
+                className="mt-1 min-h-11 w-full min-w-0 rounded border border-line-strong p-2"
+              >
+                <option value="">All sources</option>
+                {[
+                  ...new Set(evidence.map((item) => toolDisplayLabel(item.tool).split(' · ')[0])),
+                ].map((value) => (
+                  <option key={value}>{value}</option>
+                ))}
+              </select>
+            </label>
+            <label className="min-w-0 text-xs">
+              Outcome
+              <select
+                value={outcome}
+                onChange={(event) => {
+                  setOutcome(event.target.value);
+                  setPage(0);
+                }}
+                className="mt-1 min-h-11 w-full min-w-0 rounded border border-line-strong p-2"
+              >
+                <option value="">All outcomes</option>
+                {[...new Set(evidence.map((item) => item.outcome))].map((value) => (
+                  <option key={value} value={value}>
+                    {evidenceOutcomeLabel(value)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {loading && evidence.length === 0 && (
             <SkeletonRows label="Loading recorded checks…" rows={4} />
+          )}
+          {error && (
+            <div role="alert">
+              <p>Evidence is unavailable. Previously loaded records remain available.</p>
+              <button className="min-h-11 underline" onClick={onRetry}>
+                Retry evidence
+              </button>
+            </div>
+          )}
+          {!loading && !error && evidence.length === 0 && <p>No checks recorded yet.</p>}
+          {evidence.length > 0 && filtered.length === 0 && (
+            <p>No loaded records match these filters. Clear filters or load older evidence.</p>
+          )}
+          <div aria-label="Evidence records" className="space-y-2">
+            {filtered.slice(currentPage * 20, (currentPage + 1) * 20).map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onOpen(item.id)}
+                className="min-h-11 w-full rounded border border-line p-3 text-left hover:bg-surface-subtle"
+              >
+                <span className="block break-words font-semibold">
+                  {toolDisplayLabel(item.tool)}
+                </span>
+                <span className="my-1 block break-all text-sm">
+                  {item.summary || `Check ${item.id.slice(0, 8)}`}
+                </span>
+                <span className="text-xs text-ink-muted">
+                  {evidenceOutcomeLabel(item.outcome)} · {formatAbsoluteTime(item.recordedAt)}
+                </span>
+              </button>
+            ))}
           </div>
-        ) : error ? (
-          <div
-            role="alert"
-            className="mt-3 rounded-md border border-critical-line bg-critical-soft p-3 text-sm"
-          >
-            <p className="font-semibold text-critical">Evidence is unavailable.</p>
-            <p className="mt-1 text-critical">The system could not load the evidence ledger.</p>
+          {filtered.length > 0 && (
+            <p className="text-xs">
+              Showing {currentPage * 20 + 1}-{Math.min((currentPage + 1) * 20, filtered.length)} of{' '}
+              {filtered.length} matching loaded records
+            </p>
+          )}
+          {filtered.length > 20 && (
+            <div className="flex gap-3">
+              <button
+                type="button"
+                className="min-h-11 underline"
+                disabled={currentPage === 0}
+                onClick={() => setPage(currentPage - 1)}
+              >
+                Previous records
+              </button>
+              <button
+                type="button"
+                className="min-h-11 underline"
+                disabled={(currentPage + 1) * 20 >= filtered.length}
+                onClick={() => setPage(currentPage + 1)}
+              >
+                Next records
+              </button>
+            </div>
+          )}
+          {paginationError && (
+            <p role="alert">Older evidence is unavailable. Retry without losing loaded records.</p>
+          )}
+          {nextCursor && (
             <button
               type="button"
-              onClick={onRetry}
-              className="mt-2 font-semibold text-critical underline"
-            >
-              Retry evidence
-            </button>
-          </div>
-        ) : evidence.length === 0 ? (
-          <p className="mt-3 text-sm text-ink-muted">No checks recorded yet.</p>
-        ) : (
-          <div className="mt-3 grid min-w-0 gap-4 @3xl:grid-cols-[18rem_minmax(0,1fr)]">
-            <div
-              className="min-w-0 max-h-[34rem] space-y-2 overflow-auto"
-              aria-label="Evidence records"
-            >
-              {evidence.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => onOpen(item.id)}
-                  className={`w-full rounded-md border p-3 text-left text-sm ${selectedId === item.id ? 'border-assessment-line bg-assessment-soft' : 'border-line hover:bg-surface-subtle'}`}
-                >
-                  <span className="block break-words font-medium text-ink">
-                    {toolDisplayLabel(item.tool)}
-                  </span>
-                  <span
-                    className={`text-xs ${item.outcome === 'data' ? 'text-success' : 'text-warning'}`}
-                  >
-                    {item.outcome} · {item.latencyMs} ms
-                  </span>
-                  <span className="mt-1 block text-xs text-ink-muted">
-                    {formatAbsoluteTime(item.recordedAt)}
-                  </span>
-                </button>
-              ))}
-            </div>
-            <div className="min-w-0 rounded-md border border-line p-3">
-              {!selectedId ? (
-                <p className="text-sm text-ink-muted">Select a check to inspect its evidence.</p>
-              ) : detailErrors[selectedId] ? (
-                <div role="alert" className="text-sm text-critical">
-                  <p>Evidence detail could not be loaded.</p>
-                  <button
-                    type="button"
-                    onClick={() => onOpen(selectedId)}
-                    className="mt-2 font-semibold underline"
-                  >
-                    Retry detail
-                  </button>
-                </div>
-              ) : selectedDetail === null || selectedDetail === undefined ? (
-                <div role="status" aria-live="polite" aria-busy="true" className="space-y-3">
-                  <span className="sr-only">Loading evidence detail…</span>
-                  <div aria-hidden="true" className="space-y-3">
-                    <SkeletonBlock className="h-4 w-44" />
-                    <SkeletonBlock className="h-28 w-full" />
-                    <SkeletonBlock className="h-4 w-5/6" />
-                    <SkeletonBlock className="h-4 w-2/3" />
-                  </div>
-                </div>
-              ) : (
-                <div id={`evidence-${selectedDetail.id}`}>
-                  <EvidenceDetailView detail={selectedDetail} />
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-        {paginationError && (
-          <div
-            role="alert"
-            className="mt-3 rounded-md border border-warning-line bg-warning-soft p-3 text-sm"
-          >
-            <p className="font-semibold text-warning">Older evidence is unavailable.</p>
-            <button
-              type="button"
+              disabled={loadingOlder}
               onClick={onLoadOlder}
-              className="mt-2 font-semibold text-warning underline"
+              className="min-h-11 underline"
             >
-              Retry older evidence
+              {loadingOlder
+                ? 'Loading older evidence…'
+                : paginationError
+                  ? 'Retry older evidence'
+                  : 'Load older evidence'}
             </button>
-          </div>
-        )}
-        {nextCursor && (
+          )}
+        </>
+      )}
+    </section>
+  );
+  return onClose ? (
+    <SetupDialog
+      title="Evidence ledger"
+      closeLabel="Close"
+      returnFocusTo={returnFocusTo}
+      onClose={onClose}
+    >
+      <EvidenceScrollPosition selectedId={selectedId} position={listPosition} />
+      {selectedId && context && (
+        <section
+          className="mb-4 rounded border border-assessment-line bg-assessment-soft p-3 text-sm"
+          aria-label="Originating claim"
+        >
+          <h3 className="font-semibold text-assessment">Opened from this assessment</h3>
+          <p className="mt-1 whitespace-pre-wrap break-words">
+            {[...context].slice(0, 600).join('')}
+            {[...context].length > 600 ? '…' : ''}
+          </p>
+        </section>
+      )}
+      {content}
+      {selectedId && (
+        <SetupActions>
           <button
             type="button"
-            onClick={onLoadOlder}
-            className="mt-3 min-h-11 text-sm font-medium text-ink-secondary hover:text-ink"
+            onClick={onBack}
+            className="min-h-11 rounded border border-line-strong px-3 py-2"
           >
-            Load older evidence
+            Back to evidence
           </button>
-        )}
-      </section>
-    </div>
+        </SetupActions>
+      )}
+    </SetupDialog>
+  ) : (
+    content
   );
 }

@@ -10,6 +10,8 @@ import type { EvidenceDetail, EvidenceListItem, HubMessage } from '../../lib/typ
 import type { WsRefusalCode } from '../../lib/useWsStream';
 
 import { IncidentConversation } from '../IncidentConversation';
+import { installDialogMethods } from '../../test/dialog';
+let dialogMethods: ReturnType<typeof installDialogMethods>;
 
 const getCredentials = vi.hoisted(() =>
   vi.fn(async () => ({ kind: 'bearer' as const, token: 'jwt' })),
@@ -72,6 +74,7 @@ let wsState: {
 };
 
 beforeEach(() => {
+  dialogMethods = installDialogMethods();
   wsState = {
     messages: [],
     status: 'connecting',
@@ -112,6 +115,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  dialogMethods.restore();
+  window.history.replaceState(null, '', '/');
   globalThis.fetch = originalFetch;
   useWsStream.mockClear();
   useAttachments.mockClear();
@@ -284,7 +289,7 @@ describe('incident response workspace', () => {
       /structured assessment is invalid/i,
     );
     expect(screen.getByText('Transcript remains available')).toBeDefined();
-    expect(screen.getByText('Evidence ledger')).toBeDefined();
+    expect(screen.getByRole('button', { name: /All evidence/ })).toBeDefined();
     unmount();
   });
 
@@ -337,9 +342,10 @@ describe('incident response workspace', () => {
     fireEvent.click(screen.getByText('Raw evidence'));
     expect(screen.getByText(/"service": "checkout"/)).toBeDefined();
     expect(screen.getByText(/"saturation": 0.98/)).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to evidence' }));
     expect(screen.getByRole('alert').textContent).toContain('Older evidence is unavailable.');
     fireEvent.click(screen.getByRole('button', { name: 'Retry older evidence' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Load older evidence' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry older evidence' }));
     expect(loadOlder).toHaveBeenCalledTimes(2);
     unmount();
   });

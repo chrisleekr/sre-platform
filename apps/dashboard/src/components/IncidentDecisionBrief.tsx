@@ -3,6 +3,7 @@ import { formatAbsoluteTime } from '../lib/time';
 import type { IncidentWorkspaceData } from '../lib/types';
 import type { InvestigationGap, InvestigationGapCategory } from '@sre/contracts';
 import { FindingFeedback, latestFindingFeedback } from './FindingFeedback';
+import { EvidenceCitation } from './IncidentEvidenceCitation';
 
 const GAP_LABELS: Record<InvestigationGapCategory, string> = {
   observable: 'Automatic check incomplete',
@@ -12,25 +13,6 @@ const GAP_LABELS: Record<InvestigationGapCategory, string> = {
   contradictory_evidence: 'Evidence conflicts',
   operator_decision: 'Decision needed',
 };
-
-function EvidenceCitation({
-  evidenceId,
-  onSelect,
-}: {
-  evidenceId: string;
-  onSelect: (id: string) => void;
-}) {
-  return (
-    <a
-      href={`#evidence-${evidenceId}`}
-      onClick={() => onSelect(evidenceId)}
-      className="inline-flex rounded bg-assessment-muted px-1.5 py-0.5 font-instrument text-xs font-semibold text-assessment hover:bg-assessment-muted"
-      aria-label={`Open evidence ${evidenceId}`}
-    >
-      E{evidenceId.slice(0, 8)}
-    </a>
-  );
-}
 
 function boundedTakeaway(value: string, maxCharacters = 240): string {
   const normalized = value.replace(/\s+/g, ' ').trim();
@@ -49,7 +31,7 @@ export function IncidentDecisionBrief({
   onChanged,
 }: {
   workspace: IncidentWorkspaceData;
-  onSelectEvidence: (id: string) => void;
+  onSelectEvidence: (id: string, context?: string) => void;
   getCredentials: CredentialGetter;
   onChanged: () => void;
 }) {
@@ -84,14 +66,11 @@ export function IncidentDecisionBrief({
           ? incident.recoveryState === 'verified'
             ? 'Recovery verified'
             : incident.recoveryState === 'verifying'
-              ? 'Recovery verification in progress'
+              ? 'Recovery not verified'
               : incident.recoveryState === 'monitoring'
-                ? `Monitoring recovery${incident.recoveryAttempt && incident.recoveryMaxChecks ? `, check ${incident.recoveryAttempt} of ${incident.recoveryMaxChecks}` : ''}`
+                ? 'Recovery not verified'
                 : 'Recovery not verified'
-          : incident.currentState) ??
-        (incident.investigationStatus === 'gathering'
-          ? 'Investigation in progress'
-          : incident.status));
+          : incident.currentState) ?? 'Recovery not verified');
   const currentState = boundedTakeaway(currentStateFull, 120);
   const decisionUpdatedAt = recoveryIsCurrent
     ? incident.recoveryUpdatedAt
@@ -106,7 +85,10 @@ export function IncidentDecisionBrief({
       ? 'This is a health check, not a reported outage.'
       : 'Impact not established in this assessment.');
   const impact = boundedTakeaway(impactFull);
-  const nextStepFull = recoveryIsCurrent ? incident.recoveryNextStep : incident.nextStep;
+  // The operator panel renders the required human decision; this box stays diagnostic.
+  const nextStepFull = recoveryIsCurrent
+    ? incident.recoveryNextStep
+    : (incident.nextStep ?? incident.latestInvestigationRun?.nextStep);
   const nextStep = nextStepFull ? boundedTakeaway(nextStepFull) : null;
   const recoveryUnknowns = recoveryIsCurrent
     ? (incident.recoveryUnknowns ?? []).filter(Boolean)
@@ -135,10 +117,7 @@ export function IncidentDecisionBrief({
       ? findingFeedback.correction.replacement
       : null;
   const leadingTakeaway = boundedTakeaway(
-    responderCorrection ??
-      leading?.hypothesis ??
-      incident.rcaSummary ??
-      'No diagnosis yet. Evidence gathering is still in progress.',
+    responderCorrection ?? leading?.hypothesis ?? incident.rcaSummary ?? 'No diagnosis established',
   );
   const recoveryTone =
     incident.recoveryState === 'verified'
@@ -228,28 +207,6 @@ export function IncidentDecisionBrief({
             </p>
           </details>
         )}
-      {cited.length > 0 && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
-          <span className="font-semibold">Evidence</span>
-          {cited.map((evidenceId) => (
-            <EvidenceCitation
-              key={evidenceId}
-              evidenceId={evidenceId}
-              onSelect={onSelectEvidence}
-            />
-          ))}
-        </div>
-      )}
-      {workspace.assessmentState === 'invalid' && (
-        <p role="alert" className="mt-3 rounded-md bg-critical-soft p-3 text-sm text-critical">
-          The stored structured assessment is invalid. The transcript and evidence remain available.
-        </p>
-      )}
-      <FindingFeedback
-        workspace={workspace}
-        getCredentials={getCredentials}
-        onChanged={onChanged}
-      />
       {nextStep && (
         <div className="mt-3 rounded-md border border-info-line bg-info-soft p-3">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-info">
@@ -264,6 +221,51 @@ export function IncidentDecisionBrief({
           )}
         </div>
       )}
+      {cited.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
+          <span className="font-semibold">Evidence</span>
+          {cited.map((evidenceId) => (
+            <EvidenceCitation
+              key={evidenceId}
+              evidenceId={evidenceId}
+              onSelect={onSelectEvidence}
+              context={
+                recoveryIsCurrent
+                  ? (incident.recoverySummary ?? 'Recovery assessment citation')
+                  : (incident.rcaSummary ?? leading?.hypothesis ?? 'Recorded assessment citation')
+              }
+            />
+          ))}
+        </div>
+      )}
+      {(leading?.contradictingEvidenceIds ?? []).length > 0 && (
+        <div className="mt-3 rounded-md border border-warning-line bg-warning-soft p-3 text-sm text-warning">
+          <p className="font-semibold">Contradicting evidence</p>
+          <p className="mt-1">
+            These checks challenge the leading hypothesis. Review them before deciding.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {leading!.contradictingEvidenceIds!.map((id) => (
+              <EvidenceCitation
+                key={id}
+                evidenceId={id}
+                onSelect={onSelectEvidence}
+                context={`Contradicts hypothesis: ${leading?.hypothesis ?? 'Not established'}`}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+      {workspace.assessmentState === 'invalid' && (
+        <p role="alert" className="mt-3 rounded-md bg-critical-soft p-3 text-sm text-critical">
+          The stored structured assessment is invalid. The transcript and evidence remain available.
+        </p>
+      )}
+      <FindingFeedback
+        workspace={workspace}
+        getCredentials={getCredentials}
+        onChanged={onChanged}
+      />
       {recoveryUnknowns.length > 0 && (
         <div className="mt-3 rounded-md bg-warning-soft p-3">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-warning">
@@ -284,8 +286,7 @@ export function IncidentDecisionBrief({
             Evidence gaps
           </h3>
           <p className="mt-1 text-xs text-warning">
-            These are separated by what can close them, rather than presented as undifferentiated
-            unknowns.
+            Missing information needed to confirm this assessment.
           </p>
           <ul className="mt-3 space-y-2">
             {gaps.map((gap, index) => (
@@ -312,6 +313,7 @@ export function IncidentDecisionBrief({
                         key={evidenceId}
                         evidenceId={evidenceId}
                         onSelect={onSelectEvidence}
+                        context={`Evidence gap: ${gap.question}`}
                       />
                     ))}
                   </div>
@@ -384,6 +386,7 @@ export function IncidentDecisionBrief({
                                 key={evidenceId}
                                 evidenceId={evidenceId}
                                 onSelect={onSelectEvidence}
+                                context={`Supports hypothesis: ${hypothesis.hypothesis}`}
                               />
                             ))
                           : 'None cited'}
@@ -400,6 +403,7 @@ export function IncidentDecisionBrief({
                                 key={evidenceId}
                                 evidenceId={evidenceId}
                                 onSelect={onSelectEvidence}
+                                context={`Contradicts hypothesis: ${hypothesis.hypothesis}`}
                               />
                             ))
                           : 'None cited'}
@@ -452,6 +456,7 @@ export function IncidentDecisionBrief({
                             key={evidenceId}
                             evidenceId={evidenceId}
                             onSelect={onSelectEvidence}
+                            context={`Supports hypothesis: ${hypothesis.hypothesis}`}
                           />
                         ))}
                       </div>
@@ -463,6 +468,7 @@ export function IncidentDecisionBrief({
                             key={evidenceId}
                             evidenceId={evidenceId}
                             onSelect={onSelectEvidence}
+                            context={`Contradicts hypothesis: ${hypothesis.hypothesis}`}
                           />
                         ))}
                       </div>

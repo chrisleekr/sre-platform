@@ -8,143 +8,221 @@ interface EvidencePage {
   nextCursor: string | null;
 }
 
+// Validate before setData: React runs updaters during render, so a malformed body that throws there
+// escapes the request's catch. Throwing here reports evidence unavailable instead of empty.
+async function readPage(res: Response): Promise<EvidencePage> {
+  if (!res.ok) throw new Error('Evidence unavailable');
+  const page = (await res.json()) as Partial<EvidencePage> | null;
+  if (!Array.isArray(page?.evidence)) throw new Error('Evidence unavailable');
+  return {
+    evidence: page.evidence,
+    nextCursor: typeof page.nextCursor === 'string' ? page.nextCursor : null,
+  };
+}
+
+const merge = (first: EvidenceListItem[], second: EvidenceListItem[]) => {
+  const seen = new Set<string>();
+  return [...first, ...second]
+    .filter((item) => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    })
+    .sort(
+      (a, b) => Date.parse(b.recordedAt) - Date.parse(a.recordedAt) || b.id.localeCompare(a.id),
+    );
+};
+
 export function useIncidentEvidence(
   incidentId: string,
-  opts: { apiBaseUrl: string; getCredentials: CredentialGetter },
-): {
-  evidence: EvidenceListItem[];
-  nextCursor: string | null;
-  details: Record<string, EvidenceDetail | null>;
-  loading: boolean;
-  error: boolean;
-  paginationError: boolean;
-  detailErrors: Record<string, boolean>;
-  loadDetail: (id: string) => void;
-  loadOlder: () => void;
-  refresh: () => void;
-} {
-  const [evidence, setEvidence] = useState<EvidenceListItem[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [details, setDetails] = useState<Record<string, EvidenceDetail | null>>({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [paginationError, setPaginationError] = useState(false);
-  const [detailErrors, setDetailErrors] = useState<Record<string, boolean>>({});
+  opts: {
+    apiBaseUrl: string;
+    getCredentials: CredentialGetter;
+  },
+) {
+  const [data, setData] = useState({
+    incidentId,
+    evidence: [] as EvidenceListItem[],
+    nextCursor: null as string | null,
+    details: {} as Record<string, EvidenceDetail | null>,
+    loading: true,
+    loadingOlder: false,
+    error: false,
+    paginationError: false,
+    detailErrors: {} as Record<string, boolean>,
+  });
   const [nonce, setNonce] = useState(0);
-  const loadedOlder = useRef(false);
+  const identity = useRef(incidentId);
+  const generation = useRef(0);
+  const inFlight = useRef(new Set<string>());
+  const pageBusy = useRef(false);
+  const headBusy = useRef(true);
+  const olderQueued = useRef(false);
+  const [olderRequest, setOlderRequest] = useState(0);
+  const cache = useRef<Record<string, EvidenceDetail>>({});
+  if (identity.current !== incidentId) {
+    identity.current = incidentId;
+    generation.current++;
+    inFlight.current = new Set();
+    cache.current = {};
+    pageBusy.current = false;
+    headBusy.current = true;
+    olderQueued.current = false;
+  }
+  const current = data.incidentId === incidentId;
+  const nextCursor = current ? data.nextCursor : null;
+  const refresh = useCallback(() => {
+    headBusy.current = true;
+    generation.current++;
+    setNonce((n) => n + 1);
+  }, []);
 
   useEffect(() => {
-    loadedOlder.current = false;
-    setEvidence([]);
-    setNextCursor(null);
-    setDetails({});
-    setLoading(true);
-    setError(false);
-    setPaginationError(false);
-    setDetailErrors({});
-  }, [incidentId]);
-
-  useEffect(() => {
-    let active = true;
-    void (async () => {
-      try {
-        setLoading(true);
-        setError(false);
-        const res = await authenticatedFetch(
-          `${opts.apiBaseUrl}/incidents/${incidentId}/evidence?limit=20`,
-          opts.getCredentials,
-        );
-        if (!res.ok) throw new Error('evidence list request failed');
-        const page = (await res.json()) as EvidencePage;
-        if (active) {
-          const refreshed = Array.isArray(page.evidence) ? page.evidence : [];
-          setEvidence((current) => {
-            if (!loadedOlder.current) return refreshed;
-            const seen = new Set<string>();
-            return [...refreshed, ...current].filter((item) => {
-              if (seen.has(item.id)) return false;
-              seen.add(item.id);
-              return true;
-            });
+    const epoch = ++generation.current;
+    pageBusy.current = false;
+    headBusy.current = true;
+    const valid = () => identity.current === incidentId && generation.current === epoch;
+    setData((old) =>
+      old.incidentId === incidentId
+        ? { ...old, loading: true, loadingOlder: olderQueued.current, error: false }
+        : {
+            incidentId,
+            evidence: [],
+            nextCursor: null,
+            details: {},
+            loading: true,
+            loadingOlder: false,
+            error: false,
+            paginationError: false,
+            detailErrors: {},
+          },
+    );
+    void authenticatedFetch(
+      `${opts.apiBaseUrl}/incidents/${incidentId}/evidence?limit=20`,
+      opts.getCredentials,
+    )
+      .then(async (res) => {
+        const page = await readPage(res);
+        if (valid())
+          setData((old) => {
+            const loaded = new Set(old.evidence.map((item) => item.id));
+            return {
+              ...old,
+              loading: false,
+              error: false,
+              evidence: merge(page.evidence, old.evidence),
+              // A head that shares a record with the loaded list joins it without a gap, so the deepest
+              // cursor stays valid. A disjoint head can leave a gap, so traverse from its own cursor.
+              nextCursor: page.evidence.some((item) => loaded.has(item.id))
+                ? old.nextCursor
+                : page.nextCursor,
+            };
           });
-          if (!loadedOlder.current)
-            setNextCursor(typeof page.nextCursor === 'string' ? page.nextCursor : null);
-          setLoading(false);
-        }
-      } catch {
-        if (active) {
-          setLoading(false);
-          setError(true);
-        }
-      }
-    })();
+      })
+      .catch(() => {
+        if (valid()) setData((old) => ({ ...old, loading: false, error: true }));
+      })
+      .finally(() => {
+        if (!valid()) return;
+        headBusy.current = false;
+        if (olderQueued.current) setOlderRequest((n) => n + 1);
+      });
     return () => {
-      active = false;
+      if (valid()) generation.current++;
     };
   }, [incidentId, nonce, opts.apiBaseUrl, opts.getCredentials]);
 
   const loadDetail = useCallback(
     (id: string) => {
-      if (id in details) return;
-      setDetailErrors((current) => ({ ...current, [id]: false }));
-      setDetails((current) => ({ ...current, [id]: null }));
-      void (async () => {
-        try {
-          const res = await authenticatedFetch(
-            `${opts.apiBaseUrl}/incidents/${incidentId}/evidence/${id}`,
-            opts.getCredentials,
-          );
-          if (!res.ok) throw new Error('evidence detail request failed');
+      if (cache.current[id] || inFlight.current.has(id)) return;
+      const requests = inFlight.current;
+      requests.add(id);
+      setData((old) => ({
+        ...old,
+        details: { ...old.details, [id]: null },
+        detailErrors: { ...old.detailErrors, [id]: false },
+      }));
+      const valid = () => identity.current === incidentId && requests === inFlight.current;
+      void authenticatedFetch(
+        `${opts.apiBaseUrl}/incidents/${incidentId}/evidence/${encodeURIComponent(id)}`,
+        opts.getCredentials,
+      )
+        .then(async (res) => {
+          if (!res.ok) throw new Error('Evidence unavailable');
           const detail = (await res.json()) as EvidenceDetail;
-          setDetails((current) => ({ ...current, [id]: detail }));
-        } catch {
-          // Remove the loading marker so expanding the card again retries the request.
-          setDetails((current) => {
-            const next = { ...current };
-            delete next[id];
-            return next;
-          });
-          setDetailErrors((current) => ({ ...current, [id]: true }));
-        }
-      })();
+          if (valid()) {
+            cache.current[id] = detail;
+            setData((old) => ({ ...old, details: { ...old.details, [id]: detail } }));
+          }
+        })
+        .catch(() => {
+          if (valid())
+            setData((old) => {
+              const details = { ...old.details };
+              delete details[id];
+              return { ...old, details, detailErrors: { ...old.detailErrors, [id]: true } };
+            });
+        })
+        .finally(() => requests.delete(id));
     },
-    [details, incidentId, opts.apiBaseUrl, opts.getCredentials],
+    [incidentId, opts.apiBaseUrl, opts.getCredentials],
   );
 
   const loadOlder = useCallback(() => {
-    if (!nextCursor) return;
-    const cursor = nextCursor;
-    setNextCursor(null);
-    setPaginationError(false);
-    void (async () => {
-      try {
-        const res = await authenticatedFetch(
-          `${opts.apiBaseUrl}/incidents/${incidentId}/evidence?limit=20&before=${encodeURIComponent(cursor)}`,
-          opts.getCredentials,
-        );
-        if (!res.ok) throw new Error('evidence page request failed');
-        const page = (await res.json()) as EvidencePage;
-        loadedOlder.current = true;
-        setEvidence((current) => [...current, ...page.evidence]);
-        setNextCursor(page.nextCursor);
-        setPaginationError(false);
-      } catch {
-        setNextCursor(cursor);
-        setPaginationError(true);
-      }
-    })();
+    if (!nextCursor || pageBusy.current) return;
+    if (headBusy.current) {
+      // The settling head can move the cursor, so page from the settled cursor instead of dropping
+      // the request.
+      olderQueued.current = true;
+      setData((old) => ({ ...old, loadingOlder: true, paginationError: false }));
+      return;
+    }
+    olderQueued.current = false;
+    pageBusy.current = true;
+    const epoch = generation.current;
+    const valid = () => identity.current === incidentId && epoch === generation.current;
+    setData((old) => ({ ...old, loadingOlder: true, paginationError: false }));
+    void authenticatedFetch(
+      `${opts.apiBaseUrl}/incidents/${incidentId}/evidence?limit=20&before=${encodeURIComponent(nextCursor)}`,
+      opts.getCredentials,
+    )
+      .then(async (res) => {
+        const page = await readPage(res);
+        if (valid()) {
+          setData((old) => ({
+            ...old,
+            evidence: merge(old.evidence, page.evidence),
+            nextCursor: page.nextCursor,
+            loadingOlder: false,
+          }));
+        }
+      })
+      .catch(() => {
+        if (valid()) setData((old) => ({ ...old, loadingOlder: false, paginationError: true }));
+      })
+      .finally(() => {
+        if (valid()) pageBusy.current = false;
+      });
   }, [incidentId, nextCursor, opts.apiBaseUrl, opts.getCredentials]);
 
+  useEffect(() => {
+    if (!olderRequest || !olderQueued.current) return;
+    if (nextCursor) loadOlder();
+    else {
+      olderQueued.current = false;
+      setData((old) => ({ ...old, loadingOlder: false }));
+    }
+  }, [olderRequest]);
+
   return {
-    evidence,
+    ...data,
+    evidence: current ? data.evidence : [],
+    details: current ? data.details : {},
+    detailErrors: current ? data.detailErrors : {},
     nextCursor,
-    details,
-    loading,
-    error,
-    paginationError,
-    detailErrors,
+    loading: !current || data.loading,
     loadDetail,
     loadOlder,
-    refresh: () => setNonce((value) => value + 1),
+    refresh,
   };
 }
