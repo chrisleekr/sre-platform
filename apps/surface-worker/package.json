@@ -13,6 +13,6 @@
     "@sre/db": "workspace:*",
     "@sre/hub": "workspace:*",
     "@sre/surfaces": "workspace:*",
-    "ioredis": "^5.11.1"
+    "ioredis": "^6.0.0"
   }
 }

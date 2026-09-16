@@ -50,6 +50,11 @@ While installing the app, turn on Dependabot alerts for that repository. Renovat
 known-vulnerable dependency reads those alerts, and without them a security fix waits for the weekly
 schedule like any other update.
 
+Every minor, patch and digest update lands in one weekly `all non-major dependencies` branch, so the
+routine churn is one review. Majors keep one branch each, or one per named group, because each can
+need a code or runtime migration and one broken major would otherwise block every other update. The
+named groups below still keep coupled packages together for majors.
+
 Nothing automerges. Every update waits for a human, and the dependency dashboard issue lists what is
 outstanding. A `replacement` update, which swaps one package name for a different one rather than
 moving a version, is held behind dashboard approval so nobody reviews a change of identity as a
@@ -69,12 +74,16 @@ the `@types/bun` devDependency, the `ARG BUN_IMAGE` default in `Dockerfile`, and
 in `.gitlab-ci.yml`. The last two carry the same tag and digest, so separate updates would leave the
 container build and the pipeline runtime on different Bun versions.
 
+The kind node image is capped below Kubernetes 1.36. The Argo CD live test pins `ARGOCD_VERSION` by
+hand, and Argo CD 3.4 is tested only up to Kubernetes 1.35, so raise the cap in the same change that
+moves `ARGOCD_VERSION`. Keep `KIND_VERSION` on the kind release that published the node image digest.
+
 Four custom managers register pins no built-in manager reads: the Testcontainers image literals in
 TypeScript, the images the Alertmanager live test declares as module constants, the BuildKit image
 held in a pipeline variable rather than an image key, and the kind node image the Argo CD live test
 holds in a shell variable. Registering a pin is not the same as producing an update. Today only
 three can move: BuildKit, the digest-pinned Alertmanager image, and the kind node image. The
-Testcontainers manager registers `pgvector/pgvector:pg16` and `valkey/valkey:8`, which are
+Testcontainers manager registers `pgvector/pgvector:pg16` and `valkey/valkey:9`, which are
 major-series tags carried without a digest, so an upstream retag changes what runs without changing
 any file here and Renovate has no newer version to offer; the manager exists so a later move to a
 pinned tag is visible the day it lands. `ghcr.io/huggingface/text-embeddings-inference:cpu-arm64-latest`

@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import ts from 'typescript';
+import ts from '@typescript/typescript6';
 
 const rootArgumentIndex = process.argv.indexOf('--project-root');
 if (rootArgumentIndex >= 0 && !process.argv[rootArgumentIndex + 1]) {
