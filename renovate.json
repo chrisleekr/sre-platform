@@ -72,6 +72,18 @@
       "matchPackageNames": ["@modelcontextprotocol/client", "@modelcontextprotocol/server"]
     },
     {
+      "description": "The Argo CD live test runs a hand-pinned ARGOCD_VERSION that no manager reads, and Argo CD 3.4 is tested only up to Kubernetes 1.35. Move this cap together with ARGOCD_VERSION.",
+      "matchPackageNames": ["kindest/node"],
+      "allowedVersions": "<1.36"
+    },
+    {
+      "description": "Every non-major update across all managers lands in one weekly branch. It sits after the named groups so it overrides them for non-major updates, which still move together inside this branch; the named groups keep coupled packages together for majors. Majors stay one branch per group because each can need a code or runtime migration, and one broken major would otherwise block every other update.",
+      "groupName": "all non-major dependencies",
+      "groupSlug": "all-non-major",
+      "matchPackageNames": ["*"],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest"]
+    },
+    {
       "description": "A replacement swaps one package name for a different one, so it changes dependency identity rather than version, and the npm cooldown preset deliberately exempts it. Hold it behind the dashboard so review does not read it as a routine bump.",
       "matchUpdateTypes": ["replacement"],
       "dependencyDashboardApproval": true

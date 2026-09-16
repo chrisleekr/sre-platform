@@ -7,7 +7,7 @@
   "dependencies": {
     "@sre/db": "workspace:*",
     "drizzle-orm": "^0.45.2",
-    "ioredis": "^5.11.1"
+    "ioredis": "^6.0.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

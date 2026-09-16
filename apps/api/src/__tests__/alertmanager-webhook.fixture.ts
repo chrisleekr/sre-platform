@@ -60,14 +60,19 @@ export function createFixture() {
 
   let concurrentRootGate: { started: () => void; waitForRelease: Promise<void> } | undefined;
 
+  // Vitest clears mock call history before each test, so mock.calls.length restarts at zero and
+  // would reissue a thread ts already bound to an earlier test's incident.
+  let rootSequence = 0;
   const postRoot = vi.fn(async (_tenantId: string, _channel: string, text: string) => {
+    rootSequence += 1;
+    const ts = `1788000000.${String(rootSequence).padStart(6, '0')}`;
     if (text.includes('UncertainRoot'))
       throw new SlackApiError('uncertain', 'transport_failure', 'request outcome unknown');
     if (text.includes('ConcurrentRoot') && concurrentRootGate) {
       concurrentRootGate.started();
       await concurrentRootGate.waitForRelease;
     }
-    return `1788000000.${String(postRoot.mock.calls.length).padStart(6, '0')}`;
+    return ts;
   });
 
   const providerFingerprint = (label: string): string =>

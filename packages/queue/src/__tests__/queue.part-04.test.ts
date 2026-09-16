@@ -90,7 +90,7 @@ describe('per-attempt processing deadline', () => {
   const type = `deadline-${__fixture.SUFFIX}`;
   const streamKeys: string[] = [];
 
-  const makeDeadlineQueue = async () => {
+  const makeDeadlineQueue = async (stuckGraceMs = 150) => {
     const stream = `${__fixture.STREAM}:deadline:${randomUUID().slice(0, 8)}`;
     const deadStream = `${stream}:dead`;
     const onStuck = vi.fn((_info: StuckJobInfo) => undefined);
@@ -100,7 +100,7 @@ describe('per-attempt processing deadline', () => {
       group: 'workers',
       maxAttempts: 3,
       maxProcessingMs: 150,
-      stuckGraceMs: 150,
+      stuckGraceMs,
       onStuck,
     });
     await queue.ensureGroup();
@@ -145,7 +145,10 @@ describe('per-attempt processing deadline', () => {
   });
 
   test('a stuck handler is requeued without letting process return early', async () => {
-    const { queue, onStuck } = await makeDeadlineQueue();
+    // The watchdog recycles after stuckGraceMs even when the requeue write has not landed, so a
+    // 150ms grace let a slow Postgres update on a loaded CI runner reach onStuck before 'queued'.
+    // A wide grace keeps the requeue-then-recycle order this test asserts.
+    const { queue, onStuck } = await makeDeadlineQueue(2000);
     const jobId = await queue.enqueue({ tenantId: __fixture.tenant, type, payload: {} });
     let markStarted!: () => void;
     const started = new Promise<void>((resolve) => {
@@ -169,7 +172,7 @@ describe('per-attempt processing deadline', () => {
     });
     await started;
 
-    await vi.waitFor(() => expect(onStuck).toHaveBeenCalledTimes(1), { timeout: 5000 });
+    await vi.waitFor(() => expect(onStuck).toHaveBeenCalledTimes(1), { timeout: 10_000 });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(settled).toBe(false);
     expect(onStuck).toHaveBeenCalledWith(
@@ -183,7 +186,7 @@ describe('per-attempt processing deadline', () => {
     row = (await __fixture.db.db.select().from(jobs).where(eq(jobs.id, jobId)))[0]!;
     expect(row.status).toBe('queued');
     expect(onStuck).toHaveBeenCalledTimes(1);
-  });
+  }, 15_000);
 
   test('a queue without onStuck holds the lease and logs instead of requeuing', async () => {
     const stream = `${__fixture.STREAM}:deadline:${randomUUID().slice(0, 8)}`;

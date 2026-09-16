@@ -30,7 +30,7 @@ export default async function setup(): Promise<() => Promise<void>> {
     const { host } = new URL(uri);
     process.env.APP_DATABASE_URL = `postgres://app_user:app@${host}/sre_platform`;
 
-    valkey = await new GenericContainer('valkey/valkey:8')
+    valkey = await new GenericContainer('valkey/valkey:9')
       .withExposedPorts(6379)
       .withWaitStrategy(Wait.forLogMessage(/Ready to accept connections/))
       .start();

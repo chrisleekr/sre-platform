@@ -116,7 +116,7 @@ export async function startInfrastructure(): Promise<Stack> {
 
   let valkey: StartedTestContainer | undefined;
   try {
-    valkey = await new GenericContainer('valkey/valkey:8')
+    valkey = await new GenericContainer('valkey/valkey:9')
       .withExposedPorts(6379)
       .withWaitStrategy(Wait.forLogMessage(/Ready to accept connections/))
       .start();
