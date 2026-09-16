@@ -50,9 +50,9 @@ test('accepts a capture-only alternative offer without granting external-write a
       target: 'current',
       to: null,
       reason:
-        'GitLab issue creation is unavailable; offer to save a diagnostic guide in the platform.',
+        'Repository document writes are unsupported; offer to save a diagnostic guide in the platform.',
     })),
-    'Create a GitLab issue from these recommendations.',
+    'Commit a diagnostic guide to the GitLab repository from these recommendations.',
     new AbortController().signal,
   );
   expect(result).toMatchObject({ kind: 'offer_capture_knowledge', target: 'current', to: null });
