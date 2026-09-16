@@ -57,6 +57,8 @@ export function useIncidentEvidence(
   const inFlight = useRef(new Set<string>());
   const pageBusy = useRef(false);
   const headBusy = useRef(true);
+  const olderQueued = useRef(false);
+  const [olderRequest, setOlderRequest] = useState(0);
   const cache = useRef<Record<string, EvidenceDetail>>({});
   if (identity.current !== incidentId) {
     identity.current = incidentId;
@@ -65,6 +67,7 @@ export function useIncidentEvidence(
     cache.current = {};
     pageBusy.current = false;
     headBusy.current = true;
+    olderQueued.current = false;
   }
   const current = data.incidentId === incidentId;
   const nextCursor = current ? data.nextCursor : null;
@@ -81,7 +84,7 @@ export function useIncidentEvidence(
     const valid = () => identity.current === incidentId && generation.current === epoch;
     setData((old) =>
       old.incidentId === incidentId
-        ? { ...old, loading: true, loadingOlder: false, error: false }
+        ? { ...old, loading: true, loadingOlder: olderQueued.current, error: false }
         : {
             incidentId,
             evidence: [],
@@ -120,7 +123,9 @@ export function useIncidentEvidence(
         if (valid()) setData((old) => ({ ...old, loading: false, error: true }));
       })
       .finally(() => {
-        if (valid()) headBusy.current = false;
+        if (!valid()) return;
+        headBusy.current = false;
+        if (olderQueued.current) setOlderRequest((n) => n + 1);
       });
     return () => {
       if (valid()) generation.current++;
@@ -164,7 +169,15 @@ export function useIncidentEvidence(
   );
 
   const loadOlder = useCallback(() => {
-    if (!nextCursor || pageBusy.current || headBusy.current) return;
+    if (!nextCursor || pageBusy.current) return;
+    if (headBusy.current) {
+      // The settling head can move the cursor, so page from the settled cursor instead of dropping
+      // the request.
+      olderQueued.current = true;
+      setData((old) => ({ ...old, loadingOlder: true, paginationError: false }));
+      return;
+    }
+    olderQueued.current = false;
     pageBusy.current = true;
     const epoch = generation.current;
     const valid = () => identity.current === incidentId && epoch === generation.current;
@@ -191,6 +204,15 @@ export function useIncidentEvidence(
         if (valid()) pageBusy.current = false;
       });
   }, [incidentId, nextCursor, opts.apiBaseUrl, opts.getCredentials]);
+
+  useEffect(() => {
+    if (!olderRequest || !olderQueued.current) return;
+    if (nextCursor) loadOlder();
+    else {
+      olderQueued.current = false;
+      setData((old) => ({ ...old, loadingOlder: false }));
+    }
+  }, [olderRequest]);
 
   return {
     ...data,

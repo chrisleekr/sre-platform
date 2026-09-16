@@ -134,7 +134,7 @@ test('refresh keeps new evidence reachable after pagination was exhausted', asyn
   );
 });
 
-test('does not start an older page while the refreshed head is pending', async () => {
+test('queues an older page while the refreshed head is pending and pages from its cursor', async () => {
   const head = deferred();
   const older = vi.fn(async () => response({ evidence: [], nextCursor: null }));
   let refreshing = false;
@@ -147,6 +147,8 @@ test('does not start an older page while the refreshed head is pending', async (
   refreshing = true;
   act(() => hook.result.current.refresh());
   act(() => hook.result.current.loadOlder());
+  expect(older).not.toHaveBeenCalled();
+  expect(hook.result.current.loadingOlder).toBe(true);
   await act(async () =>
     head.resolve(
       response({
@@ -155,14 +157,44 @@ test('does not start an older page while the refreshed head is pending', async (
       }),
     ),
   );
-  expect(older).not.toHaveBeenCalled();
-  expect(hook.result.current.nextCursor).toBe('refreshed-cursor');
-  act(() => hook.result.current.loadOlder());
   await waitFor(() => expect(older).toHaveBeenCalledOnce());
   expect(globalThis.fetch).toHaveBeenLastCalledWith(
     expect.stringContaining('before=refreshed-cursor'),
     expect.anything(),
   );
+  await waitFor(() => expect(hook.result.current.loadingOlder).toBe(false));
+});
+
+test('a queued older page settles when the refreshed head has no older records', async () => {
+  const head = deferred();
+  const older = vi.fn(async () => response({ evidence: [], nextCursor: null }));
+  let refreshing = false;
+  globalThis.fetch = vi.fn(async (url) => {
+    if (String(url).includes('before=')) return older();
+    // Each head request needs its own body, because a superseded request still reads its response.
+    return refreshing
+      ? head.promise.then((settled) => settled.clone())
+      : response({ evidence: [item], nextCursor: 'old-cursor' });
+  });
+  const hook = renderHook(() => useIncidentEvidence('first', opts));
+  await waitFor(() => expect(hook.result.current.loading).toBe(false));
+  refreshing = true;
+  act(() => hook.result.current.refresh());
+  act(() => hook.result.current.loadOlder());
+  // A second refresh before the head lands must not clear the queued request.
+  act(() => hook.result.current.refresh());
+  expect(hook.result.current.loadingOlder).toBe(true);
+  await act(async () =>
+    head.resolve(
+      response({
+        evidence: [{ ...item, id: 'newer', recordedAt: '2026-09-14T00:05:00Z' }],
+        nextCursor: null,
+      }),
+    ),
+  );
+  await waitFor(() => expect(hook.result.current.loadingOlder).toBe(false));
+  expect(hook.result.current.nextCursor).toBeNull();
+  expect(older).not.toHaveBeenCalled();
 });
 
 test('a refreshed head that overlaps loaded records keeps the deepest cursor', async () => {

@@ -7,10 +7,18 @@ test('triage reflows and evidence navigation preserves the responder context', a
   const child = spawn('bun', ['apps/dashboard/checks/incident-triage-browser.mjs'], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+  // An unread pipe can fill and block the fixture; keep the output to explain a failed startup.
+  let stderr = '';
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk;
+  });
   let browser: Browser | undefined;
   try {
     const url = await new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('Fixture startup timed out')), 30_000);
+      const timer = setTimeout(
+        () => reject(new Error(`Fixture startup timed out\n${stderr}`)),
+        30_000,
+      );
       let output = '';
       child.stdout.on('data', (chunk) => {
         output += chunk;
@@ -26,7 +34,7 @@ test('triage reflows and evidence navigation preserves the responder context', a
       });
       child.on('exit', (code) => {
         clearTimeout(timer);
-        reject(new Error(`Fixture exited ${code}`));
+        reject(new Error(`Fixture exited ${code}\n${stderr}`));
       });
     });
     const fixture = { url };

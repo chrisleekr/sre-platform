@@ -5,7 +5,16 @@ import { formatAbsoluteTime } from '../lib/time';
 
 /** Recorded activity and historical outcome answer different response questions. */
 export function IncidentAutomationStatus({ incident }: { incident: Incident }) {
-  const at = incident.pendingAutomation?.scheduledAt ?? incident.recoveryNextCheckAt;
+  // Same rule as the API's next automation: a processing job's time is when it became runnable, and a
+  // recovery check time is a schedule only while recovery is monitored.
+  const pending = incident.pendingAutomation;
+  const at = pending
+    ? pending.status === 'queued'
+      ? pending.scheduledAt
+      : null
+    : incident.recoveryState === 'monitoring'
+      ? incident.recoveryNextCheckAt
+      : null;
   const run = incident.latestInvestigationRun;
   return (
     <section

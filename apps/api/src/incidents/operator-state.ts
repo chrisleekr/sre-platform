@@ -8,7 +8,6 @@ export interface NextAutomation {
 type OperatorIncidentState = Pick<
   IncidentDetail,
   | 'attentionReason'
-  | 'investigationStatus'
   | 'latestInvestigationRun'
   | 'nextStep'
   | 'pendingAutomation'
@@ -19,19 +18,35 @@ type OperatorIncidentState = Pick<
 >;
 
 function nextAutomation(incident: OperatorIncidentState): NextAutomation | null {
+  // Only a durable job row or a scheduled recovery check is automation. Investigation and recovery
+  // statuses can outlive a failed or reaped job, so they do not imply work.
   if (incident.pendingAutomation) {
-    const descriptions: Record<string, string> = {
-      triage: 'Start the queued investigation',
-      'signal.reassess': 'Reassess changed provider signals',
-      resume: 'Answer the responder follow-up',
-      'recovery.verify': 'Verify recovery evidence',
+    const queued = incident.pendingAutomation.status === 'queued';
+    const descriptions: Record<string, [queued: string, processing: string]> = {
+      triage: [
+        'Start the queued investigation',
+        'Complete the investigation recorded as processing',
+      ],
+      'signal.reassess': [
+        'Reassess changed provider signals',
+        'Complete the signal reassessment recorded as processing',
+      ],
+      resume: [
+        'Answer the responder follow-up',
+        'Complete the responder follow-up recorded as processing',
+      ],
+      'recovery.verify': [
+        'Verify recovery evidence',
+        'Complete the recovery check recorded as processing',
+      ],
     };
+    const [queuedDescription, processingDescription] = descriptions[
+      incident.pendingAutomation.type
+    ] ?? ['Continue queued automation', 'Complete automation recorded as processing'];
     return {
-      description: descriptions[incident.pendingAutomation.type] ?? 'Continue queued automation',
-      scheduledAt:
-        incident.pendingAutomation.status === 'queued'
-          ? incident.pendingAutomation.scheduledAt
-          : null,
+      description: queued ? queuedDescription : processingDescription,
+      // available_at of a processing job is when it became runnable, not a future schedule.
+      scheduledAt: queued ? incident.pendingAutomation.scheduledAt : null,
     };
   }
   if (incident.recoveryState === 'monitoring' && incident.recoveryNextCheckAt) {
@@ -39,15 +54,6 @@ function nextAutomation(incident: OperatorIncidentState): NextAutomation | null 
       description: 'Recheck recovery evidence',
       scheduledAt: incident.recoveryNextCheckAt.toISOString(),
     };
-  }
-  if (incident.recoveryState === 'verifying') {
-    return { description: 'Verify recovery evidence', scheduledAt: null };
-  }
-  if (incident.investigationStatus === 'queued') {
-    return { description: 'Start the queued investigation', scheduledAt: null };
-  }
-  if (incident.investigationStatus === 'gathering') {
-    return { description: 'Continue gathering evidence', scheduledAt: null };
   }
   return null;
 }

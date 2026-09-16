@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 
+const INSPECTOR_ENTRY = { evidenceInspector: true };
+
+function isPushedInspectorEntry() {
+  return (
+    (window.history.state as { evidenceInspector?: unknown } | null)?.evidenceInspector === true
+  );
+}
+
 /** Keep explicit evidence navigation independent of live preview refreshes. */
 export function useEvidenceInspector(incidentId: string, loadDetail: (id: string) => void) {
   const [inspectorOpen, setOpen] = useState(false);
@@ -14,10 +22,11 @@ export function useEvidenceInspector(incidentId: string, loadDetail: (id: string
       ? ''
       : window.location.hash;
   };
+  // Keep the marker so Close still knows the current entry was pushed by openEvidence.
   const restoreHash = () => {
     if (window.location.hash.startsWith('#evidence-'))
       window.history.replaceState(
-        null,
+        window.history.state,
         '',
         `${window.location.pathname}${window.location.search}${previousHash.current}`,
       );
@@ -55,17 +64,19 @@ export function useEvidenceInspector(incidentId: string, loadDetail: (id: string
       setOpen(true);
       setId(id);
       loadDetail(id);
-      if (window.location.hash !== `#evidence-${id}`)
-        window.history.pushState(
-          null,
-          '',
-          `${window.location.pathname}${window.location.search}#evidence-${id}`,
-        );
+      const url = `${window.location.pathname}${window.location.search}#evidence-${id}`;
+      if (window.location.hash === `#evidence-${id}`) return;
+      // One inspector session owns one history entry, so Back and Close both leave it in one step.
+      if (inspectorOpen) window.history.replaceState(window.history.state, '', url);
+      else window.history.pushState(INSPECTOR_ENTRY, '', url);
     },
     closeEvidence: () => {
       setOpen(false);
       setId(null);
-      restoreHash();
+      // Replacing a pushed entry would leave a dead Back step. A deep-linked entry has no page
+      // behind it to return to, so it is rewritten in place.
+      if (isPushedInspectorEntry()) window.history.back();
+      else restoreHash();
     },
     showAllEvidence: () => {
       captureTrigger();

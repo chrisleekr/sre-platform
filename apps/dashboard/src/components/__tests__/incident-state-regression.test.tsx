@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { Incident, IncidentWorkspaceData } from '../../lib/types';
@@ -225,6 +225,60 @@ describe('truthful incident response state', () => {
     expect(screen.getAllByText('The migration failed its checksum check.').length).toBeGreaterThan(
       0,
     );
+  });
+
+  test('the handoff card states automation once, matching recorded processing work', () => {
+    const model = view({
+      pendingAutomation: {
+        type: 'triage',
+        status: 'processing',
+        scheduledAt: '2026-09-10T01:05:00.000Z',
+      },
+    });
+    model.workspace.attention = null;
+    model.workspace.automation = {
+      nextAction: {
+        description: 'Complete the investigation recorded as processing',
+        scheduledAt: null,
+      },
+      currentBudget: null,
+      episodeExpiresAt: null,
+    } as IncidentWorkspaceData['automation'];
+    render(
+      <MemoryRouter>
+        <IncidentOverview view={model} />
+      </MemoryRouter>,
+    );
+    const handoff = within(screen.getByRole('region', { name: 'Response handoff and policy' }));
+    expect(handoff.getByText('No human decision required')).toBeTruthy();
+    expect(handoff.getByText('Complete the investigation recorded as processing')).toBeTruthy();
+    expect(handoff.queryByText('Investigation recorded as processing')).toBeNull();
+    const recorded = within(screen.getByRole('region', { name: 'Recorded automation' }));
+    expect(recorded.getByText('Investigation recorded as processing')).toBeTruthy();
+    expect(recorded.queryByText(/Scheduled time/)).toBeNull();
+  });
+
+  test.each([
+    [
+      {
+        pendingAutomation: {
+          type: 'triage',
+          status: 'queued',
+          scheduledAt: '2026-09-10T01:05:00.000Z',
+        },
+      },
+      true,
+    ],
+    [{ recoveryState: 'monitoring', recoveryNextCheckAt: '2026-09-10T01:05:00.000Z' }, true],
+    [{ recoveryState: 'verified', recoveryNextCheckAt: '2026-09-10T01:05:00.000Z' }, false],
+  ] as const)('shows a scheduled time only for a real schedule: %o', (overrides, shown) => {
+    render(
+      <MemoryRouter>
+        <IncidentOverview view={view(overrides as Partial<Incident>)} />
+      </MemoryRouter>,
+    );
+    const recorded = within(screen.getByRole('region', { name: 'Recorded automation' }));
+    expect(Boolean(recorded.queryByText(/Scheduled time/))).toBe(shown);
   });
 
   test('transport channel identity is not labelled as the affected service', () => {

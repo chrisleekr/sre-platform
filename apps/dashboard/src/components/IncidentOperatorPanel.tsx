@@ -1,6 +1,5 @@
 import { formatAbsoluteTime } from '../lib/time';
 import type { IncidentWorkspaceData } from '../lib/types';
-import { investigationWorkLabel } from '../lib/incidentState';
 
 type Budget = NonNullable<NonNullable<IncidentWorkspaceData['automation']>['currentBudget']>;
 
@@ -73,7 +72,8 @@ export function IncidentOperatorPanel({
         <p
           className={`text-xs font-semibold uppercase tracking-wide ${attention ? 'text-warning' : 'text-success'}`}
         >
-          {attention ? 'Human decision required' : investigationWorkLabel(workspace.incident)}
+          {/* The body is the one statement of automation; a work label here could contradict it. */}
+          {attention ? 'Human decision required' : 'No human decision required'}
         </p>
         {attention ? (
           <dl className="mt-3 space-y-3 text-sm">
