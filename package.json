@@ -81,7 +81,7 @@
     "@types/bun": "1.4.2",
     "@types/node": "^26.0.1",
     "@vitejs/plugin-react": "^4.4.0",
-    "@vitest/coverage-v8": "4.1.9",
+    "@vitest/coverage-v8": "4.1.11",
     "drizzle-orm": "^0.45.2",
     "husky": "^9.1.7",
     "ioredis": "^5.11.1",
