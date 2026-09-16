@@ -83,7 +83,10 @@ export function LiveIncidentConversation({
   );
   const [copyLinkState, setCopyLinkState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const inspector = useEvidenceInspector(incident.id, evidenceState.loadDetail);
-  const [newMessageCount, setNewMessageCount] = useState(0);
+  const [unreadMessageIds, setUnreadMessageIds] = useState<string[]>([]);
+  // The echo of this page's own post can arrive before or after its accepted frame, so own ids are
+  // excluded when counting rather than when the echo arrives.
+  const [ownMessageIds, setOwnMessageIds] = useState<string[]>([]);
   const [conversationReviewNeeded, setConversationReviewNeeded] = useState(false);
   const connectionWasOpen = useRef(false);
   const connectionInterrupted = useRef(false);
@@ -152,11 +155,12 @@ export function LiveIncidentConversation({
     if (!newest) return;
     const unseen = stream.messages.filter((message) => !seenMessages.current.has(message.id));
     unseen.forEach((message) => seenMessages.current.add(message.id));
-    setNewMessageCount(
-      (count) =>
-        count +
-        unseen.filter((message) => message.kind !== 'tool_step' && message.replay === false).length,
-    );
+    setUnreadMessageIds((ids) => [
+      ...ids,
+      ...unseen
+        .filter((message) => message.kind !== 'tool_step' && message.replay === false)
+        .map((message) => message.id),
+    ]);
     history.refresh();
     if (
       newest.kind === 'tool_step' ||
@@ -171,6 +175,11 @@ export function LiveIncidentConversation({
       refreshWorkspace();
     }
   }, [newest?.id]);
+  const acceptedMessageId = stream.postState?.messageId;
+  useEffect(() => {
+    if (acceptedMessageId) setOwnMessageIds((ids) => [...ids, acceptedMessageId]);
+  }, [acceptedMessageId]);
+  const newMessageCount = unreadMessageIds.filter((id) => !ownMessageIds.includes(id)).length;
 
   const sentMessage = stream.postState?.messageId
     ? history.messages.find((message) => message.id === stream.postState!.messageId)
@@ -446,7 +455,7 @@ export function LiveIncidentConversation({
     newMessageCount,
     conversationReviewNeeded,
     showNewMessages: () => {
-      setNewMessageCount(0);
+      setUnreadMessageIds([]);
       setConversationReviewNeeded(false);
       document.getElementById('conversation-latest')?.scrollIntoView({ block: 'end' });
     },

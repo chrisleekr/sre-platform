@@ -236,8 +236,8 @@ export async function openIncidentSession(
 
     const adapter: SurfaceAdapter = {
       surface: 'dashboard',
-      project(msg) {
-        sink.send(JSON.stringify({ ...msg, replay: false }));
+      project(msg, replay = false) {
+        sink.send(JSON.stringify({ ...msg, replay }));
       },
       async ingest({ content, author, clientMessageId }) {
         if (credentialClosed)
@@ -354,7 +354,7 @@ export async function openIncidentSession(
       if (sessionClosed) return;
       if (seen.has(msg.id)) return;
       seen.add(msg.id);
-      sink.send(JSON.stringify({ ...msg, replay }));
+      void adapter.project(msg, replay);
     };
     // Pub/Sub is only a wake-up hint. Every live projection revalidates the durable incident row, in
     // message order, so a missed archive publication cannot expose later conversation rows.

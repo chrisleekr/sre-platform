@@ -148,7 +148,12 @@ test('does not start an older page while the refreshed head is pending', async (
   act(() => hook.result.current.refresh());
   act(() => hook.result.current.loadOlder());
   await act(async () =>
-    head.resolve(response({ evidence: [item], nextCursor: 'refreshed-cursor' })),
+    head.resolve(
+      response({
+        evidence: [{ ...item, id: 'newer', recordedAt: '2026-09-14T00:05:00Z' }],
+        nextCursor: 'refreshed-cursor',
+      }),
+    ),
   );
   expect(older).not.toHaveBeenCalled();
   expect(hook.result.current.nextCursor).toBe('refreshed-cursor');
@@ -158,4 +163,59 @@ test('does not start an older page while the refreshed head is pending', async (
     expect.stringContaining('before=refreshed-cursor'),
     expect.anything(),
   );
+});
+
+test('a refreshed head that overlaps loaded records keeps the deepest cursor', async () => {
+  const rows = (newest: number, oldest: number) =>
+    Array.from({ length: newest - oldest + 1 }, (_, offset) => {
+      const value = newest - offset;
+      return {
+        ...item,
+        id: String(value).padStart(3, '0'),
+        recordedAt: new Date(Date.UTC(2026, 8, 14, 0, 0, value)).toISOString(),
+      };
+    });
+  let newest = 60;
+  globalThis.fetch = vi.fn(async (url) => {
+    const before = new URL(String(url)).searchParams.get('before');
+    if (before === '041') return response({ evidence: rows(40, 21), nextCursor: '021' });
+    if (before === '021') return response({ evidence: rows(20, 1), nextCursor: null });
+    return response({
+      evidence: rows(newest, newest - 19),
+      nextCursor: String(newest - 19).padStart(3, '0'),
+    });
+  });
+  const hook = renderHook(() => useIncidentEvidence('first', opts));
+  await waitFor(() => expect(hook.result.current.nextCursor).toBe('041'));
+  act(() => hook.result.current.loadOlder());
+  await waitFor(() => expect(hook.result.current.nextCursor).toBe('021'));
+
+  // An active investigation refreshes the head repeatedly while the responder pages back.
+  for (const next of [61, 62]) {
+    newest = next;
+    act(() => hook.result.current.refresh());
+    await waitFor(() => expect(hook.result.current.evidence).toHaveLength(next - 20));
+    await waitFor(() => expect(hook.result.current.loading).toBe(false));
+    expect(hook.result.current.nextCursor).toBe('021');
+  }
+  act(() => hook.result.current.loadOlder());
+  await waitFor(() => expect(hook.result.current.nextCursor).toBeNull());
+  expect(hook.result.current.evidence.map((row) => row.id)).toEqual(
+    rows(62, 1).map((row) => row.id),
+  );
+});
+
+test('a malformed older page reports pagination unavailable instead of throwing', async () => {
+  globalThis.fetch = vi.fn(async (url) =>
+    String(url).includes('before=')
+      ? response({ unexpected: true })
+      : response({ evidence: [item], nextCursor: 'older' }),
+  );
+  const hook = renderHook(() => useIncidentEvidence('first', opts));
+  await waitFor(() => expect(hook.result.current.nextCursor).toBe('older'));
+  act(() => hook.result.current.loadOlder());
+  await waitFor(() => expect(hook.result.current.paginationError).toBe(true));
+  expect(hook.result.current.loadingOlder).toBe(false);
+  expect(hook.result.current.evidence).toEqual([item]);
+  expect(hook.result.current.nextCursor).toBe('older');
 });

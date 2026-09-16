@@ -153,7 +153,8 @@ describe('useIncidentEvidence', () => {
     act(() => result.current.refresh());
     await waitFor(() => expect(result.current.evidence[0]?.outcome).toBe('no_data'));
     expect(result.current.evidence.map((item) => item.id)).toEqual([evidenceId, older.id]);
-    expect(result.current.nextCursor).toBe('shifted-page');
+    // The refreshed head overlaps the loaded list, which already reached the oldest record.
+    expect(result.current.nextCursor).toBeNull();
     unmount();
   });
 });

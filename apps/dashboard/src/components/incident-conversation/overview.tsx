@@ -357,7 +357,7 @@ export function IncidentOverview({ view }: { view: IncidentLiveViewModel }) {
                   className={`absolute inset-y-3 left-0 w-1 rounded-r-full ${ownershipMarker}`}
                 />
                 <dt className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-                  Ownership
+                  Response status
                 </dt>
                 <dd className="mt-1 text-sm font-semibold text-ink">{ownershipLabel}</dd>
                 <dd className="mt-1 text-xs text-ink-muted">

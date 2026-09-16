@@ -186,7 +186,8 @@ test('triage reflows and evidence navigation preserves the responder context', a
     await page.evaluate(() => {
       document.documentElement.style.fontSize = '';
     });
-    await mkdir('.incident-triage-browser-evidence', { recursive: true });
+    // .vitest/ is ignored, so reviewing screenshots never leaves files for a later `git add -A`.
+    await mkdir('.vitest/incident-triage-browser', { recursive: true });
     for (const [name, width, height] of [
       ['mobile', 390, 844],
       ['tablet', 820, 1180],
@@ -196,7 +197,7 @@ test('triage reflows and evidence navigation preserves the responder context', a
       await main.evaluate((element) => {
         element.scrollTop = 0;
       });
-      await page.screenshot({ path: `.incident-triage-browser-evidence/${name}.png` });
+      await page.screenshot({ path: `.vitest/incident-triage-browser/${name}.png` });
     }
     expect(errors).toEqual([]);
   } finally {

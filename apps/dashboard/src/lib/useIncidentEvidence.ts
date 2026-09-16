@@ -7,6 +7,19 @@ interface EvidencePage {
   evidence: EvidenceListItem[];
   nextCursor: string | null;
 }
+
+// Validate before setData: React runs updaters during render, so a malformed body that throws there
+// escapes the request's catch. Throwing here reports evidence unavailable instead of empty.
+async function readPage(res: Response): Promise<EvidencePage> {
+  if (!res.ok) throw new Error('Evidence unavailable');
+  const page = (await res.json()) as Partial<EvidencePage> | null;
+  if (!Array.isArray(page?.evidence)) throw new Error('Evidence unavailable');
+  return {
+    evidence: page.evidence,
+    nextCursor: typeof page.nextCursor === 'string' ? page.nextCursor : null,
+  };
+}
+
 const merge = (first: EvidenceListItem[], second: EvidenceListItem[]) => {
   const seen = new Set<string>();
   return [...first, ...second]
@@ -86,17 +99,22 @@ export function useIncidentEvidence(
       opts.getCredentials,
     )
       .then(async (res) => {
-        if (!res.ok) throw new Error('Evidence unavailable');
-        const page = (await res.json()) as EvidencePage;
+        const page = await readPage(res);
         if (valid())
-          setData((old) => ({
-            ...old,
-            loading: false,
-            error: false,
-            evidence: merge(Array.isArray(page.evidence) ? page.evidence : [], old.evidence),
-            // A refreshed head can leave a gap above cached pages, so traverse from its cursor.
-            nextCursor: page.nextCursor,
-          }));
+          setData((old) => {
+            const loaded = new Set(old.evidence.map((item) => item.id));
+            return {
+              ...old,
+              loading: false,
+              error: false,
+              evidence: merge(page.evidence, old.evidence),
+              // A head that shares a record with the loaded list joins it without a gap, so the deepest
+              // cursor stays valid. A disjoint head can leave a gap, so traverse from its own cursor.
+              nextCursor: page.evidence.some((item) => loaded.has(item.id))
+                ? old.nextCursor
+                : page.nextCursor,
+            };
+          });
       })
       .catch(() => {
         if (valid()) setData((old) => ({ ...old, loading: false, error: true }));
@@ -156,8 +174,7 @@ export function useIncidentEvidence(
       opts.getCredentials,
     )
       .then(async (res) => {
-        if (!res.ok) throw new Error('Evidence unavailable');
-        const page = (await res.json()) as EvidencePage;
+        const page = await readPage(res);
         if (valid()) {
           setData((old) => ({
             ...old,

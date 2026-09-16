@@ -101,3 +101,26 @@ test('current recovery with no next step does not promote a historical rollback 
   );
   expect(view.queryByText('Old rollback instruction')).toBeNull();
 });
+
+test('a pending human decision does not replace the recorded diagnostic step', () => {
+  const view = render(
+    <IncidentDecisionBrief
+      workspace={{
+        ...workspace,
+        incident: { ...workspace.incident, nextStep: 'Compare p95 latency with the last deploy' },
+        attention: {
+          decision: 'Approve or deny the pending proposed action.',
+          owner: null,
+          nextAutomation: null,
+        },
+      }}
+      onSelectEvidence={vi.fn()}
+      getCredentials={credentials}
+      onChanged={vi.fn()}
+    />,
+  );
+  expect(view.getByText('Next diagnostic step').nextElementSibling?.textContent).toBe(
+    'Compare p95 latency with the last deploy',
+  );
+  expect(view.queryByText('Approve or deny the pending proposed action.')).toBeNull();
+});

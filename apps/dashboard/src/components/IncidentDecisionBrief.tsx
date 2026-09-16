@@ -85,11 +85,10 @@ export function IncidentDecisionBrief({
       ? 'This is a health check, not a reported outage.'
       : 'Impact not established in this assessment.');
   const impact = boundedTakeaway(impactFull);
-  const nextStepFull =
-    workspace.attention?.decision ??
-    (recoveryIsCurrent
-      ? incident.recoveryNextStep
-      : (incident.nextStep ?? incident.latestInvestigationRun?.nextStep));
+  // The operator panel renders the required human decision; this box stays diagnostic.
+  const nextStepFull = recoveryIsCurrent
+    ? incident.recoveryNextStep
+    : (incident.nextStep ?? incident.latestInvestigationRun?.nextStep);
   const nextStep = nextStepFull ? boundedTakeaway(nextStepFull) : null;
   const recoveryUnknowns = recoveryIsCurrent
     ? (incident.recoveryUnknowns ?? []).filter(Boolean)
