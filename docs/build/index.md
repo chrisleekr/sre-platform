@@ -9,6 +9,7 @@ product up, start at [Get started](../get-started/index.md) instead.
 | --- | --- |
 | [Add a connector](connectors.md) | How do I teach the platform to read a system it does not support yet? |
 | [Keeping the docs true](documentation.md) | How does this guide avoid drifting away from the code? |
+| [Dashboard design system](design-system.md) | How do shared styles stay consistent and accessible? |
 | [Model-facing encoding](model-encoding.md) | How is tool output encoded for the investigator, and what must not change? |
 
 ## The shape of the repository

@@ -45,7 +45,7 @@ export function ConversationMarkdown({
               className={`${className ?? ''} font-semibold underline underline-offset-2 ${
                 inverted
                   ? 'text-on-strong-link hover:text-on-strong-link'
-                  : 'text-info hover:text-info'
+                  : 'text-accent hover:text-info'
               }`}
             >
               {linkChildren}
@@ -65,7 +65,7 @@ export function ConversationMarkdown({
           </code>
         ),
         h1: ({ children: headingChildren }) => (
-          <h3 className="mt-4 text-lg font-semibold first:mt-0">{headingChildren}</h3>
+          <h3 className="mt-4 text-lg font-medium first:mt-0">{headingChildren}</h3>
         ),
         h2: ({ children: headingChildren, className, id, node: _node, ...headingProps }) => (
           <h4

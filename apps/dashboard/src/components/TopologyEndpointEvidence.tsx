@@ -62,7 +62,7 @@ export function TopologyEndpointEvidence({
           type="button"
           disabled={pending}
           onClick={() => setRevision((value) => value + 1)}
-          className="text-xs text-info underline disabled:opacity-50"
+          className="text-xs text-accent underline disabled:opacity-50"
         >
           {pending ? 'Reading…' : 'Refresh evidence'}
         </button>
@@ -123,7 +123,7 @@ export function TopologyEndpointEvidence({
                 </dl>
                 <p className="mt-2 text-ink-muted">{formatAbsoluteTime(probe.observedAt)}</p>
                 <a
-                  className="mt-1 inline-block text-info underline"
+                  className="mt-1 inline-block text-accent underline"
                   href={incidentPath(probe.incidentId)}
                 >
                   Open source investigation

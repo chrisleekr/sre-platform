@@ -41,7 +41,7 @@ export function WorkspaceChooserPage() {
     return (
       <PublicShell entry>
         <div className="mx-auto max-w-xl rounded-xl border border-line bg-surface p-6">
-          <h1 className="text-2xl font-bold">Choose a workspace</h1>
+          <h1 className="text-2xl font-medium">Choose a workspace</h1>
           <p role="alert" className="mt-3 text-ink-muted">
             Your workspaces could not be loaded.
           </p>
@@ -71,7 +71,7 @@ export function WorkspaceChooserPage() {
   return (
     <PublicShell entry>
       <div className="mx-auto max-w-xl sm:pt-6">
-        <h1 className="text-3xl font-bold">Choose a workspace</h1>
+        <h1 className="text-3xl font-medium">Choose a workspace</h1>
         <p className="mt-2 text-sm text-ink-muted">
           {me.data.user.email ? `Signed in as ${me.data.user.email}` : 'You are signed in.'}
         </p>
@@ -98,7 +98,7 @@ export function WorkspaceChooserPage() {
               >
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
-                    <h2 className="text-lg font-semibold">{workspace.name}</h2>
+                    <h2 className="text-lg font-medium">{workspace.name}</h2>
                     <p className="mt-1 text-sm capitalize text-ink-muted">
                       {workspace.role}
                       {!available && ` · ${workspace.status}`}

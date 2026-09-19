@@ -2,8 +2,6 @@ import { createRoot } from 'react-dom/client';
 import { useTopology } from '../../src/lib/useTopology';
 import { TopologyExplorer } from '../../src/components/TopologyExplorer';
 import '../../src/index.css';
-import '@fontsource-variable/ibm-plex-sans';
-import '@fontsource/ibm-plex-mono';
 
 const getCredentials = async () => ({
   kind: 'bearer' as const,

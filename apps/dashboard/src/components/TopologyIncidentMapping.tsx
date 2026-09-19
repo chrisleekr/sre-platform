@@ -54,7 +54,7 @@ export function TopologyIncidentMapping({
     <div className="mt-3">
       <button
         type="button"
-        className="text-info underline"
+        className="text-accent underline"
         onClick={() => {
           if (!open)
             setSelected(services.filter((name) => graph.nodes.some((node) => node.name === name)));
@@ -107,7 +107,7 @@ export function TopologyIncidentMapping({
             <input
               required
               maxLength={1000}
-              className="mt-1 block w-full rounded border border-line-strong bg-surface p-2 text-sm"
+              className="sre-field mt-1 block w-full p-2"
               value={reason}
               onChange={(event) => setReason(event.target.value)}
             />
@@ -120,7 +120,7 @@ export function TopologyIncidentMapping({
           <div className="mt-3 flex flex-wrap gap-3">
             <button
               disabled={busy || !selected.length || !reason.trim()}
-              className="rounded bg-strong px-3 py-2 text-on-strong"
+              className="sre-action sre-action-primary"
             >
               Save affected services
             </button>

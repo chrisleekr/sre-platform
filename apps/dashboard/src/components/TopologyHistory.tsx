@@ -38,7 +38,7 @@ function RecordedChanges({
         <label>
           Recent recorded changes
           <select
-            className="mt-1 block w-full min-w-0 rounded border border-line-strong bg-surface p-2"
+            className="sre-field mt-1 block w-full min-w-0 p-2"
             value=""
             onChange={(event) => {
               if (event.target.value) onChange(event.target.value);
@@ -88,7 +88,7 @@ export function TopologyHistory({
       {at && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded border border-info-line bg-info-soft p-3 text-sm">
           <p>Historical declarations · {formatAbsoluteTime(at)}</p>
-          <button type="button" className="text-info underline" onClick={() => onChange('')}>
+          <button type="button" className="text-accent underline" onClick={() => onChange('')}>
             Return to live topology
           </button>
         </div>
@@ -126,14 +126,12 @@ export function TopologyHistory({
               required
               type="datetime-local"
               step="1"
-              className="mt-1 block rounded border border-line-strong bg-surface p-2"
+              className="sre-field mt-1 block p-2"
               value={value}
               onChange={(event) => setValue(event.target.value)}
             />
           </label>
-          <button className="rounded border border-line-strong px-3 py-2">
-            View recorded relationships
-          </button>
+          <button className="sre-action">View recorded relationships</button>
         </form>
       </details>
     </>

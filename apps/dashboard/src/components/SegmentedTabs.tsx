@@ -26,7 +26,7 @@ export function SegmentedTabs({
       aria-label={label}
       aria-orientation="horizontal"
       style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}
-      className="grid gap-1 rounded-lg border border-line bg-surface-subtle p-1"
+      className="grid gap-1 rounded-md border border-line bg-surface-subtle p-1"
     >
       {items.map((item) => {
         const active = value === item.id;
@@ -60,9 +60,7 @@ export function SegmentedTabs({
               document.getElementById(`${panelId}-tab-${next.id}`)?.focus();
             }}
             className={`sre-hit-target flex min-w-0 flex-col items-center justify-center gap-0 rounded-md px-1 py-1.5 text-xs font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus sm:flex-row sm:gap-1.5 sm:px-2 sm:py-2 sm:text-sm ${
-              active
-                ? 'bg-strong text-on-strong shadow-sm'
-                : 'text-ink-muted hover:bg-surface hover:text-ink'
+              active ? 'bg-strong text-on-strong' : 'text-ink-muted hover:bg-surface hover:text-ink'
             }`}
           >
             <span className="sm:hidden">{item.compactLabel ?? item.label}</span>

@@ -113,17 +113,13 @@ function SignalNoiseFeedback({
         </p>
       )}
       <div className="mt-2 flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => setDecision('noise')}
-          className="min-h-9 rounded border border-line-strong bg-surface px-2 py-1 font-semibold text-ink-secondary"
-        >
+        <button type="button" onClick={() => setDecision('noise')} className="sre-action min-h-9">
           Mark as noise
         </button>
         <button
           type="button"
           onClick={() => setDecision('not_noise')}
-          className="min-h-9 rounded border border-line-strong bg-surface px-2 py-1 font-semibold text-ink-secondary"
+          className="sre-action min-h-9"
         >
           Mark actionable
         </button>
@@ -136,7 +132,7 @@ function SignalNoiseFeedback({
               value={rationale}
               onChange={(event) => setRationale(event.target.value)}
               maxLength={1_000}
-              className="mt-1 min-h-10 w-full rounded border border-line-strong bg-surface px-2 py-1 text-sm"
+              className="sre-field mt-1 min-h-10 w-full"
             />
           </label>
           <div className="mt-2 flex gap-2">
@@ -147,7 +143,7 @@ function SignalNoiseFeedback({
               type="button"
               onClick={() => void submit()}
               disabled={pending || !rationale.trim()}
-              className="min-h-9 rounded bg-strong px-2 py-1 font-semibold text-on-strong disabled:opacity-50"
+              className="sre-action sre-action-primary min-h-9"
             >
               {pending ? 'Saving…' : 'Save decision'}
             </button>
@@ -295,7 +291,7 @@ export function SignalOverview({
       aria-labelledby="signals-title"
     >
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 id="signals-title" className="font-semibold text-ink">
+        <h2 id="signals-title" className="font-medium text-ink">
           {manual ? 'Investigation origin' : 'Alert episodes'}
         </h2>
         <span className="text-xs text-ink-muted">
@@ -393,7 +389,7 @@ export function SignalOverview({
           )}
           {active.length > 0 && (
             <div>
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-critical">
+              <h3 className="text-xs font-medium uppercase tracking-wide text-critical">
                 Unresolved notification records
               </h3>
               <ul className="mt-2 space-y-2">
@@ -447,7 +443,7 @@ export function SlackThreadLink({ incidentId, channel }: { incidentId: string; c
         href={permalink}
         target="_blank"
         rel="noopener noreferrer"
-        className="font-semibold text-info underline decoration-info-line underline-offset-2 hover:text-info"
+        className="font-semibold text-accent underline decoration-info-line underline-offset-2 hover:text-info"
       >
         Slack · {channel} ↗
       </a>

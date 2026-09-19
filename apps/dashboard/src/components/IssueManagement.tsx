@@ -21,11 +21,7 @@ export function IssueManagement({
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button
-        type="button"
-        className="ml-auto rounded border border-line-strong px-3 py-1.5 text-sm font-medium"
-        onClick={() => setOpen(true)}
-      >
+      <button type="button" className="sre-action ml-auto" onClick={() => setOpen(true)}>
         Issues
       </button>
       {open && (
@@ -238,7 +234,7 @@ export function IssueManagementDialog({
         <button
           type="button"
           disabled={!source}
-          className="rounded border border-line-strong px-3 py-1.5 text-sm"
+          className="sre-action"
           onClick={() =>
             void run(async () =>
               setRepositories(
@@ -257,7 +253,7 @@ export function IssueManagementDialog({
               <button
                 key={item.fullName}
                 type="button"
-                className="rounded border border-line px-2 py-1 text-xs"
+                className="sre-action text-xs"
                 onClick={() => {
                   setRepository(item.fullName);
                   changeTarget();
@@ -292,7 +288,7 @@ export function IssueManagementDialog({
           <button
             type="button"
             disabled={!source || !repository.trim()}
-            className="rounded border border-line-strong px-3 py-2 text-sm font-medium"
+            className="sre-action"
             onClick={() =>
               void run(async () => {
                 const result = await request<RepositoryIssue[] | RepositoryIssue>(
@@ -307,7 +303,7 @@ export function IssueManagementDialog({
           <button
             type="button"
             disabled={!source || !repository.trim()}
-            className="rounded bg-strong px-3 py-2 text-sm font-medium text-on-strong"
+            className="sre-action sre-action-primary"
             onClick={() => edit('new')}
           >
             New issue
@@ -327,11 +323,7 @@ export function IssueManagementDialog({
               >
                 #{issue.number} {issue.title} · {issue.state}
               </a>
-              <button
-                type="button"
-                className="shrink-0 rounded border border-line-strong px-2 py-1"
-                onClick={() => edit(issue)}
-              >
+              <button type="button" className="sre-action shrink-0" onClick={() => edit(issue)}>
                 Edit issue #{issue.number}
               </button>
             </li>
@@ -339,7 +331,7 @@ export function IssueManagementDialog({
         </ul>
         {editing && (
           <section className="space-y-3 rounded-lg border border-line p-4" aria-label="Issue draft">
-            <h3 className="font-semibold">
+            <h3 className="font-medium">
               {editing === 'new' ? 'New issue' : `Edit issue #${editing.number}`}
             </h3>
             <label className="block text-sm font-medium">
@@ -416,7 +408,7 @@ export function IssueManagementDialog({
               type="button"
               disabled={!title.trim() || Object.keys(changes).length === 0}
               onClick={() => void run(draft)}
-              className="rounded bg-strong px-3 py-2 text-sm font-medium text-on-strong"
+              className="sre-action sre-action-primary"
             >
               Review changes
             </button>
@@ -425,12 +417,12 @@ export function IssueManagementDialog({
       </fieldset>
       <section className="mt-5 space-y-3" aria-label="Saved issue changes">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="font-semibold">Saved previews and outcomes</h3>
+          <h3 className="font-medium">Saved previews and outcomes</h3>
           <button
             type="button"
             disabled={busy}
             onClick={() => void run(refresh)}
-            className="rounded border border-line-strong px-3 py-1.5 text-sm"
+            className="sre-action"
           >
             Refresh status
           </button>

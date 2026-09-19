@@ -145,7 +145,7 @@ export function WorkspaceSignInPage() {
 
   return (
     <PublicShell>
-      <h1 className="text-2xl font-bold">
+      <h1 className="text-2xl font-medium">
         {currentResult?.workspace.name ?? 'Sign in to your workspace'}
       </h1>
       {error && (
@@ -155,7 +155,7 @@ export function WorkspaceSignInPage() {
       )}
       {ownedSetup && (
         <section className="mt-6 rounded-xl border border-info-line bg-info-soft p-5">
-          <h2 className="font-semibold">Finish setting up {ownedSetup.requestedName}</h2>
+          <h2 className="font-medium">Finish setting up {ownedSetup.requestedName}</h2>
           <p className="mt-2 text-sm leading-6 text-ink-muted">
             This browser created the saved workspace request. Continue to correct its settings or
             finish company sign-in.

@@ -49,7 +49,7 @@ export function GitLabSetupSteps({ view }: { view: GitLabWizardViewModel }) {
             <WebhookInstructions provider="GitLab" url={eventEndpoint} />
           )}
           <div>
-            <h2 className="font-semibold text-ink">Connect one operational group</h2>
+            <h2 className="font-medium text-ink">Connect one operational group</h2>
             <p className="mt-1 text-sm text-ink-muted">
               SRE Platform catalogs every project in this group and its subgroups. You do not add
               projects one at a time.
@@ -74,7 +74,7 @@ export function GitLabSetupSteps({ view }: { view: GitLabWizardViewModel }) {
                 value={baseUrl}
                 onChange={(event) => setBaseUrl(event.target.value)}
                 placeholder="https://gitlab.com"
-                className="mt-1 min-w-0 w-full rounded border border-line-strong px-2 py-1.5"
+                className="sre-field mt-1 min-w-0 w-full"
               />
             </label>
             <label className="min-w-0 text-sm font-medium">
@@ -83,12 +83,12 @@ export function GitLabSetupSteps({ view }: { view: GitLabWizardViewModel }) {
                 value={groupPath}
                 onChange={(event) => setGroupPath(event.target.value)}
                 placeholder="acme or acme/platform"
-                className="mt-1 min-w-0 w-full rounded border border-line-strong px-2 py-1.5"
+                className="sre-field mt-1 min-w-0 w-full"
               />
             </label>
           </div>
           <div className="rounded border border-line bg-surface-subtle p-3 text-sm">
-            <h3 className="font-semibold">Use read-only access in GitLab</h3>
+            <h3 className="font-medium">Use read-only access in GitLab</h3>
             <p className="mt-2 text-ink-muted">
               Reuse a valid group-scoped read_api token with Reporter access. Create a token below
               only if you do not already have suitable access.
@@ -109,7 +109,7 @@ export function GitLabSetupSteps({ view }: { view: GitLabWizardViewModel }) {
                 href="https://docs.gitlab.com/user/group/settings/group_access_tokens/"
                 target="_blank"
                 rel="noreferrer"
-                className="rounded border border-line-strong bg-surface px-3 py-1.5 font-medium"
+                className="sre-action"
               >
                 Group token guide
               </a>
@@ -117,7 +117,7 @@ export function GitLabSetupSteps({ view }: { view: GitLabWizardViewModel }) {
                 href="https://docs.gitlab.com/user/profile/service_accounts/"
                 target="_blank"
                 rel="noreferrer"
-                className="rounded border border-line-strong bg-surface px-3 py-1.5 font-medium"
+                className="sre-action"
               >
                 Service account fallback
               </a>
@@ -130,7 +130,7 @@ export function GitLabSetupSteps({ view }: { view: GitLabWizardViewModel }) {
               autoComplete="new-password"
               value={credential}
               onChange={(event) => setCredential(event.target.value)}
-              className="mt-1 min-w-0 w-full rounded border border-line-strong px-2 py-1.5"
+              className="sre-field mt-1 min-w-0 w-full"
             />
             <span className="mt-1 block text-xs font-normal text-ink-muted">
               Encrypted at rest and never returned.
@@ -147,7 +147,7 @@ export function GitLabSetupSteps({ view }: { view: GitLabWizardViewModel }) {
               type="button"
               disabled={busy}
               onClick={discover}
-              className="self-start rounded bg-strong px-3 py-1.5 font-medium text-on-strong disabled:opacity-50"
+              className="sre-action sre-action-primary self-start"
             >
               {busy ? 'Checking group…' : 'Check access and discover projects'}
             </button>
@@ -167,7 +167,7 @@ export function GitLabSetupSteps({ view }: { view: GitLabWizardViewModel }) {
             </p>
           </div>
           <div>
-            <h2 className="font-semibold text-ink">Coverage sample</h2>
+            <h2 className="font-medium text-ink">Coverage sample</h2>
             <ul className="mt-2 max-h-52 space-y-1 overflow-auto rounded border border-line p-3 text-sm">
               {sampleProjects.map((project) => (
                 <li key={project.id} className="flex min-w-0 justify-between gap-3">
@@ -184,17 +184,13 @@ export function GitLabSetupSteps({ view }: { view: GitLabWizardViewModel }) {
             )}
           </div>
           <SetupActions>
-            <button
-              type="button"
-              onClick={() => setStep(1)}
-              className="rounded border border-line-strong px-3 py-1.5 font-medium"
-            >
+            <button type="button" onClick={() => setStep(1)} className="sre-action">
               Back
             </button>
             <button
               type="button"
               onClick={() => setStep(3)}
-              className="rounded bg-strong px-3 py-1.5 font-medium text-on-strong"
+              className="sre-action sre-action-primary"
             >
               Configure event sync
             </button>
@@ -205,7 +201,7 @@ export function GitLabSetupSteps({ view }: { view: GitLabWizardViewModel }) {
       {step === 3 && (
         <div className="flex min-w-0 flex-col gap-4">
           <div>
-            <h2 className="font-semibold text-ink">Keep changes current</h2>
+            <h2 className="font-medium text-ink">Keep changes current</h2>
             <p className="mt-1 text-sm text-ink-muted">
               Choose the GitLab event source, then how GitLab reaches this receiver. Read-only
               investigation access stays separate from permission to install hooks.
@@ -284,7 +280,7 @@ export function GitLabSetupSteps({ view }: { view: GitLabWizardViewModel }) {
                         ? 'Leave blank to keep the encrypted channel'
                         : 'https://smee.io/your-channel'
                     }
-                    className="mt-1 min-w-0 w-full rounded border border-line-strong px-2 py-1.5"
+                    className="sre-field mt-1 min-w-0 w-full"
                   />
                   {eventTransport === 'smee' && initialSettings?.smeeConfigured && (
                     <span className="mt-1 block text-xs font-normal text-ink-muted">
@@ -321,7 +317,7 @@ export function GitLabSetupSteps({ view }: { view: GitLabWizardViewModel }) {
                       <button
                         type="button"
                         onClick={() => setWebhookSigningToken(randomWebhookSigningToken())}
-                        className="mt-2 rounded border border-line-strong bg-surface px-3 py-1.5 font-medium"
+                        className="sre-action mt-2"
                       >
                         Replace signing token
                       </button>
@@ -337,7 +333,7 @@ export function GitLabSetupSteps({ view }: { view: GitLabWizardViewModel }) {
                       <button
                         type="button"
                         onClick={() => setWebhookSigningToken(randomWebhookSigningToken())}
-                        className="mt-2 rounded border border-line-strong bg-surface px-3 py-1.5 font-medium"
+                        className="sre-action mt-2"
                       >
                         Generate HMAC signing token
                       </button>
@@ -362,18 +358,10 @@ export function GitLabSetupSteps({ view }: { view: GitLabWizardViewModel }) {
               <GitLabEventGuide view={view} />
             ))}
           <SetupActions>
-            <button
-              type="button"
-              onClick={() => setStep(2)}
-              className="rounded border border-line-strong px-3 py-1.5 font-medium"
-            >
+            <button type="button" onClick={() => setStep(2)} className="sre-action">
               Back
             </button>
-            <button
-              type="button"
-              onClick={reviewEvents}
-              className="rounded bg-strong px-3 py-1.5 font-medium text-on-strong"
-            >
+            <button type="button" onClick={reviewEvents} className="sre-action sre-action-primary">
               Review
             </button>
           </SetupActions>

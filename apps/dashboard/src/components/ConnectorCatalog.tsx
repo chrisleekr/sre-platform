@@ -57,7 +57,7 @@ export function ConnectorCatalog({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search tools or capabilities, e.g. metrics"
-            className="mt-1 block w-full rounded-md border border-line-strong bg-surface px-3 py-2.5"
+            className="sre-field mt-1 block w-full"
           />
         </label>
         <label className="text-sm font-medium">
@@ -65,7 +65,7 @@ export function ConnectorCatalog({
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            className="mt-1 block w-full rounded-md border border-line-strong bg-surface px-3 py-2.5"
+            className="sre-field mt-1 block w-full"
           >
             {['All categories', ...new Set(PROVIDERS.map((p) => p.category))].map((c) => (
               <option key={c}>{c}</option>
@@ -92,7 +92,7 @@ export function ConnectorCatalog({
             <li key={item.type}>
               <article className="flex h-full min-w-0 flex-col rounded-lg border border-line bg-surface p-5">
                 <p className="mb-2 text-xs font-medium text-ink-muted">{item.category}</p>
-                <h2 className="font-semibold text-ink">{item.name}</h2>
+                <h2 className="font-medium text-ink">{item.name}</h2>
                 <p className="mt-2 flex-1 text-sm leading-6 text-ink-muted">{item.description}</p>
                 {count > 0 && <p className="mt-3 text-xs text-ink-muted">{count} configured</p>}
                 <button
@@ -101,7 +101,7 @@ export function ConnectorCatalog({
                   onClick={(e) =>
                     item.type === 'slack' ? onSlack() : onAdd(item.type, e.currentTarget)
                   }
-                  className="mt-4 min-h-10 self-start rounded-md border border-line-strong px-3 py-2 text-sm font-medium hover:bg-surface-subtle disabled:opacity-50"
+                  className="sre-action mt-4 min-h-10 self-start"
                 >
                   {item.type === 'slack' && count > 0
                     ? 'Manage Slack'

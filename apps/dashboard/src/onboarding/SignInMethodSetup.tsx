@@ -224,7 +224,7 @@ export function SignInMethodSetup({
           </select>
         </label>
         <section className="rounded-xl border border-line bg-surface-subtle p-4">
-          <h2 className="font-semibold">1. Register your application</h2>
+          <h2 className="font-medium">1. Register your application</h2>
           <p className="mt-1 text-sm text-ink-muted">{preset.registration}</p>
           <div className="mt-3 text-sm">
             <h3 className="font-medium">Step-by-step instructions for {preset.name}</h3>
@@ -234,7 +234,7 @@ export function SignInMethodSetup({
               ))}
             </ol>
             <a
-              className="mt-3 inline-block text-info underline"
+              className="mt-3 inline-block text-accent underline"
               href={preset.documentation}
               target="_blank"
               rel="noreferrer"
@@ -249,7 +249,7 @@ export function SignInMethodSetup({
             <code className="min-w-0 break-all text-sm">{callback}</code>
             <button
               type="button"
-              className="rounded-md border border-line-strong px-3 py-1.5 text-sm"
+              className="sre-action"
               onClick={() =>
                 void navigator.clipboard
                   .writeText(callback)
@@ -267,7 +267,7 @@ export function SignInMethodSetup({
           )}
         </section>
         <section className="space-y-4">
-          <h2 className="font-semibold">2. Enter the application details</h2>
+          <h2 className="font-medium">2. Enter the application details</h2>
           <div>
             <label htmlFor="directory-url" className="text-sm font-medium">
               {draft.preset === 'auth0' ? 'Auth0 domain / issuer URL' : 'Directory URL'}
@@ -291,7 +291,7 @@ export function SignInMethodSetup({
             <button
               type="button"
               disabled={!draft.issuer || checking || saving}
-              className="mt-2 rounded-lg border border-line-strong px-3 py-2 text-sm font-semibold disabled:opacity-50"
+              className="sre-action mt-2"
               onClick={() => void discover()}
             >
               {checking ? 'Checking directory…' : 'Check directory'}
@@ -447,7 +447,7 @@ export function SignInMethodSetup({
         )}
       </div>
       <aside className="h-fit rounded-xl border border-line bg-surface p-4 text-sm leading-6">
-        <h2 className="font-semibold">What happens next</h2>
+        <h2 className="font-medium">What happens next</h2>
         <ol className="mt-3 list-decimal space-y-2 pl-4 text-ink-muted">
           <li>Sign in with your work account.</li>
           <li>Confirm the saved details and create the workspace.</li>

@@ -12,8 +12,7 @@ import { config } from '../config';
 import { authenticatedFetch } from '../lib/authenticatedFetch';
 
 const INPUT = 'min-h-9 w-full rounded border border-line-strong bg-surface px-2 py-1 text-sm';
-const BUTTON =
-  'sre-hit-target rounded border border-line-strong bg-surface px-3 py-1 text-sm font-medium text-ink-secondary hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-60';
+const BUTTON = 'sre-action sre-hit-target';
 
 type ItemDraft = { title: string; owner: string; trackerUrl: string; dueAt: string };
 type NewItemDraft = { type: ActionItemType } & ItemDraft;
@@ -88,7 +87,7 @@ export function PostmortemActionItems({
 
   return (
     <section aria-label="Action items" className="space-y-3">
-      <h2 className="text-lg font-semibold tracking-tight">Action items</h2>
+      <h2 className="text-lg font-medium tracking-tight">Action items</h2>
       <p className="text-sm text-ink-muted">
         Each item needs an owner and a tracker link; an untracked item is a defect, not a plan.
       </p>

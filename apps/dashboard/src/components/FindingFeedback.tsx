@@ -99,7 +99,7 @@ export function FindingFeedback({
         <div className="mt-2 rounded-lg border border-line bg-surface p-3 text-ink">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
-              <h3 className="text-sm font-semibold text-ink">
+              <h3 className="text-sm font-medium text-ink">
                 Is this conclusion supported by the evidence?
               </h3>
               <p className="mt-1 text-sm text-ink-secondary">
@@ -144,7 +144,7 @@ export function FindingFeedback({
                   maxLength={1_000}
                   value={rationale}
                   onChange={(event) => setRationale(event.target.value)}
-                  className="mt-1 min-h-20 w-full rounded border border-line-strong bg-surface px-3 py-2 text-sm"
+                  className="sre-field mt-1 min-h-20 w-full"
                   placeholder="What evidence confirms or contradicts this finding?"
                 />
               </label>
@@ -156,7 +156,7 @@ export function FindingFeedback({
                     maxLength={4_000}
                     value={replacement}
                     onChange={(event) => setReplacement(event.target.value)}
-                    className="mt-1 min-h-24 w-full rounded border border-line-strong bg-surface px-3 py-2 text-sm"
+                    className="sre-field mt-1 min-h-24 w-full"
                     placeholder="State the corrected conclusion."
                   />
                 </label>
@@ -166,7 +166,7 @@ export function FindingFeedback({
                   type="button"
                   onClick={() => setMode(null)}
                   disabled={pending}
-                  className="min-h-10 rounded border border-line-strong bg-surface px-3 py-2 text-sm"
+                  className="sre-action min-h-10"
                 >
                   Cancel
                 </button>
@@ -176,7 +176,7 @@ export function FindingFeedback({
                   disabled={
                     pending || !rationale.trim() || (mode === 'correct' && !replacement.trim())
                   }
-                  className="min-h-10 rounded bg-strong px-3 py-2 text-sm font-semibold text-on-strong disabled:opacity-50"
+                  className="sre-action sre-action-primary min-h-10"
                 >
                   {pending ? 'Saving…' : 'Save review'}
                 </button>

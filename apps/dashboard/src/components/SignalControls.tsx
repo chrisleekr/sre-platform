@@ -109,7 +109,7 @@ export function SignalPolicyControls(props: {
       aria-label="Signal control settings"
       className="rounded-xl border border-line bg-surface p-4"
     >
-      <h2 className="font-semibold">Signal control settings</h2>
+      <h2 className="font-medium">Signal control settings</h2>
       <p className="mt-1 text-sm text-ink-muted">
         Enforcement requires perfect accuracy across the reviewed shadow corpus, zero
         critical-safety misses, and an explicit operator approval.
@@ -123,7 +123,7 @@ export function SignalPolicyControls(props: {
             max="3650"
             value={retentionDays}
             onChange={(event) => setRetentionDays(event.target.value)}
-            className="mt-1 min-h-10 w-full rounded-md border border-line-strong bg-surface px-3 py-2"
+            className="sre-field mt-1 min-h-10 w-full"
           />
         </label>
         <label className="text-sm">
@@ -134,7 +134,7 @@ export function SignalPolicyControls(props: {
             max="10080"
             value={unsolvedMinutes}
             onChange={(event) => setUnsolvedMinutes(event.target.value)}
-            className="mt-1 min-h-10 w-full rounded-md border border-line-strong bg-surface px-3 py-2"
+            className="sre-field mt-1 min-h-10 w-full"
           />
         </label>
       </div>
@@ -287,7 +287,7 @@ export function SignalPolicyControls(props: {
           type="button"
           disabled={pending !== null}
           onClick={() => void save()}
-          className="sre-hit-target rounded-md border border-line-strong bg-surface px-3 py-2 text-sm font-semibold text-ink-secondary hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50"
+          className="sre-action sre-hit-target"
         >
           Save settings
         </button>
@@ -299,7 +299,7 @@ export function SignalPolicyControls(props: {
             props.evaluation?.status === 'running'
           }
           onClick={() => void act('evaluate', props.onRunEvaluation)}
-          className="sre-hit-target rounded-md border border-line-strong bg-surface px-3 py-2 text-sm font-semibold text-ink-secondary hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50"
+          className="sre-action sre-hit-target"
         >
           {pending === 'evaluate' ? 'Starting evaluation…' : 'Run accuracy evaluation'}
         </button>
@@ -315,7 +315,7 @@ export function SignalPolicyControls(props: {
                 props.onApprove(props.evaluation!.id, [...reviewedTicketScenarios]),
               )
             }
-            className="sre-hit-target rounded-md bg-strong px-3 py-2 text-sm font-semibold text-on-strong hover:bg-strong-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="sre-action sre-action-primary sre-hit-target"
           >
             {pending === 'approve' ? 'Approving…' : 'Approve enforcement'}
           </button>
@@ -324,7 +324,7 @@ export function SignalPolicyControls(props: {
             type="button"
             disabled={pending !== null}
             onClick={() => void act('shadow', props.onReturnToShadow)}
-            className="sre-hit-target rounded-md border border-line-strong bg-surface px-3 py-2 text-sm font-semibold text-ink-secondary hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50"
+            className="sre-action sre-hit-target"
           >
             {pending === 'shadow' ? 'Returning…' : 'Return to shadow'}
           </button>
@@ -366,7 +366,7 @@ export function SignalPromotionControls(props: {
         <select
           value={criterion}
           onChange={(event) => setCriterion(event.target.value)}
-          className="mt-1 block min-h-10 w-full rounded-md border border-line-strong bg-surface px-3 py-2"
+          className="sre-field mt-1 block min-h-10 w-full"
         >
           {props.secondTeamEnabled && <option value="second_team">Needs a second team</option>}
           {props.customerVisibleEnabled && (
@@ -382,14 +382,14 @@ export function SignalPromotionControls(props: {
           required
           value={reason}
           onChange={(event) => setReason(event.target.value)}
-          className="mt-1 min-h-10 w-full rounded-md border border-line-strong bg-surface px-3 py-2"
+          className="sre-field mt-1 min-h-10 w-full"
           placeholder="Why this now needs incident response"
         />
       </label>
       <button
         type="submit"
         disabled={pending || !reason.trim()}
-        className="sre-hit-target w-full rounded-md bg-strong px-3 py-2 text-sm font-semibold text-on-strong hover:bg-strong-hover disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+        className="sre-action sre-action-primary sre-hit-target w-full sm:w-auto"
       >
         Investigate
       </button>

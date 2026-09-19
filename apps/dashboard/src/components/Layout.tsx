@@ -49,7 +49,7 @@ function PanelNavigation({
           <section key={group} aria-labelledby={`nav-${labelId}-${group.toLowerCase()}`}>
             <h2
               id={`nav-${labelId}-${group.toLowerCase()}`}
-              className="mb-1 px-2 font-instrument text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-ink-faint"
+              className="mb-1 px-3 text-xs font-medium text-ink-muted"
             >
               {group}
             </h2>
@@ -64,22 +64,14 @@ function PanelNavigation({
                     end={panel.path === '/w' || panel.path === '/admin'}
                     onClick={onNavigate}
                     className={({ isActive }) =>
-                      `sre-hit-target group relative flex items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ${
+                      `sre-hit-target group relative flex items-center rounded-md px-3 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ${
                         isActive
                           ? 'bg-accent-soft text-accent'
                           : 'text-ink-muted hover:bg-surface-subtle hover:text-ink'
                       }`
                     }
                   >
-                    {({ isActive }) => (
-                      <>
-                        <span
-                          aria-hidden="true"
-                          className={`absolute inset-y-2 left-0 w-0.5 rounded-full ${isActive ? 'bg-accent' : 'bg-transparent group-hover:bg-line-strong'}`}
-                        />
-                        {panel.label}
-                      </>
-                    )}
+                    {panel.label}
                   </NavLink>
                 );
               })}
@@ -152,7 +144,7 @@ export function Layout({
     <div className="fixed inset-0 flex min-w-0 overflow-hidden bg-canvas text-ink">
       <a
         href="#main-content"
-        className="fixed left-3 top-3 z-[60] -translate-y-20 rounded-md bg-strong px-3 py-2 text-sm font-semibold text-on-strong shadow-lg transition-transform focus:translate-y-0"
+        className="sre-action sre-action-primary fixed left-3 top-3 z-[60] -translate-y-20 bg-surface focus:translate-y-0"
       >
         Skip to content
       </a>
@@ -191,7 +183,7 @@ export function Layout({
               />
             </svg>
           </button>
-          <span className="hidden min-w-0 flex-1 truncate text-xs font-semibold uppercase tracking-[0.12em] text-ink-faint lg:block">
+          <span className="hidden min-w-0 flex-1 truncate text-sm font-medium text-ink-muted lg:block">
             {panelTitle ?? 'Responder workspace'}
           </span>
           {workspace && onLogout && onLogoutEverywhere ? (
@@ -242,7 +234,7 @@ export function Layout({
             aria-modal="true"
             aria-label="Navigation"
             onKeyDown={handleDrawerKeyDown}
-            className="relative flex h-dvh w-72 max-w-[calc(100vw-2.5rem)] flex-col overflow-y-auto overscroll-contain border-r border-line bg-surface shadow-2xl"
+            className="relative flex h-dvh w-72 max-w-[calc(100vw-2.5rem)] flex-col overflow-y-auto overscroll-contain border-r border-line bg-surface"
           >
             <div className="flex items-center justify-between border-b border-line px-4 py-3">
               <div>

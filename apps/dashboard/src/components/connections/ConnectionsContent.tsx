@@ -91,7 +91,7 @@ export function ConnectionsContent({
               <button
                 type="button"
                 onClick={() => navigate('catalog')}
-                className="min-h-10 rounded-md bg-strong px-4 py-2 text-sm font-semibold text-on-strong hover:bg-strong-hover"
+                className="sre-action sre-action-primary min-h-10"
               >
                 Add connection
               </button>

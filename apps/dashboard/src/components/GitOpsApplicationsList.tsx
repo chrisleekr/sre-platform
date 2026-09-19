@@ -110,7 +110,7 @@ export function GitOpsApplicationsList({
 
   const applicationTitle = (application: GitOpsApplication) =>
     isHttpUrl(application.url) ? (
-      <a className="text-info hover:underline" href={application.url}>
+      <a className="text-accent hover:underline" href={application.url}>
         {application.applicationName}
       </a>
     ) : (
@@ -121,7 +121,7 @@ export function GitOpsApplicationsList({
     <section aria-labelledby="gitops-live-heading" className="mb-6">
       <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h2 id="gitops-live-heading" className="text-base font-semibold text-ink">
+          <h2 id="gitops-live-heading" className="text-base font-medium text-ink">
             Application health
           </h2>
           <p className="text-sm text-ink-muted">

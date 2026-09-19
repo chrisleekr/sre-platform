@@ -52,7 +52,7 @@ export function PrometheusSetupSteps({ view }: { view: PrometheusWizardViewModel
         <div className="flex flex-col gap-4">
           <ConnectorSetupGuide provider="prometheus" />
           <div>
-            <h3 className="font-semibold">Choose the endpoint and authentication method</h3>
+            <h3 className="font-medium">Choose the endpoint and authentication method</h3>
             <p className="mt-1 text-ink-muted">
               Investigations query the Prometheus HTTP API on demand. This connector does not poll
               or copy metrics into SRE Platform.
@@ -70,7 +70,7 @@ export function PrometheusSetupSteps({ view }: { view: PrometheusWizardViewModel
               value={baseUrl}
               onChange={(event) => setBaseUrl(event.target.value)}
               placeholder="http://127.0.0.1:9090 or https://prometheus.example.com"
-              className="mt-1 w-full rounded border border-line-strong px-2 py-1.5"
+              className="sre-field mt-1 w-full"
             />
           </label>
           <label className="font-medium">
@@ -78,7 +78,7 @@ export function PrometheusSetupSteps({ view }: { view: PrometheusWizardViewModel
             <select
               value={authType}
               onChange={(event) => setAuthType(event.target.value as PrometheusAuthType)}
-              className="mt-1 w-full rounded border border-line-strong px-2 py-1.5"
+              className="sre-field mt-1 w-full"
             >
               <option value="none">No authentication</option>
               <option value="bearer">Bearer token</option>
@@ -126,7 +126,7 @@ export function PrometheusSetupSteps({ view }: { view: PrometheusWizardViewModel
                 value={caCert}
                 onChange={(event) => setCaCert(event.target.value)}
                 rows={5}
-                className="mt-1 w-full resize-y rounded border border-line-strong px-2 py-1.5 font-instrument text-xs"
+                className="sre-field mt-1 w-full resize-y font-instrument text-xs"
               />
               <span className="mt-1 block text-xs font-normal text-ink-muted">
                 {mode === 'edit' && initialSettings?.caConfigured
@@ -154,7 +154,7 @@ export function PrometheusSetupSteps({ view }: { view: PrometheusWizardViewModel
             <button
               type="button"
               onClick={continueFromEndpoint}
-              className="self-start rounded bg-strong px-3 py-1.5 font-medium text-on-strong"
+              className="sre-action sre-action-primary self-start"
             >
               Continue
             </button>
@@ -165,7 +165,7 @@ export function PrometheusSetupSteps({ view }: { view: PrometheusWizardViewModel
       {step === 2 && (
         <div className="flex flex-col gap-4">
           <div>
-            <h3 className="font-semibold">Enter the read credential</h3>
+            <h3 className="font-medium">Enter the read credential</h3>
             <p className="mt-1 text-ink-muted">
               Credentials are encrypted at rest, write-only here, and never returned by the API.
             </p>
@@ -181,7 +181,7 @@ export function PrometheusSetupSteps({ view }: { view: PrometheusWizardViewModel
                 <input
                   value={username}
                   onChange={(event) => setUsername(event.target.value)}
-                  className="mt-1 w-full rounded border border-line-strong px-2 py-1.5"
+                  className="sre-field mt-1 w-full"
                 />
               </label>
               <SecretInput label="Password" value={password} onChange={setPassword} />
@@ -195,7 +195,7 @@ export function PrometheusSetupSteps({ view }: { view: PrometheusWizardViewModel
                   value={headerName}
                   onChange={(event) => setHeaderName(event.target.value)}
                   placeholder="X-Scope-OrgID"
-                  className="mt-1 w-full rounded border border-line-strong px-2 py-1.5"
+                  className="sre-field mt-1 w-full"
                 />
               </label>
               <SecretInput label="Header value" value={headerValue} onChange={setHeaderValue} />
@@ -226,17 +226,13 @@ export function PrometheusSetupSteps({ view }: { view: PrometheusWizardViewModel
             </p>
           )}
           <SetupActions>
-            <button
-              type="button"
-              onClick={() => setStep(1)}
-              className="rounded border border-line-strong px-3 py-1.5 font-medium"
-            >
+            <button type="button" onClick={() => setStep(1)} className="sre-action">
               Back
             </button>
             <button
               type="button"
               onClick={continueFromCredentials}
-              className="rounded bg-strong px-3 py-1.5 font-medium text-on-strong"
+              className="sre-action sre-action-primary"
             >
               Continue
             </button>
@@ -264,7 +260,7 @@ function SecretInput({
         autoComplete="new-password"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded border border-line-strong px-2 py-1.5"
+        className="sre-field mt-1 w-full"
       />
     </label>
   );
@@ -286,7 +282,7 @@ function PemInput({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         rows={5}
-        className="mt-1 w-full resize-y rounded border border-line-strong px-2 py-1.5 font-instrument text-xs"
+        className="sre-field mt-1 w-full resize-y font-instrument text-xs"
       />
     </label>
   );

@@ -55,7 +55,7 @@ export function NodeDetail({
     >
       <div className="mb-3 flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <h2 className="break-all font-semibold tracking-tight">{node.name}</h2>
+          <h2 className="break-all font-medium tracking-tight">{node.name}</h2>
           <p className="break-words text-xs text-ink-muted">
             {node.team ?? 'no team'}
             {node.criticality ? ` · ${node.criticality}` : ''}
@@ -75,9 +75,7 @@ export function NodeDetail({
 
       {reliability}
       <section className="mb-4">
-        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-faint">
-          Runtime
-        </h3>
+        <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-ink-faint">Runtime</h3>
         {node.runtime ? (
           <div className="space-y-1 text-xs text-ink-muted">
             <p>
@@ -91,7 +89,7 @@ export function NodeDetail({
                 / {scope.namespace}
                 {' · '}
                 <a
-                  className="text-info underline"
+                  className="text-accent underline"
                   href={`/w/connectors?connection=${encodeURIComponent(scope.dataSourceId)}`}
                 >
                   Connection
@@ -144,7 +142,7 @@ export function NodeDetail({
       </section>
 
       <section className="mb-4">
-        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-faint">
+        <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-ink-faint">
           Relationships
         </h3>
         {callers.length === 0 && dependencies.length === 0 ? (
@@ -167,7 +165,7 @@ export function NodeDetail({
                       <li key={JSON.stringify([edge[endpoint], edge.environment ?? ''])}>
                         <button
                           type="button"
-                          className="sre-hit-target break-all text-info underline"
+                          className="sre-hit-target break-all text-accent underline"
                           onClick={() => {
                             const target = graph?.nodes.find(
                               (item) => item.name === edge[endpoint],
@@ -192,7 +190,7 @@ export function NodeDetail({
       </section>
 
       <section className="mb-4">
-        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-faint">
+        <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-ink-faint">
           Reported deployment matches
         </h3>
         <p className="mb-2 text-xs text-ink-muted">
@@ -230,7 +228,7 @@ export function NodeDetail({
       </section>
 
       <section>
-        <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-ink-faint">
+        <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-ink-faint">
           Active alerts
         </h3>
         {activeAlerts.length === 0 ? (
@@ -246,7 +244,7 @@ export function NodeDetail({
                 {i.title && (
                   <a
                     href={`/w/incidents/${i.id}`}
-                    className="basis-full text-xs text-info underline"
+                    className="basis-full text-xs text-accent underline"
                   >
                     {i.title}
                   </a>

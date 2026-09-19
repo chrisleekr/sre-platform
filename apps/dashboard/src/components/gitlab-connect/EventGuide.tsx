@@ -34,7 +34,7 @@ export function GitLabEventGuide({ view }: { view: GitLabWizardViewModel }) {
       aria-label="GitLab webhook setup"
       className="space-y-5 rounded-lg border border-line p-4"
     >
-      <h3 className="font-semibold">
+      <h3 className="font-medium">
         {saved ? 'Finish GitLab event delivery' : 'Set up webhooks in GitLab'}
       </h3>
       {eventTransport === 'smee' && (
@@ -125,7 +125,7 @@ export function GitLabEventGuide({ view }: { view: GitLabWizardViewModel }) {
                 <>
                   <button
                     type="button"
-                    className="min-h-11 rounded border border-line-strong px-3 py-1.5 font-medium"
+                    className="sre-action min-h-11"
                     onClick={() =>
                       void Promise.resolve()
                         .then(() => navigator.clipboard.writeText(webhookSigningToken))
@@ -207,7 +207,7 @@ export function GitLabEventGuide({ view }: { view: GitLabWizardViewModel }) {
                       <input
                         value={query}
                         onChange={(event) => setQuery(event.target.value)}
-                        className="mt-1 w-full rounded border border-line-strong px-3 py-2"
+                        className="sre-field mt-1 w-full"
                         type="search"
                       />
                     </label>

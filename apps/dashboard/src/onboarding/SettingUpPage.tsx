@@ -183,11 +183,7 @@ export function SettingUpPage({
           <p role="alert">Setup failed: {founding?.failureReason ?? 'Try again.'}</p>
           {retryError && <p role="alert">{retryError}</p>}
           <div className="mt-4 flex flex-wrap gap-3">
-            <button
-              type="button"
-              className="rounded-lg border border-line px-4 py-2.5 text-sm font-semibold"
-              onClick={() => setEditingAddress(true)}
-            >
+            <button type="button" className="sre-action" onClick={() => setEditingAddress(true)}>
               Change address
             </button>
             <button type="button" className={primaryButton} onClick={() => void retry()}>

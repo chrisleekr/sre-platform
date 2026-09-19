@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta id="theme-color" name="theme-color" content="#f3f6f8" />
+    <meta id="theme-color" name="theme-color" content="#f7f8f8" />
     <title>SRE Intelligence Platform</title>
     <script>
       try {
@@ -19,12 +19,12 @@
         document.documentElement.dataset.themePreference = preference;
         document.documentElement.style.colorScheme = resolved;
         document.querySelector('#theme-color').content =
-          resolved === 'dark' ? '#091116' : '#f3f6f8';
+          resolved === 'dark' ? '#08090a' : '#f7f8f8';
       } catch {
         document.documentElement.dataset.theme = 'light';
         document.documentElement.dataset.themePreference = 'system';
         document.documentElement.style.colorScheme = 'light';
-        document.querySelector('#theme-color').content = '#f3f6f8';
+        document.querySelector('#theme-color').content = '#f7f8f8';
       }
     </script>
     <script src="/runtime-config.js"></script>

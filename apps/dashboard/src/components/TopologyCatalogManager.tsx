@@ -60,7 +60,7 @@ export function TopologyCatalogManager({
           setConfirmRemove(false);
           setOpen(true);
         }}
-        className="sre-hit-target rounded-md bg-strong px-4 py-2 text-sm font-semibold text-on-strong hover:bg-strong-hover"
+        className="sre-action sre-action-primary sre-hit-target"
       >
         Edit catalog
       </button>
@@ -102,7 +102,7 @@ export function TopologyCatalogManager({
               );
             }}
           >
-            <h3 className="font-semibold text-ink">Register or update a service</h3>
+            <h3 className="font-medium text-ink">Register or update a service</h3>
             <p className="mt-1 text-xs text-ink-muted">
               Choose a registered service or enter a new service name, then add ownership context.
             </p>
@@ -122,7 +122,7 @@ export function TopologyCatalogManager({
                     setTeam(existing?.team ?? '');
                     setCriticality(existing?.criticality ?? '');
                   }}
-                  className="min-h-11 rounded-md border border-line-strong bg-surface px-3 py-2"
+                  className="sre-field min-h-11"
                 />
                 <datalist id="topology-service-options">
                   {graph.nodes.map((node) => (
@@ -136,7 +136,7 @@ export function TopologyCatalogManager({
                   value={team}
                   onChange={(event) => setTeam(event.target.value)}
                   placeholder="Platform"
-                  className="min-h-11 rounded-md border border-line-strong bg-surface px-3 py-2"
+                  className="sre-field min-h-11"
                 />
               </label>
               <label className="grid gap-1 text-sm font-medium text-ink-secondary">
@@ -144,7 +144,7 @@ export function TopologyCatalogManager({
                 <select
                   value={criticality}
                   onChange={(event) => setCriticality(event.target.value)}
-                  className="min-h-11 rounded-md border border-line-strong bg-surface px-3 py-2"
+                  className="sre-field min-h-11"
                 >
                   <option value="">Not set</option>
                   <option value="tier1">Tier 1, critical</option>
@@ -156,7 +156,7 @@ export function TopologyCatalogManager({
             <button
               type="submit"
               disabled={busy || !serviceName.trim()}
-              className="sre-hit-target mt-3 rounded-md bg-strong px-4 py-2 text-sm font-semibold text-on-strong disabled:opacity-50"
+              className="sre-action sre-action-primary sre-hit-target mt-3"
             >
               Save service
             </button>

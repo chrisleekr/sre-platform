@@ -48,7 +48,7 @@ export function IssueActionCard({
               <button
                 type="button"
                 disabled={busy}
-                className="rounded bg-strong px-3 py-2 text-sm font-semibold text-on-strong"
+                className="sre-action sre-action-primary"
                 onClick={() => onDecision(action.id, 'confirm')}
               >
                 {action.number ? 'Save changes' : 'Publish issue'}
@@ -56,7 +56,7 @@ export function IssueActionCard({
               <button
                 type="button"
                 disabled={busy}
-                className="rounded border border-line-strong px-3 py-2 text-sm"
+                className="sre-action"
                 onClick={() => onDecision(action.id, 'cancel')}
               >
                 Discard draft

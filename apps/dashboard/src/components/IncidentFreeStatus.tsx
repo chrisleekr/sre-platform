@@ -95,7 +95,7 @@ function statusContent(status: IncidentFreeStatus) {
               Last incident:{' '}
               <Link
                 to={incidentPath(status.lastIncident.id)}
-                className="font-semibold text-info hover:text-info"
+                className="font-semibold text-accent hover:text-info"
               >
                 {status.lastIncident.title ?? status.lastIncident.id}
               </Link>

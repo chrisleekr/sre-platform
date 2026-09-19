@@ -78,7 +78,7 @@ export function DeploymentEvidenceTimeline({
   return (
     <section aria-labelledby="change-timeline-heading" className="mb-6">
       <div className="mb-3">
-        <h2 id="change-timeline-heading" className="text-base font-semibold text-ink">
+        <h2 id="change-timeline-heading" className="text-base font-medium text-ink">
           Change and incident timeline
         </h2>
         <p className="text-sm text-ink-muted">
@@ -103,7 +103,7 @@ export function DeploymentEvidenceTimeline({
                     selected ? deploymentKey(selected) === deploymentKey(event.deployment) : false
                   }
                   onClick={() => onSelect(event.deployment)}
-                  className={`grid w-full min-w-0 gap-2 rounded-lg border p-3 text-left sm:grid-cols-[7rem_minmax(0,1fr)_auto] sm:items-start ${
+                  className={`grid w-full min-w-0 gap-2 rounded-md border p-3 text-left sm:grid-cols-[7rem_minmax(0,1fr)_auto] sm:items-start ${
                     selected && deploymentKey(selected) === deploymentKey(event.deployment)
                       ? 'border-info-line bg-info-soft'
                       : 'border-line bg-surface hover:border-line-strong'
@@ -176,7 +176,7 @@ export function DeploymentEvidenceTimeline({
                   <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
                     Selected deployment
                   </p>
-                  <h3 className="break-words text-lg font-semibold text-ink">
+                  <h3 className="break-words text-lg font-medium text-ink">
                     {selected.service ?? selected.repo}
                   </h3>
                 </div>
@@ -243,7 +243,7 @@ export function DeploymentEvidenceTimeline({
                       <li key={incident.id}>
                         <Link
                           to={incidentPath(incident.id)}
-                          className="text-sm font-medium text-info hover:underline"
+                          className="text-sm font-medium text-accent hover:underline"
                         >
                           {incidentDisplayTitle(incident)}
                         </Link>
@@ -266,10 +266,7 @@ export function DeploymentEvidenceTimeline({
               </div>
 
               {isHttpUrl(selected.url) && (
-                <a
-                  href={selected.url}
-                  className="mt-4 inline-flex rounded-md border border-line-strong px-3 py-2 text-sm font-medium text-info hover:bg-surface-subtle"
-                >
+                <a href={selected.url} className="sre-action mt-4 text-accent">
                   Open provider evidence
                 </a>
               )}

@@ -175,7 +175,7 @@ export function LlmRuntimeEditor({
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 id="llm-runtime-title" className="font-semibold text-ink">
+          <h2 id="llm-runtime-title" className="font-medium text-ink">
             Investigator model
           </h2>
           <p className="mt-1 max-w-3xl text-sm text-ink-muted">
@@ -195,7 +195,7 @@ export function LlmRuntimeEditor({
             value={value.runtime}
             disabled={disabled}
             onChange={(event) => onChange(runtimeConfig(value, event.target.value as LlmRuntime))}
-            className="min-h-11 rounded border border-line-strong bg-surface px-3 py-2 font-normal"
+            className="sre-field min-h-11 font-normal"
           >
             <option value="claude-agent-sdk">Claude Agent SDK</option>
             <option value="openai-chat">OpenAI Chat Completions</option>
@@ -210,7 +210,7 @@ export function LlmRuntimeEditor({
             value={value.provider}
             disabled={disabled}
             onChange={(event) => onChange(providerConfig(value, event.target.value as LlmProvider))}
-            className="min-h-11 rounded border border-line-strong bg-surface px-3 py-2 font-normal"
+            className="sre-field min-h-11 font-normal"
           >
             {providers.map((provider) => (
               <option key={provider} value={provider}>
@@ -226,7 +226,7 @@ export function LlmRuntimeEditor({
             disabled={disabled}
             onChange={(event) => onChange({ ...value, model: event.target.value })}
             placeholder={value.runtime === 'openai-chat' ? 'gpt-5.4' : 'claude-opus-4-8'}
-            className="min-h-11 rounded border border-line-strong px-3 py-2 font-normal"
+            className="sre-field min-h-11 font-normal"
           />
           <span className="text-xs font-normal text-ink-muted">
             Exact provider model identifier. No hidden default after saving.
@@ -241,7 +241,7 @@ export function LlmRuntimeEditor({
             value={value.maxTurns}
             disabled={disabled}
             onChange={(event) => onChange({ ...value, maxTurns: Number(event.target.value) })}
-            className="min-h-11 rounded border border-line-strong px-3 py-2 font-normal"
+            className="sre-field min-h-11 font-normal"
           />
           <span className="text-xs font-normal text-ink-muted">
             Hard cap for one agent investigation or response.
@@ -256,7 +256,7 @@ export function LlmRuntimeEditor({
               disabled={disabled}
               onChange={(event) => onChange({ ...value, baseUrl: event.target.value })}
               placeholder="https://gateway.example.com"
-              className="min-h-11 rounded border border-line-strong px-3 py-2 font-normal"
+              className="sre-field min-h-11 font-normal"
             />
           </label>
         )}
@@ -269,7 +269,7 @@ export function LlmRuntimeEditor({
               onChange={(event) =>
                 onChange({ ...value, authMode: event.target.value as 'api-key' | 'oauth' })
               }
-              className="min-h-11 rounded border border-line-strong bg-surface px-3 py-2 font-normal"
+              className="sre-field min-h-11 font-normal"
             >
               <option value="api-key">Anthropic API key</option>
               <option value="oauth">Claude Code OAuth token</option>
@@ -290,7 +290,7 @@ export function LlmRuntimeEditor({
                   ? 'Leave blank to retain stored credential'
                   : 'Required before use'
               }
-              className="min-h-11 rounded border border-line-strong px-3 py-2 font-normal"
+              className="sre-field min-h-11 font-normal"
             />
             <span className="text-xs font-normal text-ink-muted">
               {credentialConfigured
@@ -355,7 +355,7 @@ export function LlmRuntimeEditor({
                   value={value.pricing![key]}
                   disabled={disabled}
                   onChange={(event) => updatePricing(key, event.target.value)}
-                  className="min-h-10 rounded border border-line-strong px-2 py-1.5 text-sm font-normal"
+                  className="sre-field min-h-10 font-normal"
                 />
               </label>
             ))}
@@ -377,7 +377,7 @@ export function LlmRuntimeEditor({
               .then(() => setCredential(''))
               .catch(() => undefined)
           }
-          className="min-h-11 rounded bg-strong px-4 py-2 text-sm font-semibold text-on-strong disabled:bg-ink-faint"
+          className="sre-action sre-action-primary min-h-11"
         >
           {disabled ? 'Saving…' : 'Save investigator model'}
         </button>

@@ -160,7 +160,7 @@ export function ConversationLog({
           const providerSummary = summarizeToolProviders(tools);
           return (
             <li key={entry.id} className="flex min-w-0 justify-end">
-              <details className="w-full min-w-0 rounded-2xl rounded-br-md border border-assessment-line bg-assessment-soft px-4 py-3 text-sm shadow-sm">
+              <details className="w-full min-w-0 rounded-2xl rounded-br-md border border-assessment-line bg-assessment-soft px-4 py-3 text-sm">
                 <summary className="cursor-pointer list-none font-medium text-ink-secondary">
                   Investigation activity
                   <span className="ml-2 font-normal text-ink-muted">
@@ -259,7 +259,7 @@ export function ConversationLog({
             className={`flex min-w-0 text-sm ${justify}`}
           >
             <div
-              className={`w-full min-w-0 break-words rounded-2xl px-4 py-3 shadow-sm ${
+              className={`w-full min-w-0 break-words rounded-2xl px-4 py-3 ${
                 m.author === 'agent'
                   ? 'rounded-br-md bg-strong text-on-strong'
                   : m.author === 'human'

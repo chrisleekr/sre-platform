@@ -136,7 +136,7 @@ export function ReviewPage({
           {onEditWorkspace && (
             <button
               type="button"
-              className="font-semibold text-info underline"
+              className="font-semibold text-accent underline"
               onClick={onEditWorkspace}
             >
               Edit workspace
@@ -155,7 +155,7 @@ export function ReviewPage({
           {onEditSignIn && (
             <button
               type="button"
-              className="font-semibold text-info underline"
+              className="font-semibold text-accent underline"
               onClick={onEditSignIn}
             >
               Edit sign-in

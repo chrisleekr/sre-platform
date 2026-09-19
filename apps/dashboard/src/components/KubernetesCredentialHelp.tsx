@@ -29,7 +29,7 @@ export function KubernetesCredentialHelp() {
           SRE Platform. Never paste credentials into chat or logs.
         </p>
         <section className="space-y-2">
-          <h3 className="font-semibold">1. Confirm the cluster and find your service account</h3>
+          <h3 className="font-medium">1. Confirm the cluster and find your service account</h3>
           <SetupCommand
             command="kubectl config current-context"
             copyLabel="Copy current context command"
@@ -54,7 +54,7 @@ export function KubernetesCredentialHelp() {
               }}
               placeholder="observability"
               maxLength={63}
-              className="mt-1 w-full rounded border border-line-strong px-3 py-2"
+              className="sre-field mt-1 w-full"
             />
           </label>
           {ns && !namespaceValid && (
@@ -64,7 +64,7 @@ export function KubernetesCredentialHelp() {
         {namespaceValid && (
           <>
             <section className="min-w-0 space-y-2">
-              <h3 className="font-semibold">2. Find its stored token Secret</h3>
+              <h3 className="font-medium">2. Find its stored token Secret</h3>
               <SetupCommand
                 command={`${kubectl} get secrets --field-selector=type=kubernetes.io/service-account-token -o 'custom-columns=SECRET:.metadata.name,SERVICE_ACCOUNT:.metadata.annotations.kubernetes\\.io/service-account\\.name'`}
                 copyLabel="Copy token Secret lookup command"
@@ -81,7 +81,7 @@ export function KubernetesCredentialHelp() {
                   onChange={(event) => setSecret(event.target.value)}
                   placeholder="reader-token"
                   maxLength={253}
-                  className="mt-1 w-full rounded border border-line-strong px-3 py-2"
+                  className="sre-field mt-1 w-full"
                 />
               </label>
               {secretName && !validName(secretName) && (
@@ -90,7 +90,7 @@ export function KubernetesCredentialHelp() {
             </section>
             {validName(secretName) && (
               <section className="min-w-0 space-y-2">
-                <h3 className="font-semibold">3. Copy the outputs into the credential fields</h3>
+                <h3 className="font-medium">3. Copy the outputs into the credential fields</h3>
                 <p>
                   Paste this output into <strong>Service account token</strong>:
                 </p>
@@ -125,7 +125,7 @@ export function KubernetesCredentialHelp() {
                     onChange={(event) => setAccount(event.target.value)}
                     placeholder="reader"
                     maxLength={253}
-                    className="mt-1 w-full rounded border border-line-strong px-3 py-2"
+                    className="sre-field mt-1 w-full"
                   />
                 </label>
                 {accountName && !validName(accountName) && (

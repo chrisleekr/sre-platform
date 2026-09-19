@@ -31,7 +31,7 @@ export function GitHubRemainingSteps({ view }: { view: GitHubWizardViewModel }) 
       {step === 2 && (
         <div className="flex min-w-0 flex-col gap-4">
           <div>
-            <h2 className="font-semibold text-ink">Choose the installed account</h2>
+            <h2 className="font-medium text-ink">Choose the installed account</h2>
             <p className="mt-1 text-sm text-ink-muted">
               One installation may expose hundreds of repositories; SRE Platform catalogs them
               automatically.
@@ -42,7 +42,7 @@ export function GitHubRemainingSteps({ view }: { view: GitHubWizardViewModel }) 
             <select
               value={installationId}
               onChange={(event) => setInstallationId(event.target.value)}
-              className="mt-1 min-w-0 w-full rounded border border-line-strong px-2 py-1.5"
+              className="sre-field mt-1 min-w-0 w-full"
             >
               {installations.map((item) => (
                 <option key={item.id} value={item.id}>
@@ -82,17 +82,13 @@ export function GitHubRemainingSteps({ view }: { view: GitHubWizardViewModel }) 
             </p>
           )}
           <SetupActions>
-            <button
-              type="button"
-              onClick={() => setStep(1)}
-              className="rounded border border-line-strong px-3 py-1.5 font-medium"
-            >
+            <button type="button" onClick={() => setStep(1)} className="sre-action">
               Back
             </button>
             <button
               type="button"
               onClick={() => setStep(3)}
-              className="rounded bg-strong px-3 py-1.5 font-medium text-on-strong"
+              className="sre-action sre-action-primary"
             >
               Review repository coverage
             </button>
@@ -103,7 +99,7 @@ export function GitHubRemainingSteps({ view }: { view: GitHubWizardViewModel }) 
       {step === 3 && selectedInstallation && (
         <div className="flex min-w-0 flex-col gap-4">
           <div>
-            <h2 className="font-semibold text-ink">Installation-wide repository coverage</h2>
+            <h2 className="font-medium text-ink">Installation-wide repository coverage</h2>
             <p className="mt-1 text-sm text-ink-muted">
               No repository selection is required in SRE Platform. The catalog follows the
               installation's current GitHub grant.
@@ -135,18 +131,10 @@ export function GitHubRemainingSteps({ view }: { view: GitHubWizardViewModel }) 
             </p>
           )}
           <SetupActions>
-            <button
-              type="button"
-              onClick={() => setStep(2)}
-              className="rounded border border-line-strong px-3 py-1.5 font-medium"
-            >
+            <button type="button" onClick={() => setStep(2)} className="sre-action">
               Back
             </button>
-            <button
-              type="button"
-              onClick={review}
-              className="rounded bg-strong px-3 py-1.5 font-medium text-on-strong"
-            >
+            <button type="button" onClick={review} className="sre-action sre-action-primary">
               Review connection
             </button>
           </SetupActions>
@@ -200,19 +188,14 @@ export function GitHubRemainingSteps({ view }: { view: GitHubWizardViewModel }) 
             </p>
           )}
           <SetupActions>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => setStep(3)}
-              className="rounded border border-line-strong px-3 py-1.5 font-medium"
-            >
+            <button type="button" disabled={busy} onClick={() => setStep(3)} className="sre-action">
               Back
             </button>
             <button
               type="button"
               disabled={busy}
               onClick={saveAndVerify}
-              className="rounded bg-strong px-3 py-1.5 font-medium text-on-strong disabled:opacity-50"
+              className="sre-action sre-action-primary"
             >
               {busy ? 'Syncing and verifying…' : 'Save, sync, and verify'}
             </button>
@@ -285,17 +268,13 @@ export function GitHubRemainingSteps({ view }: { view: GitHubWizardViewModel }) 
             repository membership changes are synchronized automatically.
           </p>
           <SetupActions>
-            <button
-              type="button"
-              onClick={() => setStep(1)}
-              className="rounded border border-line-strong px-3 py-1.5 font-medium"
-            >
+            <button type="button" onClick={() => setStep(1)} className="sre-action">
               Edit configuration
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="self-start rounded bg-strong px-3 py-1.5 font-medium text-on-strong"
+              className="sre-action sre-action-primary self-start"
             >
               {result.status === 'healthy' ? 'Finish' : 'Close'}
             </button>

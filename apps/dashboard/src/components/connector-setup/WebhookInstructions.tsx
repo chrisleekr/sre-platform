@@ -26,7 +26,7 @@ export function WebhookInstructions({
       aria-label={`${provider} webhook setup`}
       className="min-w-0 space-y-2 rounded border border-line-strong bg-surface-subtle p-3 text-sm"
     >
-      <h3 className="font-semibold">{provider} webhook URL</h3>
+      <h3 className="font-medium">{provider} webhook URL</h3>
       {url ? (
         <>
           <p className="text-ink-secondary">

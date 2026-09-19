@@ -60,13 +60,10 @@ export function RegistrationsPage() {
           </p>
         )}
         {query.data?.foundings.map((founding) => (
-          <article
-            key={founding.id}
-            className="rounded-xl border border-line bg-surface p-5 shadow-sm"
-          >
+          <article key={founding.id} className="rounded-xl border border-line bg-surface p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
-                <h2 className="text-base font-bold text-ink">{founding.requestedName}</h2>
+                <h2 className="text-base font-medium text-ink">{founding.requestedName}</h2>
                 <p className="mt-1 text-sm text-ink-muted">
                   {founding.founderEmail ?? 'Founder identity pending'} ·{' '}
                   {founding.declaredDomain ?? founding.issuer ?? 'Directory pending'}
@@ -91,13 +88,13 @@ export function RegistrationsPage() {
                     setReasons((current) => ({ ...current, [founding.id]: event.target.value }))
                   }
                   placeholder="Reason required only when rejecting"
-                  className="rounded-lg border border-line-strong bg-canvas px-3 py-2 text-sm"
+                  className="sre-field bg-canvas"
                 />
                 <button
                   type="button"
                   disabled={Boolean(busy)}
                   onClick={() => void mutate(founding, 'reject')}
-                  className="sre-hit-target rounded-lg border border-critical-line px-4 py-2 text-sm font-semibold text-critical hover:bg-critical-soft disabled:opacity-60"
+                  className="sre-hit-target rounded-md border border-critical-line px-4 py-2 text-sm font-semibold text-critical hover:bg-critical-soft disabled:opacity-60"
                 >
                   Reject
                 </button>
@@ -105,7 +102,7 @@ export function RegistrationsPage() {
                   type="button"
                   disabled={Boolean(busy)}
                   onClick={() => void mutate(founding, 'approve')}
-                  className="sre-hit-target rounded-lg bg-strong px-4 py-2 text-sm font-semibold text-on-strong disabled:opacity-60"
+                  className="sre-action sre-action-primary sre-hit-target"
                 >
                   Approve
                 </button>
@@ -116,7 +113,7 @@ export function RegistrationsPage() {
                 type="button"
                 disabled={Boolean(busy)}
                 onClick={() => void mutate(founding, 'retry')}
-                className="sre-hit-target mt-4 rounded-lg bg-strong px-4 py-2 text-sm font-semibold text-on-strong disabled:opacity-60"
+                className="sre-action sre-action-primary sre-hit-target mt-4"
               >
                 Retry provisioning
               </button>

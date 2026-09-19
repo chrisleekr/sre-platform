@@ -83,19 +83,14 @@ export function GitLabReviewSteps({ view }: { view: GitLabWizardViewModel }) {
             </p>
           )}
           <SetupActions>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => setStep(3)}
-              className="rounded border border-line-strong px-3 py-1.5 font-medium"
-            >
+            <button type="button" disabled={busy} onClick={() => setStep(3)} className="sre-action">
               Back
             </button>
             <button
               type="button"
               disabled={busy}
               onClick={saveAndVerify}
-              className="rounded bg-strong px-3 py-1.5 font-medium text-on-strong disabled:opacity-50"
+              className="sre-action sre-action-primary"
             >
               {busy ? 'Verifying…' : 'Save and verify'}
             </button>
@@ -151,19 +146,11 @@ export function GitLabReviewSteps({ view }: { view: GitLabWizardViewModel }) {
             !(hookScope === 'projects' && view.managedProjects) && <GitLabEventGuide view={view} />}
           <SetupActions>
             {
-              <button
-                type="button"
-                onClick={() => setStep(1)}
-                className="rounded border border-line-strong px-3 py-1.5 font-medium"
-              >
+              <button type="button" onClick={() => setStep(1)} className="sre-action">
                 Edit configuration
               </button>
             }
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded bg-strong px-3 py-1.5 font-medium text-on-strong"
-            >
+            <button type="button" onClick={onClose} className="sre-action sre-action-primary">
               {result.status === 'healthy' ? 'Finish' : 'Close'}
             </button>
           </SetupActions>

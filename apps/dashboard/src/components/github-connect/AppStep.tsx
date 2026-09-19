@@ -37,7 +37,7 @@ export function GitHubAppStep({ view }: { view: GitHubWizardViewModel }) {
       {step === 1 && (
         <div className="flex min-w-0 flex-col gap-4">
           <div>
-            <h2 className="font-semibold text-ink">
+            <h2 className="font-medium text-ink">
               {mode === 'edit'
                 ? 'Manage GitHub access and event delivery'
                 : 'Connect an installation, not a repository'}
@@ -82,7 +82,7 @@ export function GitHubAppStep({ view }: { view: GitHubWizardViewModel }) {
                 href={installUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="mt-3 inline-block rounded bg-strong px-3 py-1.5 font-medium text-on-strong"
+                className="sre-action sre-action-primary mt-3"
               >
                 Install dedicated App
               </a>
@@ -157,7 +157,7 @@ export function GitHubAppStep({ view }: { view: GitHubWizardViewModel }) {
                           value={organization}
                           onChange={(event) => setOrganization(event.target.value)}
                           placeholder="acme"
-                          className="mt-1 min-w-0 w-full rounded border border-line-strong px-2 py-1.5"
+                          className="sre-field mt-1 min-w-0 w-full"
                         />
                       </label>
                     )}
@@ -173,7 +173,7 @@ export function GitHubAppStep({ view }: { view: GitHubWizardViewModel }) {
                       value={appId}
                       onChange={(event) => setAppId(event.target.value)}
                       autoComplete="off"
-                      className="mt-1 min-w-0 w-full rounded border border-line-strong px-2 py-1.5"
+                      className="sre-field mt-1 min-w-0 w-full"
                     />
                   </label>
                   <label className="text-sm font-medium">
@@ -183,7 +183,7 @@ export function GitHubAppStep({ view }: { view: GitHubWizardViewModel }) {
                       onChange={(event) => setPrivateKey(event.target.value)}
                       autoComplete="new-password"
                       rows={5}
-                      className="mt-1 min-w-0 w-full resize-y rounded border border-line-strong px-2 py-1.5 font-instrument text-xs"
+                      className="sre-field mt-1 min-w-0 w-full resize-y font-instrument text-xs"
                     />
                   </label>
                   <label className="text-sm font-medium">
@@ -193,7 +193,7 @@ export function GitHubAppStep({ view }: { view: GitHubWizardViewModel }) {
                       value={webhookSecret}
                       onChange={(event) => setWebhookSecret(event.target.value)}
                       autoComplete="new-password"
-                      className="mt-1 min-w-0 w-full rounded border border-line-strong px-2 py-1.5"
+                      className="sre-field mt-1 min-w-0 w-full"
                     />
                   </label>
                   <p className="text-xs text-ink-muted">
@@ -223,7 +223,7 @@ export function GitHubAppStep({ view }: { view: GitHubWizardViewModel }) {
                 type="button"
                 disabled={busy}
                 onClick={discoverInstallations}
-                className="self-start rounded bg-strong px-3 py-1.5 font-medium text-on-strong disabled:opacity-50"
+                className="sre-action sre-action-primary self-start"
               >
                 {busy
                   ? 'Checking…'
@@ -236,7 +236,7 @@ export function GitHubAppStep({ view }: { view: GitHubWizardViewModel }) {
                 type="button"
                 disabled={busy}
                 onClick={startManifest}
-                className="self-start rounded bg-strong px-3 py-1.5 font-medium text-on-strong disabled:opacity-50"
+                className="sre-action sre-action-primary self-start"
               >
                 {busy ? 'Opening GitHub…' : 'Create dedicated GitHub App'}
               </button>
@@ -245,7 +245,7 @@ export function GitHubAppStep({ view }: { view: GitHubWizardViewModel }) {
                 type="button"
                 disabled={busy}
                 onClick={discoverInstallations}
-                className="self-start rounded bg-strong px-3 py-1.5 font-medium text-on-strong disabled:opacity-50"
+                className="sre-action sre-action-primary self-start"
               >
                 {busy ? 'Checking…' : 'Check existing App'}
               </button>

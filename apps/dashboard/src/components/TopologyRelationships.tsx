@@ -62,7 +62,7 @@ export function TopologyRelationships({
     'min-h-11 w-full min-w-0 rounded-md border border-line-strong bg-surface px-3 py-2';
   return (
     <section className="mt-4 rounded-lg border border-line p-4" aria-label="Manage relationships">
-      <h3 className="font-semibold text-ink">Service relationships</h3>
+      <h3 className="font-medium text-ink">Service relationships</h3>
       <p className="mt-1 text-sm text-ink-muted">
         Caller → dependency. If the dependency fails, its callers may be affected. Only add calls
         you can confirm.
@@ -96,7 +96,7 @@ export function TopologyRelationships({
                     type="button"
                     disabled={busy}
                     aria-label={`Edit ${edge.upstream} to ${edge.downstream}`}
-                    className="sre-hit-target rounded border border-line-strong px-3 py-1"
+                    className="sre-action sre-hit-target"
                     onClick={() => {
                       selectEdge(edge.upstream, edge.downstream, edge.environment ?? '');
                       editorRef.current?.querySelector('select')?.focus();
@@ -108,7 +108,7 @@ export function TopologyRelationships({
                     type="button"
                     disabled={busy}
                     aria-label={`Remove ${edge.upstream} to ${edge.downstream}`}
-                    className="sre-hit-target rounded border border-line-strong px-3 py-1"
+                    className="sre-action sre-hit-target"
                     onClick={() => setRemoving(key)}
                   >
                     Remove
@@ -268,7 +268,7 @@ export function TopologyRelationships({
             disabled={
               busy || !upstream || !downstream || upstream === downstream || !rationale.trim()
             }
-            className="sre-hit-target mt-3 rounded-md bg-strong px-4 py-2 text-sm font-semibold text-on-strong disabled:opacity-50"
+            className="sre-action sre-action-primary sre-hit-target mt-3"
           >
             {existing ? 'Update relationship' : 'Save relationship'}
           </button>

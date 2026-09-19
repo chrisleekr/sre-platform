@@ -134,7 +134,7 @@ function DomainVerification({
   };
   return (
     <section className="mx-auto w-full max-w-3xl rounded-xl border border-line bg-surface p-5 sm:p-8">
-      <h1 className="text-2xl font-bold">Verify your domain</h1>
+      <h1 className="text-2xl font-medium">Verify your domain</h1>
       {!domain ? (
         <p role="alert" className="mt-4">
           {loadError ?? 'Loading domain details…'}
@@ -150,7 +150,7 @@ function DomainVerification({
               <code className="break-all">{domain.challengeHost}</code>
               <button
                 type="button"
-                className="ml-2 rounded-lg border border-line px-3 py-1.5 text-sm"
+                className="sre-action ml-2"
                 onClick={() =>
                   void navigator.clipboard
                     .writeText(domain.challengeHost)
@@ -166,7 +166,7 @@ function DomainVerification({
               <code className="break-all">{domain.challengeValue}</code>
               <button
                 type="button"
-                className="rounded-lg border border-line px-3 py-1.5 text-sm font-semibold"
+                className="sre-action"
                 disabled={!domain.challengeValue}
                 onClick={() => void copyValue()}
               >
@@ -199,7 +199,7 @@ function DomainVerification({
             {status}
           </p>
           <Link
-            className="inline-block font-semibold text-info underline"
+            className="inline-block font-semibold text-accent underline"
             onClick={() => me.refresh()}
             to={domain.status === 'verified' ? '/w' : '/w/settings/authentication'}
           >

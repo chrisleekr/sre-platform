@@ -33,7 +33,7 @@ export function IssueAccessSettings({
           <label className="block text-sm font-medium">
             Repositories allowed for issue changes
             <textarea
-              className="mt-1 min-h-20 w-full rounded border border-line-strong bg-input p-2"
+              className="sre-field mt-1 min-h-20 w-full bg-input p-2"
               value={value.repositories.join('\n')}
               onChange={(event) =>
                 onChange({ ...value, repositories: event.target.value.split('\n') })
@@ -67,7 +67,7 @@ export function IssueAccessSettings({
                   value={credential ?? ''}
                   onChange={(event) => onCredential?.(event.target.value)}
                   placeholder="Leave blank to keep the saved token"
-                  className="mt-1 w-full rounded border border-line-strong bg-input p-2"
+                  className="sre-field mt-1 w-full bg-input p-2"
                 />
               </label>
               <p className="text-xs text-ink-muted">

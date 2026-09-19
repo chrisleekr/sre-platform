@@ -60,7 +60,7 @@ export function CreateIncidentAction() {
         ref={triggerRef}
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-md bg-strong px-3 py-2 text-sm font-semibold text-on-strong hover:bg-strong-hover"
+        className="sre-action sre-action-primary"
       >
         Create incident
       </button>
@@ -88,7 +88,7 @@ export function CreateIncidentAction() {
                 value={draft.title}
                 onChange={(event) => setDraft({ ...draft, title: event.target.value })}
                 placeholder="Checkout latency increased after deployment"
-                className="mt-1 w-full rounded border border-line-strong px-3 py-2"
+                className="sre-field mt-1 w-full"
               />
             </label>
 
@@ -106,7 +106,7 @@ export function CreateIncidentAction() {
               onChange={(event) => setDraft({ ...draft, service: event.target.value })}
               placeholder="checkout-api, argocd, or kube-etcd"
               aria-describedby="manual-incident-service-help"
-              className="mt-1 w-full rounded border border-line-strong px-3 py-2"
+              className="sre-field mt-1 w-full"
             />
             <span
               id="manual-incident-service-help"
@@ -125,7 +125,7 @@ export function CreateIncidentAction() {
                     severity: event.target.value as ManualIncidentDraft['severity'],
                   })
                 }
-                className="mt-1 w-full rounded border border-line-strong px-3 py-2"
+                className="sre-field mt-1 w-full"
               >
                 <option value="sev1">SEV1, critical impact</option>
                 <option value="sev2">SEV2, significant impact</option>
@@ -142,7 +142,7 @@ export function CreateIncidentAction() {
                 value={draft.description}
                 onChange={(event) => setDraft({ ...draft, description: event.target.value })}
                 placeholder="Describe the symptom, impact, when it started, and any evidence already checked."
-                className="mt-1 w-full resize-y rounded border border-line-strong px-3 py-2"
+                className="sre-field mt-1 w-full resize-y"
               />
             </label>
 
@@ -156,19 +156,14 @@ export function CreateIncidentAction() {
               </p>
             )}
             <SetupActions>
-              <button
-                type="button"
-                disabled={pending}
-                onClick={close}
-                className="rounded border border-line-strong px-3 py-2 font-medium hover:bg-surface-subtle disabled:opacity-50"
-              >
+              <button type="button" disabled={pending} onClick={close} className="sre-action">
                 Cancel
               </button>
               <button
                 type="submit"
                 form={formId}
                 disabled={pending}
-                className="rounded bg-strong px-3 py-2 font-semibold text-on-strong hover:bg-strong-hover disabled:opacity-50"
+                className="sre-action sre-action-primary"
               >
                 {pending ? 'Creating…' : 'Create and investigate'}
               </button>

@@ -162,7 +162,7 @@ export function IncidentsList({ incidents }: { incidents: Incident[] }) {
           >
             <Link
               to={incidentPath(incident.id)}
-              className="grid min-w-0 grid-cols-[0.375rem_minmax(0,1fr)] gap-3 rounded-lg border border-line bg-surface p-4 shadow-sm transition hover:-translate-y-px hover:border-line-strong hover:shadow"
+              className="grid min-w-0 grid-cols-[0.375rem_minmax(0,1fr)] gap-3 rounded-lg border border-line bg-surface p-4 transition hover:border-line-strong"
             >
               <SignalSpine facets={facets} />
               <div className="min-w-0 space-y-3">
@@ -219,7 +219,7 @@ export function IncidentsList({ incidents }: { incidents: Incident[] }) {
                     {relativeTime(updatedAt, Date.now())}
                   </time>
                 </div>
-                <h2 className="break-words text-base font-semibold text-ink">
+                <h2 className="break-words text-base font-medium text-ink">
                   {incidentDisplayTitle(incident)}
                 </h2>
                 {incident.causalParentId && (

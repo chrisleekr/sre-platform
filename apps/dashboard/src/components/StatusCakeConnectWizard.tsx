@@ -99,7 +99,7 @@ export function StatusCakeConnectWizard({
       {step === 1 && (
         <div className="flex flex-col gap-4">
           <div>
-            <h3 className="font-semibold">Use a StatusCake API token</h3>
+            <h3 className="font-medium">Use a StatusCake API token</h3>
             <p className="mt-1 text-ink-muted">
               Use a token that can read uptime tests, history, alerts, maintenance windows, and
               contact groups. Investigations call StatusCake on demand; this connector does not
@@ -123,7 +123,7 @@ export function StatusCakeConnectWizard({
               autoComplete="new-password"
               value={token}
               onChange={(event) => setToken(event.target.value)}
-              className="mt-1 w-full rounded border border-line-strong px-2 py-1.5"
+              className="sre-field mt-1 w-full"
             />
             {mode === 'edit' && credentialConfigured && (
               <span className="mt-1 block text-xs font-normal text-ink-muted">
@@ -140,7 +140,7 @@ export function StatusCakeConnectWizard({
             <button
               type="button"
               onClick={review}
-              className="self-start rounded bg-strong px-3 py-1.5 font-medium text-on-strong"
+              className="sre-action sre-action-primary self-start"
             >
               Review
             </button>
@@ -150,7 +150,7 @@ export function StatusCakeConnectWizard({
       {step === 2 && (
         <div className="flex flex-col gap-4">
           <div>
-            <h3 className="font-semibold">Review and verify StatusCake</h3>
+            <h3 className="font-medium">Review and verify StatusCake</h3>
             <p className="mt-1 text-ink-muted">
               Saving creates a disabled draft. A successful read of one uptime test enables
               on-demand investigation tools.
@@ -170,19 +170,14 @@ export function StatusCakeConnectWizard({
             </p>
           )}
           <SetupActions>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => setStep(1)}
-              className="rounded border border-line-strong px-3 py-1.5 font-medium"
-            >
+            <button type="button" disabled={busy} onClick={() => setStep(1)} className="sre-action">
               Back
             </button>
             <button
               type="button"
               disabled={busy}
               onClick={saveAndVerify}
-              className="rounded bg-strong px-3 py-1.5 font-medium text-on-strong disabled:opacity-50"
+              className="sre-action sre-action-primary"
             >
               {busy ? 'Verifying…' : 'Save and verify'}
             </button>
@@ -192,7 +187,7 @@ export function StatusCakeConnectWizard({
       {step === 3 && result && (
         <div className="flex flex-col gap-4">
           <h3
-            className={`font-semibold ${result.status === 'healthy' ? 'text-success' : 'text-critical'}`}
+            className={`font-medium ${result.status === 'healthy' ? 'text-success' : 'text-critical'}`}
           >
             {result.status === 'healthy'
               ? 'StatusCake connector enabled.'
@@ -209,7 +204,7 @@ export function StatusCakeConnectWizard({
             <button
               type="button"
               onClick={onClose}
-              className="self-start rounded bg-strong px-3 py-1.5 font-medium text-on-strong"
+              className="sre-action sre-action-primary self-start"
             >
               Finish
             </button>

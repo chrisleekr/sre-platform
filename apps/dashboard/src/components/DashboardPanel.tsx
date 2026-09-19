@@ -130,10 +130,7 @@ export function DashboardPanel() {
         title="Operational dashboard"
         description="The active response picture: work needing ownership, evidence exceptions, nearby changes, and diagnostic blind spots."
         action={
-          <Link
-            to={productPath('incidents')}
-            className="rounded-md bg-strong px-3 py-2 text-sm font-semibold text-on-strong hover:bg-strong-hover"
-          >
+          <Link to={productPath('incidents')} className="sre-action sre-action-primary">
             Open incident queue
           </Link>
         }
@@ -326,7 +323,7 @@ export function DashboardPanel() {
                 {changeState.summary.failing === 1 ? '' : 's'} in the last 24 hours.{' '}
                 <Link
                   to={productPath('changes')}
-                  className="font-semibold text-info hover:text-info"
+                  className="font-semibold text-accent hover:text-info"
                 >
                   Inspect source changes →
                 </Link>

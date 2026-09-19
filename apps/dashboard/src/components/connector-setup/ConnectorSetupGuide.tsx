@@ -8,7 +8,7 @@ export function ConnectorSetupGuide({ provider }: { provider: keyof typeof CONNE
       aria-label="Setup instructions"
       className="min-w-0 rounded border border-info-line bg-info-soft p-3 text-sm"
     >
-      <h3 className="font-semibold text-ink">Before you start</h3>
+      <h3 className="font-medium text-ink">Before you start</h3>
       <p className="mt-1 text-ink-secondary">{guide.prerequisite}</p>
       <details className="mt-3 min-w-0">
         <summary className="cursor-pointer font-medium text-info focus-visible:outline-2 focus-visible:outline-focus">
@@ -28,7 +28,7 @@ export function ConnectorSetupGuide({ provider }: { provider: keyof typeof CONNE
             href={guide.documentation}
             target="_blank"
             rel="noreferrer"
-            className="mt-3 inline-block font-medium text-info underline"
+            className="mt-3 inline-block font-medium text-accent underline"
           >
             Official provider documentation ↗
           </a>

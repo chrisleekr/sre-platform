@@ -214,7 +214,7 @@ export function ObservabilityConnectWizard({
       {step === 1 && (
         <div className="flex flex-col gap-4">
           <div>
-            <h2 className="font-semibold">Connect {label} for incident investigation</h2>
+            <h2 className="font-medium">Connect {label} for incident investigation</h2>
             <p className="mt-1 text-sm text-ink-muted">
               Each named connection has isolated credentials, health, and investigator tools.
             </p>
@@ -231,7 +231,7 @@ export function ObservabilityConnectWizard({
                 <select
                   value={site}
                   onChange={(event) => setSite(event.target.value)}
-                  className="mt-1 w-full rounded border border-line-strong px-2 py-1.5"
+                  className="sre-field mt-1 w-full"
                 >
                   {DATADOG_SITES.map((value) => (
                     <option key={value} value={value}>
@@ -280,7 +280,7 @@ export function ObservabilityConnectWizard({
                   value={baseUrl}
                   onChange={(event) => setBaseUrl(event.target.value)}
                   placeholder="http://127.0.0.1:3000 or https://grafana.example.com"
-                  className="mt-1 w-full rounded border border-line-strong px-2 py-1.5"
+                  className="sre-field mt-1 w-full"
                 />
               </label>
               {showTls ? (
@@ -322,7 +322,7 @@ export function ObservabilityConnectWizard({
                     placeholder={
                       initialSettings?.caConfigured ? 'Leave blank to keep the stored CA' : ''
                     }
-                    className="mt-1 h-24 w-full rounded border border-line-strong px-2 py-1.5 font-instrument text-xs"
+                    className="sre-field mt-1 h-24 w-full font-instrument text-xs"
                   />
                 </label>
               )}
@@ -347,7 +347,7 @@ export function ObservabilityConnectWizard({
             <button
               type="button"
               onClick={reviewConnection}
-              className="self-start rounded bg-strong px-3 py-1.5 font-medium text-on-strong"
+              className="sre-action sre-action-primary self-start"
             >
               Credentials
             </button>
@@ -357,7 +357,7 @@ export function ObservabilityConnectWizard({
       {step === 2 && (
         <div className="flex flex-col gap-4">
           <div>
-            <h2 className="font-semibold">Paste read-only credentials</h2>
+            <h2 className="font-medium">Paste read-only credentials</h2>
             <p className="mt-1 text-sm text-ink-muted">
               Use existing credentials with the required read permissions. Create new credentials
               only if needed. Credentials are encrypted and never returned.
@@ -371,7 +371,7 @@ export function ObservabilityConnectWizard({
                   type="password"
                   value={apiKey}
                   onChange={(event) => setApiKey(event.target.value)}
-                  className="mt-1 w-full rounded border border-line-strong px-2 py-1.5"
+                  className="sre-field mt-1 w-full"
                 />
               </label>
               <label className="text-sm font-medium">
@@ -380,7 +380,7 @@ export function ObservabilityConnectWizard({
                   type="password"
                   value={appKey}
                   onChange={(event) => setAppKey(event.target.value)}
-                  className="mt-1 w-full rounded border border-line-strong px-2 py-1.5"
+                  className="sre-field mt-1 w-full"
                 />
               </label>
             </>
@@ -391,7 +391,7 @@ export function ObservabilityConnectWizard({
                 type="password"
                 value={token}
                 onChange={(event) => setToken(event.target.value)}
-                className="mt-1 w-full rounded border border-line-strong px-2 py-1.5"
+                className="sre-field mt-1 w-full"
               />
             </label>
           )}
@@ -412,7 +412,7 @@ export function ObservabilityConnectWizard({
             <button
               type="button"
               onClick={reviewCredentials}
-              className="rounded bg-strong px-3 py-1.5 font-medium text-on-strong"
+              className="sre-action sre-action-primary"
             >
               Review
             </button>
@@ -421,7 +421,7 @@ export function ObservabilityConnectWizard({
       )}
       {step === 3 && (
         <div className="flex flex-col gap-4">
-          <h2 className="font-semibold">Review {name}</h2>
+          <h2 className="font-medium">Review {name}</h2>
           <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 rounded border border-line p-3 text-sm">
             <dt className="font-medium">Provider</dt>
             <dd>{label}</dd>
@@ -455,7 +455,7 @@ export function ObservabilityConnectWizard({
               type="button"
               disabled={busy}
               onClick={saveAndVerify}
-              className="rounded bg-strong px-3 py-1.5 font-medium text-on-strong disabled:opacity-50"
+              className="sre-action sre-action-primary"
             >
               {busy ? 'Verifying…' : 'Save and verify'}
             </button>
@@ -465,7 +465,7 @@ export function ObservabilityConnectWizard({
       {step === 4 && result && (
         <div className="flex flex-col gap-4">
           <h2
-            className={`font-semibold ${result.status === 'healthy' ? 'text-success' : 'text-critical'}`}
+            className={`font-medium ${result.status === 'healthy' ? 'text-success' : 'text-critical'}`}
           >
             {result.status === 'healthy'
               ? `${name} enabled.`
@@ -482,7 +482,7 @@ export function ObservabilityConnectWizard({
             <button
               type="button"
               onClick={onClose}
-              className="self-start rounded bg-strong px-3 py-1.5 font-medium text-on-strong"
+              className="sre-action sre-action-primary self-start"
             >
               Finish
             </button>

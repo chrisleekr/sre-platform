@@ -87,7 +87,7 @@ export function UsagePanel() {
                 setCustomError(null);
                 if (next !== 'custom') setWindow(relativeWindow(Number(next)));
               }}
-              className="min-h-10 rounded border border-line-strong bg-surface px-3 py-2 font-normal"
+              className="sre-field min-h-10 font-normal"
             >
               <option value="1">Last 24 hours</option>
               <option value="7">Last 7 days</option>
@@ -105,7 +105,7 @@ export function UsagePanel() {
                   value={customFrom}
                   aria-describedby={customError ? 'usage-window-error' : undefined}
                   onChange={(event) => setCustomFrom(event.target.value)}
-                  className="min-h-10 rounded border border-line-strong px-3 py-2 font-normal"
+                  className="sre-field min-h-10 font-normal"
                 />
               </label>
               <label className="flex flex-col gap-1 text-sm font-medium">
@@ -115,7 +115,7 @@ export function UsagePanel() {
                   value={customThrough}
                   aria-describedby={customError ? 'usage-window-error' : undefined}
                   onChange={(event) => setCustomThrough(event.target.value)}
-                  className="min-h-10 rounded border border-line-strong px-3 py-2 font-normal"
+                  className="sre-field min-h-10 font-normal"
                 />
               </label>
               <button
@@ -125,7 +125,7 @@ export function UsagePanel() {
                   setCustomError(result.error);
                   if (result.window) setWindow(result.window);
                 }}
-                className="min-h-10 rounded bg-strong px-4 py-2 text-sm font-semibold text-on-strong"
+                className="sre-action sre-action-primary min-h-10"
               >
                 Apply
               </button>

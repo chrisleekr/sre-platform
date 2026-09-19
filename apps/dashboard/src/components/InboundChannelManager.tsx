@@ -136,7 +136,7 @@ export function ChannelManager({
     <section aria-label="Channel subscriptions" className="min-w-0">
       <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-semibold">Channel subscriptions</h2>
+          <h2 className="font-medium">Channel subscriptions</h2>
           <p className="mt-1 text-sm text-ink-muted">
             Listening channels allow new messages into incident intake. Pause a channel to stop new
             intake without disconnecting Slack.
@@ -151,7 +151,7 @@ export function ChannelManager({
             setAdding(true);
             openPicker();
           }}
-          className="min-h-10 rounded-md bg-strong px-3 py-2 text-sm font-semibold text-on-strong disabled:opacity-50"
+          className="sre-action sre-action-primary min-h-10"
         >
           Add channel
         </button>
@@ -181,7 +181,7 @@ export function ChannelManager({
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Channel name"
-                  className="mt-1 block w-full rounded-md border border-line-strong bg-surface px-3 py-2.5"
+                  className="sre-field mt-1 block w-full"
                 />
               </label>
               <label className="text-sm font-medium">
@@ -189,7 +189,7 @@ export function ChannelManager({
                 <select
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
-                  className="mt-1 block w-full rounded-md border border-line-strong bg-surface px-3 py-2.5"
+                  className="sre-field mt-1 block w-full"
                 >
                   {['All channels', 'Listening', 'Paused'].map((s) => (
                     <option key={s}>{s}</option>
@@ -275,7 +275,7 @@ export function ChannelManager({
                 setChannelSearch(e.target.value);
                 setPicked('');
               }}
-              className="mt-1 mb-4 block w-full rounded-md border border-line-strong bg-surface px-3 py-2.5"
+              className="sre-field mt-1 mb-4 block w-full"
             />
           </label>
           <label className="block text-sm font-medium">
@@ -283,7 +283,7 @@ export function ChannelManager({
             <select
               value={picked}
               onChange={(e) => setPicked(e.target.value)}
-              className="mt-1 block w-full min-w-0 rounded-md border border-line-strong bg-surface px-3 py-2.5"
+              className="sre-field mt-1 block w-full min-w-0"
             >
               <option value="">Choose a channel…</option>
               {subscribable.map((a) => (
@@ -318,7 +318,7 @@ export function ChannelManager({
                 const chosen = subscribable.find((a) => a.id === picked);
                 if (chosen) void update(chosen.id, hashed(chosen.name), true, true);
               }}
-              className="mt-5 min-h-10 rounded-md bg-strong px-4 py-2 text-sm font-semibold text-on-strong disabled:opacity-50"
+              className="sre-action sre-action-primary mt-5 min-h-10"
             >
               {pending.length > 0 ? 'Adding…' : 'Add'}
             </button>

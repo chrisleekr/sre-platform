@@ -88,6 +88,10 @@ milestones.
 
 ## Linting
 
+Dashboard changes must follow `apps/dashboard/AGENTS.md` and `docs/build/design-system.md`.
+`bun run check:design-system` checks tokens and static style policy; the same tests run in the
+required UI lane. Shared visual changes require the full isolated screenshot capture.
+
 oxlint + prettier. Public package entrypoint functions also pass the JSDoc contract gate: concise
 summary, described parameters, and no duplicated TypeScript types. Husky pre-commit runs staged
 lint, public JSDoc validation, and formatting checks. TypeScript strict, no implicit `any`.

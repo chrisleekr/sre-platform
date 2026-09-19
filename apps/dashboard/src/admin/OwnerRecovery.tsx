@@ -88,12 +88,7 @@ export function OwnerRecovery({
         </p>
       )}
       {!members ? (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void load()}
-          className="rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-semibold disabled:opacity-50"
-        >
+        <button type="button" disabled={busy} onClick={() => void load()} className="sre-action">
           Recover owner
         </button>
       ) : confirmation ? (
@@ -128,7 +123,7 @@ export function OwnerRecovery({
               required
               value={userId}
               onChange={(event) => setUserId(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-line-strong bg-surface px-3 py-2"
+              className="sre-field mt-1 w-full"
             >
               <option value="">Choose an active member</option>
               {members.map((member) => (
@@ -146,12 +141,12 @@ export function OwnerRecovery({
               maxLength={2000}
               value={reason}
               onChange={(event) => setReason(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-line-strong bg-surface px-3 py-2"
+              className="sre-field mt-1 w-full"
             />
           </label>
           <button
             disabled={!userId || reason.trim().length < 3}
-            className="rounded-lg bg-strong px-3 py-2 text-sm font-semibold text-on-strong disabled:opacity-50"
+            className="sre-action sre-action-primary"
           >
             Review recovery
           </button>

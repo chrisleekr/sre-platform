@@ -214,7 +214,7 @@ export function SignInPage({ authNotice }: { authNotice?: string }) {
       productName={publicConfig.value?.productName}
       description={publicConfig.value?.productValueLine}
     >
-      <h1 className="text-2xl font-bold">Sign in</h1>
+      <h1 className="text-2xl font-medium">Sign in</h1>
       {(authNotice || callbackError || sessionError) && (
         <div
           role="alert"
@@ -245,7 +245,7 @@ export function SignInPage({ authNotice }: { authNotice?: string }) {
           </button>
           <button
             type="button"
-            className="ml-4 text-sm font-semibold text-info underline"
+            className="ml-4 text-sm font-semibold text-accent underline"
             onClick={() => {
               clearSignInRetry();
               if (setupMatchesFounding) clearWorkspaceDraft();
@@ -266,7 +266,7 @@ export function SignInPage({ authNotice }: { authNotice?: string }) {
           <p>Your saved setup could not be checked. It has not been removed.</p>
           <button
             type="button"
-            className="mt-2 font-semibold text-info underline"
+            className="mt-2 font-semibold text-accent underline"
             onClick={() => setSetupCheckGeneration((value) => value + 1)}
           >
             Check again
@@ -327,7 +327,7 @@ export function SignInPage({ authNotice }: { authNotice?: string }) {
               <button
                 type="button"
                 onClick={publicConfig.retry}
-                className="font-semibold text-info underline"
+                className="font-semibold text-accent underline"
               >
                 Try again
               </button>
@@ -342,11 +342,8 @@ export function SignInPage({ authNotice }: { authNotice?: string }) {
             </p>
           ) : (
             <>
-              <h2 className="font-semibold">Setting up for your team?</h2>
-              <Link
-                to="/get-started"
-                className="mt-3 inline-flex rounded-lg border border-line-strong px-4 py-2.5 text-sm font-semibold"
-              >
+              <h2 className="font-medium">Setting up for your team?</h2>
+              <Link to="/get-started" className="sre-action mt-3">
                 {setupDraft ? 'Continue workspace setup' : 'Create a workspace'}
               </Link>
               <p className="mt-2 text-sm text-ink-muted">
@@ -359,7 +356,10 @@ export function SignInPage({ authNotice }: { authNotice?: string }) {
         </section>
       )}
       {publicConfig.value?.supportUrl && (
-        <a href={publicConfig.value.supportUrl} className="mt-4 block text-sm text-info underline">
+        <a
+          href={publicConfig.value.supportUrl}
+          className="mt-4 block text-sm text-accent underline"
+        >
           Contact support
         </a>
       )}

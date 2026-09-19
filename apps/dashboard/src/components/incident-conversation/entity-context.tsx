@@ -110,7 +110,7 @@ export function EntityContextPanel({
       aria-labelledby="entity-context-title"
       className="min-w-0 rounded-lg border border-line bg-surface p-4"
     >
-      <h2 id="entity-context-title" className="font-semibold text-ink">
+      <h2 id="entity-context-title" className="font-medium text-ink">
         Affected entity
       </h2>
       <IncidentTopologyMatches context={context.topology} />
@@ -198,7 +198,7 @@ export function EntityContextPanel({
                     setReason('');
                     setError(null);
                   }}
-                  className="mt-2 min-h-9 rounded border border-line-strong px-2 py-1 text-xs font-medium text-ink-secondary"
+                  className="sre-action mt-2 min-h-9 text-xs"
                 >
                   {mapping ? 'Correct mapping' : 'Map to service'}
                 </button>
@@ -209,7 +209,7 @@ export function EntityContextPanel({
                     <select
                       value={serviceName}
                       onChange={(event) => setServiceName(event.target.value)}
-                      className="mt-1 min-h-10 w-full rounded border border-line-strong bg-surface px-2"
+                      className="sre-field mt-1 min-h-10 w-full"
                     >
                       <option value="">Select a service</option>
                       {services.map((service) => (
@@ -226,7 +226,7 @@ export function EntityContextPanel({
                       value={reason}
                       onChange={(event) => setReason(event.target.value)}
                       maxLength={1_000}
-                      className="mt-1 min-h-10 w-full rounded border border-line-strong px-2"
+                      className="sre-field mt-1 min-h-10 w-full"
                     />
                   </label>
                   <div className="flex gap-2">
@@ -234,7 +234,7 @@ export function EntityContextPanel({
                       type="button"
                       disabled={!serviceName || !reason.trim() || pending}
                       onClick={() => void saveMapping()}
-                      className="min-h-9 rounded bg-strong px-3 text-xs font-medium text-on-strong disabled:opacity-50"
+                      className="sre-action sre-action-primary min-h-9 text-xs"
                     >
                       {pending ? 'Saving…' : 'Save mapping'}
                     </button>

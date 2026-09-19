@@ -41,7 +41,7 @@ export function PrometheusDeliverySteps({ view }: { view: PrometheusWizardViewMo
       {step === 3 && (
         <div className="flex flex-col gap-4">
           <div>
-            <h3 className="font-semibold">Connect Alertmanager lifecycle events</h3>
+            <h3 className="font-medium">Connect Alertmanager lifecycle events</h3>
             <p className="mt-1 text-ink-muted">
               Prometheus supplies investigation metrics. Alertmanager separately supplies exact
               firing and resolved episodes so Slack and the dashboard can follow the real lifecycle.
@@ -103,7 +103,7 @@ export function PrometheusDeliverySteps({ view }: { view: PrometheusWizardViewMo
                   aria-label="Incident Slack channel"
                   value={alertChannel}
                   onChange={(event) => setAlertChannel(event.target.value)}
-                  className="mt-1 w-full rounded border border-line-strong px-2 py-1.5"
+                  className="sre-field mt-1 w-full"
                 >
                   <option value="">Choose a channel</option>
                   {channels.map((channel) => (
@@ -142,7 +142,7 @@ export function PrometheusDeliverySteps({ view }: { view: PrometheusWizardViewMo
                       value={smeeUrl}
                       onChange={(event) => setSmeeUrl(event.target.value)}
                       placeholder="https://smee.io/your-channel"
-                      className="mt-1 w-full rounded border border-line-strong px-2 py-1.5"
+                      className="sre-field mt-1 w-full"
                     />
                     {mode === 'edit' && initialSettings?.smeeConfigured && !smeeUrl && (
                       <span className="mt-1 block text-xs font-normal text-ink-muted">
@@ -172,7 +172,7 @@ export function PrometheusDeliverySteps({ view }: { view: PrometheusWizardViewMo
                   placeholder={
                     initialSettings?.eventCredentialConfigured ? 'Stored and write-only' : ''
                   }
-                  className="mt-1 w-full rounded border border-line-strong bg-surface-subtle px-2 py-1.5 font-instrument text-xs"
+                  className="sre-field mt-1 w-full bg-surface-subtle font-instrument text-xs"
                 />
               </label>
               <div className="flex flex-wrap gap-2">
@@ -181,14 +181,14 @@ export function PrometheusDeliverySteps({ view }: { view: PrometheusWizardViewMo
                     <button
                       type="button"
                       onClick={() => setEventTokenVisible((visible) => !visible)}
-                      className="rounded border border-line-strong px-3 py-1.5 font-medium"
+                      className="sre-action"
                     >
                       {eventTokenVisible ? 'Hide token' : 'Show token'}
                     </button>
                     <button
                       type="button"
                       onClick={() => void navigator.clipboard.writeText(eventToken)}
-                      className="rounded border border-line-strong px-3 py-1.5 font-medium"
+                      className="sre-action"
                     >
                       Copy token
                     </button>
@@ -200,7 +200,7 @@ export function PrometheusDeliverySteps({ view }: { view: PrometheusWizardViewMo
                     setEventToken(generateEventToken());
                     setEventTokenVisible(false);
                   }}
-                  className="rounded border border-line-strong px-3 py-1.5 font-medium"
+                  className="sre-action"
                 >
                   {eventToken ? 'Rotate token' : 'Generate new token'}
                 </button>
@@ -217,17 +217,13 @@ export function PrometheusDeliverySteps({ view }: { view: PrometheusWizardViewMo
             </p>
           )}
           <SetupActions>
-            <button
-              type="button"
-              onClick={() => setStep(2)}
-              className="rounded border border-line-strong px-3 py-1.5 font-medium"
-            >
+            <button type="button" onClick={() => setStep(2)} className="sre-action">
               Back
             </button>
             <button
               type="button"
               onClick={continueFromAlertDelivery}
-              className="rounded bg-strong px-3 py-1.5 font-medium text-on-strong"
+              className="sre-action sre-action-primary"
             >
               Review
             </button>
@@ -241,7 +237,7 @@ export function PrometheusDeliverySteps({ view }: { view: PrometheusWizardViewMo
       {step === 4 && (
         <div className="flex flex-col gap-4">
           <div>
-            <h3 className="font-semibold">Review and verify Prometheus</h3>
+            <h3 className="font-medium">Review and verify Prometheus</h3>
             <p className="mt-1 text-ink-muted">
               Saving creates a disabled draft. A successful instant query enables on-demand
               investigation tools.
@@ -289,19 +285,14 @@ export function PrometheusDeliverySteps({ view }: { view: PrometheusWizardViewMo
             </p>
           )}
           <SetupActions>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => setStep(3)}
-              className="rounded border border-line-strong px-3 py-1.5 font-medium"
-            >
+            <button type="button" disabled={busy} onClick={() => setStep(3)} className="sre-action">
               Back
             </button>
             <button
               type="button"
               disabled={busy}
               onClick={saveAndVerify}
-              className="rounded bg-strong px-3 py-1.5 font-medium text-on-strong disabled:opacity-50"
+              className="sre-action sre-action-primary"
             >
               {busy ? 'Verifying…' : 'Save and verify'}
             </button>
@@ -312,7 +303,7 @@ export function PrometheusDeliverySteps({ view }: { view: PrometheusWizardViewMo
       {step === 5 && result && (
         <div className="flex flex-col gap-4">
           <h3
-            className={`font-semibold ${result.status === 'healthy' ? 'text-success' : 'text-critical'}`}
+            className={`font-medium ${result.status === 'healthy' ? 'text-success' : 'text-critical'}`}
           >
             {result.status === 'healthy'
               ? 'Prometheus metrics verified.'
@@ -358,7 +349,7 @@ export function PrometheusDeliverySteps({ view }: { view: PrometheusWizardViewMo
               <button
                 type="button"
                 onClick={() => void navigator.clipboard.writeText(webhookYaml)}
-                className="rounded border border-line-strong px-3 py-1.5 font-medium"
+                className="sre-action"
               >
                 Copy webhook config
               </button>
@@ -381,7 +372,7 @@ export function PrometheusDeliverySteps({ view }: { view: PrometheusWizardViewMo
             <button
               type="button"
               onClick={onClose}
-              className="self-start rounded bg-strong px-3 py-1.5 font-medium text-on-strong"
+              className="sre-action sre-action-primary self-start"
             >
               Finish
             </button>

@@ -216,7 +216,7 @@ export function IncidentsPanel() {
                   aria-invalid={searchError ? 'true' : undefined}
                   aria-describedby={searchError ? 'incident-search-error' : undefined}
                   placeholder="Title, service, source, channel, or ID"
-                  className="sre-hit-target mt-1 w-full min-w-0 rounded-md border border-line-strong px-3 py-2 text-sm"
+                  className="sre-field sre-hit-target mt-1 w-full min-w-0"
                 />
                 {searchError && (
                   <span
@@ -236,7 +236,7 @@ export function IncidentsPanel() {
                     setSeverity(event.target.value as SeverityFilter);
                     setHistoryCursor(undefined);
                   }}
-                  className="sre-hit-target mt-1 w-full rounded-md border border-line-strong px-3 py-2 text-sm"
+                  className="sre-field sre-hit-target mt-1 w-full"
                 >
                   <option value="">All severities</option>
                   <option value="sev1">SEV1</option>
@@ -245,10 +245,7 @@ export function IncidentsPanel() {
                 </select>
               </label>
               <div className="flex flex-wrap gap-2">
-                <button
-                  type="submit"
-                  className="sre-hit-target rounded-md bg-strong px-4 py-2 text-sm font-semibold text-on-strong hover:bg-strong-hover"
-                >
+                <button type="submit" className="sre-action sre-action-primary sre-hit-target">
                   Search
                 </button>
                 <button
@@ -261,7 +258,7 @@ export function IncidentsPanel() {
                     setSeverity('');
                     setHistoryCursor(undefined);
                   }}
-                  className="sre-hit-target rounded-md border border-line-strong px-4 py-2 text-sm font-medium text-ink-secondary disabled:opacity-50"
+                  className="sre-action sre-hit-target"
                 >
                   Clear
                 </button>

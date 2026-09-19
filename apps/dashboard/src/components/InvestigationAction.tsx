@@ -38,7 +38,7 @@ function Action({
     return (
       <button
         type="button"
-        className="rounded border border-line-strong bg-surface px-2.5 py-1.5 text-sm font-medium text-ink-secondary hover:bg-surface-subtle"
+        className="sre-action"
         onClick={() => navigate(incidentPath(activeIncidentId))}
       >
         Open investigation
@@ -48,7 +48,7 @@ function Action({
     <>
       <button
         type="button"
-        className="rounded border border-line-strong bg-surface px-2.5 py-1.5 text-sm font-medium text-ink-secondary hover:bg-surface-subtle"
+        className="sre-action"
         onClick={() => {
           setError(null);
           setConfirming(true);
@@ -89,7 +89,7 @@ function Action({
           <SetupActions>
             <button
               type="button"
-              className="rounded border border-line-strong px-3 py-2 text-sm"
+              className="sre-action"
               disabled={pending}
               onClick={() => setConfirming(false)}
             >
@@ -97,7 +97,7 @@ function Action({
             </button>
             <button
               type="button"
-              className="rounded bg-strong px-3 py-2 text-sm font-medium text-on-strong disabled:opacity-50"
+              className="sre-action sre-action-primary"
               disabled={pending}
               onClick={() => void start()}
             >

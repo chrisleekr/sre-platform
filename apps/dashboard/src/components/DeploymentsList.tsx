@@ -161,7 +161,7 @@ export function DeploymentsList({
                       <a
                         href={deployment.url}
                         title={deployment.revisions?.join(', ') || deployment.sha}
-                        className="break-words text-info hover:underline"
+                        className="break-words text-accent hover:underline"
                       >
                         {(deployment.revisions?.[0] ?? deployment.sha).slice(0, 12)}
                         {(deployment.revisions?.length ?? 0) > 1
@@ -206,7 +206,7 @@ export function DeploymentsList({
                       <button
                         type="button"
                         onClick={() => onSelect(deployment)}
-                        className="w-fit rounded-md border border-line-strong px-2 py-1 text-xs font-medium text-info hover:bg-surface-subtle"
+                        className="sre-action w-fit text-xs text-accent"
                       >
                         Inspect
                       </button>

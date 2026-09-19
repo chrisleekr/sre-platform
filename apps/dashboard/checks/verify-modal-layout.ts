@@ -1,11 +1,13 @@
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { verifyGitLabFlow } from './gitlab-flow';
 import { verifyGitHubRecovery } from './github-recovery';
 import { verifyGitLabStrategies } from './gitlab-strategies';
 import { verifyKubernetesErrors } from './kubernetes-errors';
+import { verifyDesignSystem } from './design-system';
+import { captureFullPage } from '../../../scripts/docs/screenshots/full-page';
 
 const root = process.cwd();
 const artifacts = resolve(root, '.git/codex/artifacts/modal-layout');
@@ -77,13 +79,16 @@ try {
             };
           });
         const before = await measure();
+        await verifyDesignSystem(page);
         const whitespace = await dialog
           .locator('pre')
           .evaluate((element) => getComputedStyle(element).whiteSpace);
         if (whitespace !== 'pre') throw new Error('Command text wraps or breaks words');
-        await page.screenshot({
-          path: resolve(artifacts, `${size}-${width}-${height}-${theme}-top.png`),
-        });
+        const capturePath = resolve(artifacts, `${size}-${width}-${height}-${theme}-top.png`);
+        await captureFullPage(page, capturePath);
+        const captured = await readFile(capturePath);
+        if (captured.readUInt32BE(16) !== width || captured.readUInt32BE(20) !== height)
+          throw new Error('Documentation capture expanded the modal beyond its real viewport');
         if (
           before.left < 0 ||
           before.right > width! ||
@@ -144,6 +149,31 @@ try {
           throw new Error('Focus was not restored');
         console.log(`PASS ${size} ${width}x${height} ${theme}`);
       }
+    }
+  }
+  for (const width of [390, 820]) {
+    const touchPage = await browser.newPage({
+      viewport: { width, height: 900 },
+      hasTouch: true,
+      isMobile: true,
+    });
+    try {
+      await touchPage.goto(`http://127.0.0.1:${address.port}/__modal-layout`);
+      for (const theme of ['light', 'dark']) {
+        await touchPage.evaluate(
+          (value) => (document.documentElement.dataset.theme = value),
+          theme,
+        );
+        const trigger = touchPage.getByRole('button', { name: 'Open dialog', exact: true });
+        const height = await trigger.evaluate((element) => element.getBoundingClientRect().height);
+        if (height < 44) throw new Error('Touch action target is too small');
+        await trigger.click();
+        await verifyDesignSystem(touchPage);
+        await touchPage.getByRole('button', { name: 'Close', exact: true }).click();
+        console.log(`PASS control styles with touch emulation ${width}px ${theme}`);
+      }
+    } finally {
+      await touchPage.close();
     }
   }
   await verifyGitLabFlow(page, `http://127.0.0.1:${address.port}`, artifacts);

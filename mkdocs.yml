@@ -132,6 +132,7 @@ nav:
       - build/index.md
       - Add a connector: build/connectors.md
       - Keeping the docs true: build/documentation.md
+      - Dashboard design system: build/design-system.md
       - Model-facing encoding: build/model-encoding.md
   - Operate:
       - operate/index.md

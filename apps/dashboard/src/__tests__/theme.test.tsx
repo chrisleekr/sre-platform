@@ -63,7 +63,7 @@ beforeEach(() => {
       dispatchEvent: vi.fn(),
     })),
   });
-  document.head.innerHTML = '<meta id="theme-color" name="theme-color" content="#f3f6f8" />';
+  document.head.innerHTML = '<meta id="theme-color" name="theme-color" content="#f7f8f8" />';
 });
 
 afterEach(() => {
@@ -106,7 +106,7 @@ describe('ThemeProvider', () => {
 
     expect(document.documentElement.dataset.theme).toBe('dark');
     expect(document.documentElement.style.colorScheme).toBe('dark');
-    expect(document.querySelector<HTMLMetaElement>('#theme-color')?.content).toBe('#091116');
+    expect(document.querySelector<HTMLMetaElement>('#theme-color')?.content).toBe('#08090a');
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('dark');
     expect((screen.getByRole('combobox', { name: 'Appearance' }) as HTMLSelectElement).value).toBe(
       'dark',
@@ -119,7 +119,7 @@ describe('ThemeProvider', () => {
     expect(document.documentElement.dataset.theme).toBe('light');
     expect(document.documentElement.dataset.themePreference).toBe('system');
     expect(document.documentElement.style.colorScheme).toBe('light');
-    expect(document.querySelector<HTMLMetaElement>('#theme-color')?.content).toBe('#f3f6f8');
+    expect(document.querySelector<HTMLMetaElement>('#theme-color')?.content).toBe('#f7f8f8');
   });
 
   test('restores a stored choice without waiting for an effect', () => {
@@ -179,7 +179,7 @@ describe('pre-render theme bootstrap', () => {
     expect(document.documentElement.dataset.theme).toBe('dark');
     expect(document.documentElement.dataset.themePreference).toBe('dark');
     expect(document.documentElement.style.colorScheme).toBe('dark');
-    expect(document.querySelector<HTMLMetaElement>('#theme-color')?.content).toBe('#091116');
+    expect(document.querySelector<HTMLMetaElement>('#theme-color')?.content).toBe('#08090a');
   });
 
   test.each([
@@ -196,7 +196,7 @@ describe('pre-render theme bootstrap', () => {
     expect(document.documentElement.dataset.themePreference).toBe('system');
     expect(document.documentElement.style.colorScheme).toBe(expected);
     expect(document.querySelector<HTMLMetaElement>('#theme-color')?.content).toBe(
-      expected === 'dark' ? '#091116' : '#f3f6f8',
+      expected === 'dark' ? '#08090a' : '#f7f8f8',
     );
   });
 
@@ -213,6 +213,6 @@ describe('pre-render theme bootstrap', () => {
     expect(document.documentElement.dataset.theme).toBe('light');
     expect(document.documentElement.dataset.themePreference).toBe('system');
     expect(document.documentElement.style.colorScheme).toBe('light');
-    expect(document.querySelector<HTMLMetaElement>('#theme-color')?.content).toBe('#f3f6f8');
+    expect(document.querySelector<HTMLMetaElement>('#theme-color')?.content).toBe('#f7f8f8');
   });
 });

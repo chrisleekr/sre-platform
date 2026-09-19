@@ -20,7 +20,7 @@ export function KubernetesAccessStep({
   return (
     <>
       <div>
-        <h2 className="font-semibold text-ink">Choose cluster access</h2>
+        <h2 className="font-medium text-ink">Choose cluster access</h2>
         <p className="mt-1 text-sm text-ink-muted">
           Already installed read-only RBAC? Reuse it. You do not need a new service account for this
           connection.

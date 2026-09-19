@@ -97,7 +97,7 @@ export function AuditPage() {
           type="button"
           disabled={paging}
           onClick={() => void loadOlder()}
-          className="rounded-lg border border-line-strong px-4 py-2 text-sm font-semibold disabled:opacity-60"
+          className="sre-action"
         >
           {paging ? 'Loading…' : 'Load older actions'}
         </button>

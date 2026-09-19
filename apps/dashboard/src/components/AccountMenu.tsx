@@ -36,7 +36,7 @@ export function AccountMenu({
         aria-label={`Account menu${unreadCount ? `, ${unreadCount} unread notifications` : ''}`}
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="sre-hit-target rounded-md border border-line px-3 py-2 text-sm font-medium text-ink-muted hover:bg-surface-subtle hover:text-ink"
+        className="sre-action sre-hit-target text-ink-muted"
       >
         <span aria-hidden="true">{user.email?.slice(0, 1).toUpperCase() ?? 'A'}</span>
         {unreadCount > 0 && (
@@ -52,7 +52,7 @@ export function AccountMenu({
         <div
           role="dialog"
           aria-label="Account"
-          className="absolute right-0 top-full z-40 mt-2 max-h-[calc(100dvh-6rem)] w-72 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-xl border border-line bg-surface p-4 shadow-xl"
+          className="absolute right-0 top-full z-40 mt-2 max-h-[calc(100dvh-6rem)] w-72 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-xl border border-line bg-surface p-4"
         >
           <p className="truncate text-sm font-semibold text-ink">{user.email ?? 'Signed in'}</p>
           <p className="mt-1 truncate text-sm text-ink-muted">{workspace.name}</p>
@@ -61,7 +61,7 @@ export function AccountMenu({
           </p>
           {isPlatformAdmin && (
             <Link
-              className="mt-3 flex items-center justify-between gap-3 text-sm font-semibold text-info"
+              className="mt-3 flex items-center justify-between gap-3 text-sm font-semibold text-accent"
               to="/admin"
               onClick={() => setOpen(false)}
             >
@@ -75,7 +75,7 @@ export function AccountMenu({
           )}
           {(workspace.role === 'owner' || workspace.role === 'admin') && (
             <Link
-              className="mt-3 block text-sm font-semibold text-info"
+              className="mt-3 block text-sm font-semibold text-accent"
               to={productPath('settings/members')}
             >
               Manage members
@@ -84,12 +84,12 @@ export function AccountMenu({
           <Link
             to="/w/select?switch=true"
             onClick={() => setOpen(false)}
-            className="mt-3 block text-sm font-semibold text-info"
+            className="mt-3 block text-sm font-semibold text-accent"
           >
             Switch workspace
           </Link>
           <Link
-            className="mt-3 flex items-center justify-between gap-3 text-sm font-semibold text-info"
+            className="mt-3 flex items-center justify-between gap-3 text-sm font-semibold text-accent"
             to={productPath('notifications')}
             onClick={() => setOpen(false)}
           >

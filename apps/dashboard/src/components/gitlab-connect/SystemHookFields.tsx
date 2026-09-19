@@ -63,7 +63,7 @@ export function SystemHookFields({
                 <button
                   type="button"
                   disabled={!value}
-                  className="min-h-9 shrink-0 rounded border border-line-strong px-3 py-1.5"
+                  className="sre-action min-h-9 shrink-0"
                   onClick={() => {
                     void Promise.resolve()
                       .then(() => navigator.clipboard.writeText(value!))

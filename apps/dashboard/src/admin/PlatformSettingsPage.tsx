@@ -61,7 +61,7 @@ export function PlatformSettingsPage() {
     >
       {error && <InlineAlert message={error} />}
       <section className="rounded-xl border border-line bg-surface p-5">
-        <h2 className="text-base font-bold">Onboarding and public copy</h2>
+        <h2 className="text-base font-medium">Onboarding and public copy</h2>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label className="grid gap-1 text-sm font-medium">
             Registration mode
@@ -70,7 +70,7 @@ export function PlatformSettingsPage() {
               onChange={(event) =>
                 setDraft((current) => ({ ...current, REGISTRATION_MODE: event.target.value }))
               }
-              className="rounded-lg border border-line-strong bg-canvas px-3 py-2"
+              className="sre-field bg-canvas"
             >
               <option value="open">Open</option>
               <option value="approval_required">Approval required</option>
@@ -82,7 +82,7 @@ export function PlatformSettingsPage() {
               onClick={() =>
                 void save('REGISTRATION_MODE', draft.REGISTRATION_MODE ?? 'approval_required')
               }
-              className="mt-1 w-fit rounded-lg bg-strong px-3 py-2 font-semibold text-on-strong disabled:opacity-60"
+              className="sre-action sre-action-primary mt-1 w-fit"
             >
               Save registration mode
             </button>
@@ -98,13 +98,13 @@ export function PlatformSettingsPage() {
                     [key]: event.target.value || (key.endsWith('_URL') ? null : ''),
                   }))
                 }
-                className="rounded-lg border border-line-strong bg-canvas px-3 py-2"
+                className="sre-field bg-canvas"
               />
               <button
                 type="button"
                 disabled={Boolean(busy)}
                 onClick={() => void save(key, draft[key] ?? null)}
-                className="mt-1 w-fit rounded-lg border border-line-strong px-3 py-2 font-semibold disabled:opacity-60"
+                className="sre-action mt-1 w-fit"
               >
                 Save {label.toLowerCase()}
               </button>

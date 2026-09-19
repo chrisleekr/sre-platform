@@ -115,7 +115,7 @@ export function WorkspaceSettingsPage() {
             onSubmit={(event) => void saveName(event)}
             className="rounded-xl border border-line bg-surface p-5 sm:p-6"
           >
-            <h2 className="font-instrument text-lg font-semibold text-ink">Identity</h2>
+            <h2 className="font-instrument text-lg font-medium text-ink">Identity</h2>
             <label htmlFor="workspace-settings-name" className="mt-5 block text-sm font-medium">
               Workspace name
             </label>
@@ -126,7 +126,7 @@ export function WorkspaceSettingsPage() {
               readOnly={!canEdit}
               value={name}
               onChange={(event) => setName(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-line-strong bg-canvas px-3 py-2.5 text-sm"
+              className="sre-field mt-1 w-full bg-canvas"
             />
             <p className="mt-2 text-xs leading-5 text-ink-muted">
               Usually your team or company name. You can change it at any time.
@@ -138,7 +138,7 @@ export function WorkspaceSettingsPage() {
               id="workspace-settings-slug"
               readOnly
               value={data.workspace.slug}
-              className="mt-1 w-full rounded-lg border border-line bg-surface-subtle px-3 py-2.5 text-sm text-ink-muted"
+              className="sre-field mt-1 w-full bg-surface-subtle text-ink-muted"
             />
             <p className="mt-2 text-xs leading-5 text-ink-muted">
               Used in links and your sign-in page. It cannot be changed after the workspace is
@@ -148,7 +148,7 @@ export function WorkspaceSettingsPage() {
               <button
                 type="submit"
                 disabled={busy || name.trim() === data.workspace.name || !name.trim()}
-                className="mt-5 rounded-lg bg-strong px-4 py-2.5 text-sm font-semibold text-on-strong disabled:opacity-50"
+                className="sre-action sre-action-primary mt-5"
               >
                 Save name
               </button>
@@ -167,7 +167,7 @@ export function WorkspaceSettingsPage() {
 
           {owner && (
             <section className="rounded-xl border border-critical-line bg-critical-soft p-5 sm:p-6 xl:col-span-2">
-              <h2 className="font-instrument text-lg font-semibold text-critical">
+              <h2 className="font-instrument text-lg font-medium text-critical">
                 Delete workspace
               </h2>
               {data.workspace.status === 'deleting' && data.workspace.deleteAfter ? (
@@ -184,7 +184,7 @@ export function WorkspaceSettingsPage() {
                     type="button"
                     disabled={busy}
                     onClick={() => void cancelDeletion()}
-                    className="mt-4 rounded-lg border border-critical-line bg-surface px-4 py-2.5 text-sm font-semibold text-critical disabled:opacity-50"
+                    className="mt-4 rounded-md border border-critical-line bg-surface px-4 py-2.5 text-sm font-semibold text-critical disabled:opacity-50"
                   >
                     Cancel deletion
                   </button>
@@ -199,7 +199,7 @@ export function WorkspaceSettingsPage() {
                     <button
                       type="button"
                       onClick={() => setConfirming(true)}
-                      className="mt-4 rounded-lg border border-critical-line bg-surface px-4 py-2.5 text-sm font-semibold text-critical"
+                      className="mt-4 rounded-md border border-critical-line bg-surface px-4 py-2.5 text-sm font-semibold text-critical"
                     >
                       Schedule deletion
                     </button>
@@ -215,21 +215,21 @@ export function WorkspaceSettingsPage() {
                         id="confirm-workspace-delete"
                         value={confirmSlug}
                         onChange={(event) => setConfirmSlug(event.target.value)}
-                        className="mt-2 w-full rounded-lg border border-critical-line bg-canvas px-3 py-2.5 text-sm"
+                        className="mt-2 w-full rounded-md border border-critical-line bg-canvas px-3 py-2.5 text-sm"
                       />
                       <div className="mt-3 flex flex-wrap gap-2">
                         <button
                           type="button"
                           disabled={busy || confirmSlug !== data.workspace.slug}
                           onClick={() => void deleteWorkspace()}
-                          className="rounded-lg bg-critical px-4 py-2.5 text-sm font-semibold text-on-critical disabled:opacity-50"
+                          className="sre-action sre-action-danger"
                         >
                           Confirm deletion
                         </button>
                         <button
                           type="button"
                           onClick={() => setConfirming(false)}
-                          className="rounded-lg border border-line-strong px-4 py-2.5 text-sm font-semibold text-ink-secondary"
+                          className="sre-action"
                         >
                           Cancel
                         </button>

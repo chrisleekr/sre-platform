@@ -71,7 +71,7 @@ export function DiscoveredTopologyMap({
       .map(([name, value]) => `${name}: ${value}`)
       .join(' · ');
     return (
-      <button className="block min-w-0 text-left text-info" onClick={() => onSelect(key)}>
+      <button className="block min-w-0 text-left text-accent" onClick={() => onSelect(key)}>
         <span className="font-medium underline">{subject.name}</span>
         <span className="block break-words text-xs text-ink-muted">
           {subject.kind} · {scope || 'Scope not reported'}
@@ -126,7 +126,7 @@ export function DiscoveredTopologyMap({
         )}
       </header>
       <div className="border-b border-line px-4 py-3">
-        <h3 className="text-base font-semibold">
+        <h3 className="text-base font-medium">
           {model.focused
             ? `${model.focused.name} · direct relationships`
             : model.active
@@ -254,7 +254,7 @@ export function DiscoveredTopologyMap({
                   <h4 className="font-semibold">
                     {mapRelationLabel(edge.kind)} · {evidenceLabels[edge.evidence]}
                   </h4>
-                  <button className="text-info underline" onClick={() => setEdgeKey(null)}>
+                  <button className="text-accent underline" onClick={() => setEdgeKey(null)}>
                     Close
                   </button>
                 </div>
@@ -290,7 +290,7 @@ export function DiscoveredTopologyMap({
                       )}
                       {datadogEvidenceUrl(relation.attributes) && (
                         <a
-                          className="mt-1 block text-xs text-info underline"
+                          className="mt-1 block text-xs text-accent underline"
                           target="_blank"
                           rel="noopener noreferrer"
                           href={datadogEvidenceUrl(relation.attributes)!}
@@ -329,7 +329,7 @@ export function DiscoveredTopologyMap({
             value={disconnectedSearch}
             onChange={(event) => setDisconnectedSearch(event.target.value)}
             placeholder="Find a resource or scope"
-            className="mt-3 w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm"
+            className="sre-field mt-3 w-full"
           />
           <ul className="mt-3 grid max-h-64 gap-2 overflow-y-auto sm:grid-cols-2">
             {disconnected.map((node) => (

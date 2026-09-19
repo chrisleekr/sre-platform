@@ -79,7 +79,11 @@ export function SetupProgress({
               className={current ? 'font-semibold text-ink' : 'text-ink-muted'}
             >
               {completed && edit ? (
-                <button type="button" className="font-semibold text-info underline" onClick={edit}>
+                <button
+                  type="button"
+                  className="font-semibold text-accent underline"
+                  onClick={edit}
+                >
                   {label} · Edit
                 </button>
               ) : (
@@ -94,8 +98,6 @@ export function SetupProgress({
 }
 
 export const fieldClass =
-  'mt-1 w-full rounded-lg border border-line-strong bg-surface px-3 py-2.5 text-sm text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus';
-export const primaryButton =
-  'rounded-lg bg-strong px-4 py-2.5 text-sm font-semibold text-on-strong hover:bg-strong-hover disabled:cursor-not-allowed disabled:opacity-50';
-export const secondaryButton =
-  'rounded-lg border border-line-strong px-4 py-2.5 text-sm font-semibold hover:bg-surface-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus';
+  'sre-field mt-1 w-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus';
+export const primaryButton = 'sre-action sre-action-primary';
+export const secondaryButton = 'sre-action';

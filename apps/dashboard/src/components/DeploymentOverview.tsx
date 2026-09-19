@@ -45,7 +45,7 @@ export function DeploymentOverview({
     <section aria-labelledby="deployment-overview-heading" className="mb-6">
       <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h2 id="deployment-overview-heading" className="text-base font-semibold text-ink">
+          <h2 id="deployment-overview-heading" className="text-base font-medium text-ink">
             Operational change overview
           </h2>
           <p className="text-sm text-ink-muted">
@@ -111,7 +111,7 @@ export function DeploymentOverview({
             value={searchDraft}
             onChange={(event) => onSearchDraftChange(event.target.value)}
             placeholder="Service, application, revision, actor"
-            className="min-w-0 rounded-md border border-line-strong px-3 py-2 font-normal text-ink"
+            className="sre-field min-w-0 font-normal"
           />
         </label>
         <label className="grid gap-1 text-sm font-medium text-ink-secondary">
@@ -119,7 +119,7 @@ export function DeploymentOverview({
           <select
             value={range}
             onChange={(event) => onRangeChange(event.target.value)}
-            className="rounded-md border border-line-strong px-3 py-2 font-normal text-ink"
+            className="sre-field font-normal"
           >
             <option value="24h">Last 24 hours</option>
             <option value="7d">Last 7 days</option>
@@ -132,7 +132,7 @@ export function DeploymentOverview({
           <select
             value={source}
             onChange={(event) => onSourceChange(event.target.value)}
-            className="rounded-md border border-line-strong px-3 py-2 font-normal text-ink"
+            className="sre-field font-normal"
           >
             <option value="">All sources</option>
             <option value="argocd">Argo CD</option>
@@ -145,7 +145,7 @@ export function DeploymentOverview({
           <select
             value={status}
             onChange={(event) => onStatusChange(event.target.value)}
-            className="rounded-md border border-line-strong px-3 py-2 font-normal text-ink"
+            className="sre-field font-normal"
           >
             <option value="">All statuses</option>
             <option value="failed">Failed</option>
@@ -158,17 +158,10 @@ export function DeploymentOverview({
           </select>
         </label>
         <div className="flex gap-2">
-          <button
-            type="submit"
-            className="sre-hit-target rounded-md bg-strong px-4 py-2 text-sm font-medium text-on-strong hover:bg-strong-hover"
-          >
+          <button type="submit" className="sre-action sre-action-primary sre-hit-target">
             Apply
           </button>
-          <button
-            type="button"
-            onClick={onClear}
-            className="sre-hit-target rounded-md border border-line-strong px-4 py-2 text-sm font-medium text-ink-secondary hover:bg-surface-subtle"
-          >
+          <button type="button" onClick={onClear} className="sre-action sre-hit-target">
             Clear
           </button>
         </div>

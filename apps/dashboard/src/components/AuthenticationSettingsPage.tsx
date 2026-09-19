@@ -106,7 +106,7 @@ export function AuthenticationSettingsPage() {
             <button
               type="button"
               onClick={() => setAddingMethod((open) => !open)}
-              className="rounded-lg bg-strong px-4 py-2.5 text-sm font-semibold text-on-strong"
+              className="sre-action sre-action-primary"
             >
               {addingMethod ? 'Cancel setup' : 'Add sign-in method'}
             </button>
@@ -140,7 +140,7 @@ export function AuthenticationSettingsPage() {
           {addingMethod && owner && (
             <section className="rounded-xl border border-focus bg-surface p-5 sm:p-6">
               <div className="mb-5 border-b border-line pb-4">
-                <h2 className="font-instrument text-xl font-semibold text-ink">
+                <h2 className="font-instrument text-xl font-medium text-ink">
                   Add a sign-in method
                 </h2>
                 <p className="mt-1 text-sm leading-6 text-ink-muted">
@@ -158,7 +158,7 @@ export function AuthenticationSettingsPage() {
           <section className="rounded-xl border border-line bg-surface p-5 sm:p-6">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
-                <h2 className="font-instrument text-lg font-semibold text-ink">Sign-in methods</h2>
+                <h2 className="font-instrument text-lg font-medium text-ink">Sign-in methods</h2>
                 <p className="mt-1 text-sm leading-6 text-ink-muted">
                   Order controls how choices appear on the workspace sign-in page.
                 </p>
@@ -173,7 +173,7 @@ export function AuthenticationSettingsPage() {
                 >
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-semibold text-ink">{method.displayName}</h3>
+                      <h3 className="font-medium text-ink">{method.displayName}</h3>
                       <span
                         className={`rounded-full px-2 py-0.5 text-xs font-semibold ${method.status === 'active' ? 'bg-success-soft text-success' : method.status === 'pending_verification' ? 'bg-warning-soft text-warning' : 'bg-surface-subtle text-ink-muted'}`}
                       >
@@ -196,7 +196,7 @@ export function AuthenticationSettingsPage() {
                         aria-label={`Move ${method.displayName} earlier`}
                         disabled={index === 0 || Boolean(busy)}
                         onClick={() => void move(method, -1)}
-                        className="rounded-md border border-line-strong px-3 py-2 text-xs font-semibold disabled:opacity-40"
+                        className="sre-action text-xs"
                       >
                         Earlier
                       </button>
@@ -205,7 +205,7 @@ export function AuthenticationSettingsPage() {
                         aria-label={`Move ${method.displayName} later`}
                         disabled={index === data.methods.length - 1 || Boolean(busy)}
                         onClick={() => void move(method, 1)}
-                        className="rounded-md border border-line-strong px-3 py-2 text-xs font-semibold disabled:opacity-40"
+                        className="sre-action text-xs"
                       >
                         Later
                       </button>
@@ -336,7 +336,7 @@ export function AuthenticationSettingsPage() {
           </section>
 
           <section className="rounded-xl border border-line bg-surface p-5 sm:p-6">
-            <h2 className="font-instrument text-lg font-semibold text-ink">Work email domains</h2>
+            <h2 className="font-instrument text-lg font-medium text-ink">Work email domains</h2>
             <p className="mt-1 text-sm leading-6 text-ink-muted">
               A DNS TXT record proves your workspace controls each domain.
             </p>
@@ -344,7 +344,7 @@ export function AuthenticationSettingsPage() {
               {data.domains.map((entry) => (
                 <article key={entry.id} className="rounded-lg border border-line bg-canvas p-4">
                   <div className="flex items-center justify-between gap-3">
-                    <h3 className="truncate font-semibold text-ink">{entry.domain}</h3>
+                    <h3 className="truncate font-medium text-ink">{entry.domain}</h3>
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs font-semibold ${entry.status === 'verified' ? 'bg-success-soft text-success' : 'bg-warning-soft text-warning'}`}
                     >
@@ -427,7 +427,7 @@ export function AuthenticationSettingsPage() {
                   <select
                     value={domainMethodId}
                     onChange={(event) => setDomainMethodId(event.target.value)}
-                    className="mt-1 block w-full rounded-lg border border-line-strong bg-canvas px-3 py-2.5"
+                    className="sre-field mt-1 block w-full bg-canvas"
                   >
                     {data.methods
                       .filter((method) => method.scope === 'tenant')
@@ -445,13 +445,13 @@ export function AuthenticationSettingsPage() {
                     value={domain}
                     onChange={(event) => setDomain(event.target.value)}
                     placeholder="example.com"
-                    className="mt-1 block w-full rounded-lg border border-line-strong bg-canvas px-3 py-2.5"
+                    className="sre-field mt-1 block w-full bg-canvas"
                   />
                 </label>
                 <button
                   type="submit"
                   disabled={Boolean(busy) || !domain.trim() || !domainMethodId}
-                  className="rounded-lg border border-line-strong bg-surface px-4 py-2.5 text-sm font-semibold disabled:opacity-40"
+                  className="sre-action"
                 >
                   Add domain
                 </button>
@@ -462,7 +462,7 @@ export function AuthenticationSettingsPage() {
           <section className="rounded-xl border border-line bg-surface p-5 sm:p-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="max-w-3xl">
-                <h2 className="font-instrument text-lg font-semibold text-ink">
+                <h2 className="font-instrument text-lg font-medium text-ink">
                   Require the workspace directory
                 </h2>
                 <p className="mt-1 text-sm leading-6 text-ink-muted">

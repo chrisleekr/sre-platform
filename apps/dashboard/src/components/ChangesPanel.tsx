@@ -112,7 +112,7 @@ export function ChangesPanel() {
             <article key={source.id} className="rounded border border-line bg-surface p-3 text-sm">
               <div className="flex items-center justify-between gap-2">
                 <div>
-                  <h2 className="font-semibold">{source.name}</h2>
+                  <h2 className="font-medium">{source.name}</h2>
                   <p className="text-xs text-ink-muted">{sourceName(source.provider)} event sync</p>
                 </div>
                 <span
@@ -235,7 +235,7 @@ export function ChangesPanel() {
             value={repositoryDraft}
             onChange={(event) => setRepositoryDraft(event.target.value)}
             placeholder="owner/repository"
-            className="mt-1 w-full rounded border border-line-strong px-2 py-1.5 text-sm"
+            className="sre-field mt-1 w-full"
           />
         </label>
         <label className="text-xs font-medium text-ink-secondary">
@@ -245,12 +245,9 @@ export function ChangesPanel() {
               value={searchDraft}
               onChange={(event) => setSearchDraft(event.target.value)}
               placeholder="repo, actor, SHA"
-              className="min-w-0 flex-1 rounded border border-line-strong px-2 py-1.5 text-sm"
+              className="sre-field min-w-0 flex-1"
             />
-            <button
-              type="submit"
-              className="rounded bg-strong px-3 py-1.5 text-sm font-medium text-on-strong"
-            >
+            <button type="submit" className="sre-action sre-action-primary">
               Apply
             </button>
           </span>
@@ -323,7 +320,7 @@ function Filter({
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded border border-line-strong px-2 py-1.5 text-sm"
+        className="sre-field mt-1 w-full"
       >
         {options.map(([key, name]) => (
           <option key={key} value={key}>
@@ -361,9 +358,9 @@ function ChangesList({ changes }: { changes: ChangeEvent[] }) {
                   </span>
                 )}
               </div>
-              <h2 className="mt-2 break-words font-semibold text-ink">
+              <h2 className="mt-2 break-words font-medium text-ink">
                 {isHttpUrl(change.url) ? (
-                  <a href={change.url} className="text-info hover:underline">
+                  <a href={change.url} className="text-accent hover:underline">
                     {change.title}
                   </a>
                 ) : (

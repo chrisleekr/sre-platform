@@ -16,7 +16,7 @@ export function DataSourceNameField({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="mt-1 min-w-0 w-full rounded border border-line-strong px-2 py-1.5"
+        className="sre-field mt-1 min-w-0 w-full"
       />
       <span className="mt-1 block text-xs font-normal text-ink-muted">
         A stable human-readable name, for example Production or EU observability.

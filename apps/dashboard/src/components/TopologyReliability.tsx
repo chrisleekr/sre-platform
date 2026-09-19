@@ -31,7 +31,7 @@ export function TopologyReliability({
   });
   return (
     <section className="mb-4" aria-label="Measured service reliability">
-      <h3 className="text-xs font-semibold uppercase text-ink-faint">Service reliability</h3>
+      <h3 className="text-xs font-medium uppercase text-ink-faint">Service reliability</h3>
       <p className="mt-1 text-xs text-ink-muted">
         Each objective's query defines its environment scope. The topology filter does not change
         that query.
@@ -82,7 +82,7 @@ export function TopologyReliability({
           </pre>
         </details>
       ))}
-      <a href="/w/error-budgets" className="mt-2 inline-block text-xs text-info underline">
+      <a href="/w/error-budgets" className="mt-2 inline-block text-xs text-accent underline">
         Open error budgets
       </a>
     </section>

@@ -224,7 +224,7 @@ export function InfrastructureList({
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h2 className="text-sm font-semibold text-ink">Current health</h2>
+          <h2 className="text-sm font-medium text-ink">Current health</h2>
           <p className="text-xs text-ink-muted">
             {plural(snapshots.length, 'resource')} across {plural(namespaces.length, 'namespace')}
           </p>
@@ -270,7 +270,7 @@ export function InfrastructureList({
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              className="mt-1 block w-full rounded border border-line-strong bg-surface px-3 py-1.5 text-sm text-ink focus:border-info-line focus:outline-none"
+              className="sre-field mt-1 block w-full"
             />
           </label>
           <label className="text-xs font-medium text-ink-muted">
@@ -278,7 +278,7 @@ export function InfrastructureList({
             <select
               value={status}
               onChange={(event) => setStatus(event.target.value as StatusFilter)}
-              className="mt-1 block w-full rounded border border-line-strong bg-surface px-3 py-1.5 text-sm text-ink focus:border-info-line focus:outline-none"
+              className="sre-field mt-1 block w-full"
             >
               <option value="all">All statuses</option>
               <option value="issues">All issues</option>
@@ -293,7 +293,7 @@ export function InfrastructureList({
             <select
               value={kind}
               onChange={(event) => setKind(event.target.value as KindFilter)}
-              className="mt-1 block w-full rounded border border-line-strong bg-surface px-3 py-1.5 text-sm text-ink focus:border-info-line focus:outline-none"
+              className="sre-field mt-1 block w-full"
             >
               <option value="all">All kinds</option>
               <option value="pod">Pods</option>
@@ -305,7 +305,7 @@ export function InfrastructureList({
             <select
               value={namespace}
               onChange={(event) => setNamespace(event.target.value)}
-              className="mt-1 block w-full rounded border border-line-strong bg-surface px-3 py-1.5 text-sm text-ink focus:border-info-line focus:outline-none"
+              className="sre-field mt-1 block w-full"
             >
               <option value="all">All namespaces</option>
               {namespaces.map((value) => (
@@ -324,7 +324,7 @@ export function InfrastructureList({
               setKind('all');
               setNamespace('all');
             }}
-            className="rounded border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-ink-secondary hover:bg-surface-strong disabled:cursor-not-allowed disabled:opacity-50"
+            className="sre-action"
           >
             Clear filters
           </button>
