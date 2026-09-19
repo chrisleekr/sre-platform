@@ -119,22 +119,20 @@ export function WorkspacesPage() {
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Search workspace name"
-          className="rounded-lg border border-line-strong bg-canvas px-3 py-2"
+          className="sre-field bg-canvas"
         />
         <select
           aria-label="Workspace status"
           value={status}
           onChange={(event) => setStatus(event.target.value)}
-          className="rounded-lg border border-line-strong bg-canvas px-3 py-2"
+          className="sre-field bg-canvas"
         >
           <option value="">All statuses</option>
           <option value="active">Active</option>
           <option value="suspended">Suspended</option>
           <option value="deleting">Deleting</option>
         </select>
-        <button className="rounded-lg bg-strong px-4 py-2 font-semibold text-on-strong">
-          Apply
-        </button>
+        <button className="sre-action sre-action-primary">Apply</button>
       </form>
       {error && <InlineAlert message={error} />}
       {clearingDirectory && (
@@ -166,11 +164,11 @@ export function WorkspacesPage() {
           return (
             <article
               key={workspace.id}
-              className="min-w-0 rounded-xl border border-line bg-surface p-5 shadow-sm"
+              className="min-w-0 rounded-xl border border-line bg-surface p-5"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-base font-bold">{workspace.name}</h2>
+                  <h2 className="text-base font-medium">{workspace.name}</h2>
                   <p className="mt-1 font-mono text-xs text-ink-faint">/{workspace.slug}</p>
                 </div>
                 <span className="rounded-full bg-surface-subtle px-2.5 py-1 text-xs font-semibold uppercase tracking-wide">
@@ -220,7 +218,7 @@ export function WorkspacesPage() {
                   value={draft.reason ?? ''}
                   onChange={(event) => updateDraft({ reason: event.target.value })}
                   placeholder="Reason for access-changing actions"
-                  className="rounded-lg border border-line-strong bg-canvas px-3 py-2 text-sm"
+                  className="sre-field bg-canvas"
                 />
                 {workspace.status === 'active' ? (
                   <button
@@ -234,7 +232,7 @@ export function WorkspacesPage() {
                         }),
                       )
                     }
-                    className="rounded-lg border border-critical-line px-3 py-2 text-sm font-semibold text-critical hover:bg-critical-soft disabled:opacity-60"
+                    className="rounded-md border border-critical-line px-3 py-2 text-sm font-semibold text-critical hover:bg-critical-soft disabled:opacity-60"
                   >
                     Suspend
                   </button>
@@ -253,7 +251,7 @@ export function WorkspacesPage() {
                         ),
                       )
                     }
-                    className="rounded-lg bg-strong px-3 py-2 text-sm font-semibold text-on-strong disabled:opacity-60"
+                    className="sre-action sre-action-primary"
                   >
                     Reactivate
                   </button>
@@ -272,7 +270,7 @@ export function WorkspacesPage() {
                         ),
                       )
                     }
-                    className="rounded-lg bg-strong px-3 py-2 text-sm font-semibold text-on-strong disabled:opacity-60"
+                    className="sre-action sre-action-primary"
                   >
                     Cancel deletion
                   </button>
@@ -283,7 +281,7 @@ export function WorkspacesPage() {
                   aria-label={`Binding provider for ${workspace.name}`}
                   value={draft.providerId ?? ''}
                   onChange={(event) => updateDraft({ providerId: event.target.value })}
-                  className="min-w-0 w-full rounded-lg border border-line-strong bg-canvas px-3 py-2 text-sm"
+                  className="sre-field min-w-0 w-full bg-canvas"
                 >
                   <option value="">Choose staff provider</option>
                   {(query.data?.providers ?? [])
@@ -299,7 +297,7 @@ export function WorkspacesPage() {
                   value={draft.claimValue ?? ''}
                   onChange={(event) => updateDraft({ claimValue: event.target.value })}
                   placeholder="Tenant claim value"
-                  className="rounded-lg border border-line-strong bg-canvas px-3 py-2 text-sm"
+                  className="sre-field bg-canvas"
                 />
                 <button
                   type="button"
@@ -312,7 +310,7 @@ export function WorkspacesPage() {
                       }),
                     )
                   }
-                  className="rounded-lg border border-line-strong px-3 py-2 text-sm font-semibold disabled:opacity-60"
+                  className="sre-action"
                 >
                   Add binding
                 </button>
@@ -327,7 +325,7 @@ export function WorkspacesPage() {
                     type="button"
                     disabled={Boolean(busy) || !draft.reason?.trim()}
                     onClick={() => setClearingDirectory(workspace)}
-                    className="mt-3 rounded-lg border border-warning-line bg-surface px-3 py-2 font-semibold text-warning disabled:opacity-60"
+                    className="mt-3 rounded-md border border-warning-line bg-surface px-3 py-2 font-semibold text-warning disabled:opacity-60"
                   >
                     Clear directory requirement
                   </button>
@@ -338,7 +336,7 @@ export function WorkspacesPage() {
                   type="button"
                   disabled={Boolean(busy)}
                   onClick={() => void startSupport(workspace)}
-                  className="mt-3 w-full rounded-lg border border-warning-line bg-warning-soft px-3 py-2 text-sm font-semibold text-warning disabled:opacity-60"
+                  className="mt-3 w-full rounded-md border border-warning-line bg-warning-soft px-3 py-2 text-sm font-semibold text-warning disabled:opacity-60"
                 >
                   Open one-hour support session
                 </button>

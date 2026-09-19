@@ -111,7 +111,7 @@ export function SlackConnectWizard({
               onChange={(event) => setAppToken(event.target.value)}
               autoComplete="off"
               placeholder={mode === 'edit' ? 'Leave blank to keep current xapp token' : 'xapp-…'}
-              className="min-w-0 w-full rounded border border-line-strong px-2 py-1 font-instrument text-xs"
+              className="sre-field min-w-0 w-full font-instrument text-xs"
             />
             <p className="break-words text-xs text-ink-muted">
               From Basic Information → App-Level Tokens, with{' '}
@@ -131,7 +131,7 @@ export function SlackConnectWizard({
               onChange={(event) => setBotToken(event.target.value)}
               autoComplete="off"
               placeholder={mode === 'edit' ? 'Leave blank to keep current xoxb token' : 'xoxb-…'}
-              className="min-w-0 w-full rounded border border-line-strong px-2 py-1 font-instrument text-xs"
+              className="sre-field min-w-0 w-full font-instrument text-xs"
             />
             <p className="break-words text-xs text-ink-muted">
               From OAuth & Permissions after installing the app. Connection validation requires{' '}
@@ -142,11 +142,7 @@ export function SlackConnectWizard({
 
           {error && <p className="text-critical">{error}</p>}
           <SetupActions>
-            <button
-              type="button"
-              onClick={goToReview}
-              className="rounded bg-strong px-3 py-1.5 font-medium text-on-strong hover:bg-strong-hover"
-            >
+            <button type="button" onClick={goToReview} className="sre-action sre-action-primary">
               Next
             </button>
           </SetupActions>
@@ -175,19 +171,14 @@ export function SlackConnectWizard({
           </div>
           {error && <p className="text-critical">{error}</p>}
           <SetupActions>
-            <button
-              type="button"
-              onClick={() => setStep(1)}
-              disabled={busy}
-              className="rounded border border-line-strong px-3 py-1.5 font-medium hover:bg-surface-subtle disabled:opacity-50"
-            >
+            <button type="button" onClick={() => setStep(1)} disabled={busy} className="sre-action">
               Back
             </button>
             <button
               type="button"
               onClick={handleSaveAndVerify}
               disabled={busy}
-              className="rounded bg-strong px-3 py-1.5 font-medium text-on-strong hover:bg-strong-hover disabled:opacity-50"
+              className="sre-action sre-action-primary"
             >
               {busy ? 'Verifying…' : 'Save and verify'}
             </button>
@@ -206,18 +197,14 @@ export function SlackConnectWizard({
           )}
           {result.ok && result.warning && <p className="text-warning">{result.warning}</p>}
           <SetupActions>
-            <button
-              type="button"
-              onClick={() => setStep(2)}
-              className="rounded border border-line-strong px-3 py-1.5 font-medium hover:bg-surface-subtle"
-            >
+            <button type="button" onClick={() => setStep(2)} className="sre-action">
               Back
             </button>
             <button
               type="button"
               onClick={onClose}
               disabled={!passed}
-              className="rounded bg-strong px-3 py-1.5 font-medium text-on-strong hover:bg-strong-hover disabled:opacity-50"
+              className="sre-action sre-action-primary"
             >
               Done
             </button>

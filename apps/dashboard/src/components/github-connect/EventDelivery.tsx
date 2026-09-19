@@ -59,7 +59,7 @@ export function GitHubEventDelivery({ view }: { view: GitHubWizardViewModel }) {
                 ? 'Leave blank to keep the encrypted channel'
                 : 'https://smee.io/your-channel'
             }
-            className="min-w-0 w-full rounded border border-line-strong px-2 py-1.5"
+            className="sre-field min-w-0 w-full"
           />
           <p id="github-delivery-help" className="text-xs text-ink-muted">
             A channel is generated automatically. You may also use an existing channel. The platform

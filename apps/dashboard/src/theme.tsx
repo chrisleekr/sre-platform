@@ -49,7 +49,7 @@ function applyTheme(preference: ThemePreference, resolvedTheme: ResolvedTheme) {
   root.style.colorScheme = resolvedTheme;
   document
     .querySelector<HTMLMetaElement>('meta[name="theme-color"]')
-    ?.setAttribute('content', resolvedTheme === 'dark' ? '#091116' : '#f3f6f8');
+    ?.setAttribute('content', resolvedTheme === 'dark' ? '#08090a' : '#f7f8f8');
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {

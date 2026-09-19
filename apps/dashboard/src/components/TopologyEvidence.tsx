@@ -150,7 +150,7 @@ export function TopologyDiscoveryCoverage({ graph }: { graph: TopologyDiscoveryG
               )}
               {source.issue && !paged && source.issue !== 'sampling' && (
                 <a
-                  className="mt-2 inline-block text-xs text-info underline"
+                  className="mt-2 inline-block text-xs text-accent underline"
                   href={`/w/connectors?connection=${encodeURIComponent(source.connectorId)}`}
                 >
                   Review {source.connectorName} connection

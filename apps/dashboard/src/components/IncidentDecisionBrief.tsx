@@ -135,7 +135,7 @@ export function IncidentDecisionBrief({
 
   return (
     <section
-      className="rounded-lg border border-line-strong bg-surface p-4 shadow-sm"
+      className="rounded-lg border border-line-strong bg-surface p-4"
       aria-labelledby="decision-brief-title"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -144,7 +144,7 @@ export function IncidentDecisionBrief({
             Responder brief
           </p>
           <p className="mt-1 text-xs font-semibold text-ink-muted">{briefContext}</p>
-          <h2 id="decision-brief-title" className="mt-1 break-words text-lg font-semibold text-ink">
+          <h2 id="decision-brief-title" className="mt-1 break-words text-lg font-medium text-ink">
             {currentState}
           </h2>
           {decisionUpdatedAt && (
@@ -209,7 +209,7 @@ export function IncidentDecisionBrief({
         )}
       {nextStep && (
         <div className="mt-3 rounded-md border border-info-line bg-info-soft p-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-info">
+          <h3 className="text-xs font-medium uppercase tracking-wide text-info">
             Next diagnostic step
           </h3>
           <p className="mt-1 break-words text-sm font-medium text-info">{nextStep}</p>
@@ -268,7 +268,7 @@ export function IncidentDecisionBrief({
       />
       {recoveryUnknowns.length > 0 && (
         <div className="mt-3 rounded-md bg-warning-soft p-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-warning">
+          <h3 className="text-xs font-medium uppercase tracking-wide text-warning">
             Recovery questions
           </h3>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-warning">
@@ -282,7 +282,7 @@ export function IncidentDecisionBrief({
       )}
       {gaps.length > 0 && (
         <section className="mt-3 rounded-md border border-warning-line bg-warning-soft p-3">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-warning">
+          <h3 className="text-xs font-medium uppercase tracking-wide text-warning">
             Evidence gaps
           </h3>
           <p className="mt-1 text-xs text-warning">
@@ -354,7 +354,7 @@ export function IncidentDecisionBrief({
                   aria-label={`Hypothesis ${index + 1}`}
                   className="rounded-md border border-line p-3"
                 >
-                  <h3 className="break-words text-sm font-semibold text-ink">
+                  <h3 className="break-words text-sm font-medium text-ink">
                     {hypothesis.hypothesis}
                   </h3>
                   {hypothesis.evidence && (

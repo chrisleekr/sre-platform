@@ -59,7 +59,7 @@ export function WorkspaceDeletionPage() {
 
   return (
     <PublicShell>
-      <h1 className="text-2xl font-bold">Workspace scheduled for deletion</h1>
+      <h1 className="text-2xl font-medium">Workspace scheduled for deletion</h1>
       <p className="mt-2 text-sm leading-6 text-ink-muted">
         Access is paused. An owner can cancel before the date below to restore the workspace.
       </p>
@@ -78,7 +78,7 @@ export function WorkspaceDeletionPage() {
           key={workspace.slug}
           className="mt-5 rounded-xl border border-warning-line bg-warning-soft p-5"
         >
-          <h2 className="font-semibold">{workspace.name}</h2>
+          <h2 className="font-medium">{workspace.name}</h2>
           <p className="mt-2 text-sm">
             Permanent deletion:{' '}
             {new Intl.DateTimeFormat(undefined, { dateStyle: 'long', timeStyle: 'short' }).format(

@@ -87,7 +87,7 @@ export function ConnectionInventory({
             placeholder="Name, provider or scope"
             value={search}
             onChange={(e) => updateFilters({ q: e.target.value })}
-            className="mt-1 block w-full rounded-md border border-line-strong bg-surface px-3 py-2.5"
+            className="sre-field mt-1 block w-full"
           />
         </label>
         <label className="text-sm font-medium">
@@ -95,7 +95,7 @@ export function ConnectionInventory({
           <select
             value={provider}
             onChange={(e) => updateFilters({ provider: e.target.value })}
-            className="mt-1 block w-full rounded-md border border-line-strong bg-surface px-3 py-2.5"
+            className="sre-field mt-1 block w-full"
           >
             {['All providers', ...new Set(rows.map((r) => r.provider))].map((p) => (
               <option key={p}>{p}</option>
@@ -160,7 +160,7 @@ export function ConnectionInventory({
                 <button
                   type="button"
                   onClick={() => onSelect(row.id)}
-                  className="min-h-10 self-start rounded-md border border-line-strong px-3 py-2 text-sm font-medium hover:bg-surface-subtle"
+                  className="sre-action min-h-10 self-start"
                 >
                   {attention(row) ? 'Review setup' : 'View details'}
                 </button>

@@ -33,10 +33,7 @@ export function InboundOverview() {
         title="Inbound"
         description="Choose where messages can enter investigations and see how they are handled."
         action={
-          <Link
-            to="/w/connectors?connection=slack"
-            className="inline-flex min-h-10 items-center rounded-md border border-line-strong bg-surface px-3 py-2 text-sm font-medium"
-          >
+          <Link to="/w/connectors?connection=slack" className="sre-action min-h-10 items-center">
             {!canConfigure
               ? 'View Slack connection'
               : slack
@@ -72,7 +69,7 @@ export function InboundOverview() {
             className="mb-4 flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-line pb-4"
           >
             <div>
-              <h2 className="font-semibold">Slack</h2>
+              <h2 className="font-medium">Slack</h2>
               <p
                 className={
                   'mt-1 text-sm ' + (access?.attention ? 'text-warning' : 'text-ink-muted')

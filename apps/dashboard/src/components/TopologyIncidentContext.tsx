@@ -60,7 +60,7 @@ export function TopologyIncidentContext({
           ))}
         </div>
       )}
-      <a className="mt-2 inline-block text-info underline" href={`/w/incidents/${incident.id}`}>
+      <a className="mt-2 inline-block text-accent underline" href={`/w/incidents/${incident.id}`}>
         Open incident
       </a>
     </section>

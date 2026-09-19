@@ -129,7 +129,7 @@ export function IncidentControls({ view }: { view: IncidentLiveViewModel }) {
                     );
                     setSignalCorrectionError(null);
                   }}
-                  className="mt-1 min-h-11 w-full rounded border border-line-strong bg-surface px-3 py-2 text-sm"
+                  className="sre-field mt-1 min-h-11 w-full"
                 >
                   {signalCorrectionStale && <option value="">State changed, reselect</option>}
                   {activeSignals.map((signal) => (
@@ -151,7 +151,7 @@ export function IncidentControls({ view }: { view: IncidentLiveViewModel }) {
                   onChange={(event) => setSignalCorrectionReason(event.target.value)}
                   maxLength={2_000}
                   placeholder="What evidence shows this provider record is cleared?"
-                  className="mt-1 min-h-11 w-full rounded border border-line-strong px-3 py-2 text-sm"
+                  className="sre-field mt-1 min-h-11 w-full"
                 />
               </label>
               <button
@@ -160,7 +160,7 @@ export function IncidentControls({ view }: { view: IncidentLiveViewModel }) {
                 disabled={
                   signalCorrectionPending || signalCorrectionStale || !signalCorrectionReason.trim()
                 }
-                className="mt-3 min-h-11 rounded bg-strong px-4 py-2 font-semibold text-on-strong disabled:opacity-50"
+                className="sre-action sre-action-primary mt-3 min-h-11"
               >
                 {signalCorrectionPending ? 'Correcting…' : 'Mark selected signal cleared'}
               </button>
@@ -212,7 +212,7 @@ export function IncidentControls({ view }: { view: IncidentLiveViewModel }) {
               disabled={Boolean(mergedTargetId)}
               maxLength={2_000}
               placeholder="What changed, and what evidence supports it?"
-              className="min-h-11 min-w-60 flex-1 rounded border border-line-strong px-3 py-2 text-sm"
+              className="sre-field min-h-11 min-w-60 flex-1"
             />
             {lifecycleActions(incident.status)
               .filter(
@@ -229,7 +229,7 @@ export function IncidentControls({ view }: { view: IncidentLiveViewModel }) {
                     lifecyclePending !== null || Boolean(mergedTargetId) || !lifecycleReason.trim()
                   }
                   onClick={() => void transitionLifecycle(action.to)}
-                  className="min-h-11 rounded border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-ink-secondary hover:bg-surface-strong disabled:cursor-not-allowed disabled:opacity-50"
+                  className="sre-action min-h-11"
                 >
                   {lifecyclePending === action.to
                     ? 'Saving…'
@@ -269,7 +269,7 @@ export function IncidentControls({ view }: { view: IncidentLiveViewModel }) {
               setArchiveReason('');
               setArchiveError(null);
             }}
-            className="min-h-11 rounded border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-ink-secondary hover:bg-surface-strong disabled:cursor-not-allowed disabled:opacity-50"
+            className="sre-action min-h-11"
           >
             Delete
           </button>
@@ -312,7 +312,7 @@ export function IncidentControls({ view }: { view: IncidentLiveViewModel }) {
                   setArchiveConfirmation(false);
                   setArchiveError(null);
                 }}
-                className="min-h-11 rounded border border-line-strong bg-surface px-3 py-2 font-medium"
+                className="sre-action min-h-11"
               >
                 Cancel
               </button>
@@ -320,7 +320,7 @@ export function IncidentControls({ view }: { view: IncidentLiveViewModel }) {
                 type="button"
                 disabled={archivePending || !archiveReason.trim()}
                 onClick={() => void deleteIncident()}
-                className="min-h-11 rounded bg-strong px-3 py-2 font-medium text-on-strong disabled:opacity-50"
+                className="sre-action sre-action-primary min-h-11"
               >
                 {archivePending ? 'Deleting…' : 'Confirm delete'}
               </button>
@@ -346,7 +346,7 @@ export function IncidentControls({ view }: { view: IncidentLiveViewModel }) {
               onChange={(event) =>
                 setPostmortemTrigger(event.target.value as PostmortemTrigger | '')
               }
-              className="mt-1 min-h-11 w-full rounded border border-line-strong bg-surface px-3 py-2 text-sm"
+              className="sre-field mt-1 min-h-11 w-full"
             >
               <option value="">Choose a trigger</option>
               {POSTMORTEM_TRIGGERS.map((trigger) => (
@@ -366,14 +366,11 @@ export function IncidentControls({ view }: { view: IncidentLiveViewModel }) {
               type="button"
               disabled={postmortemPending || !postmortemTrigger}
               onClick={() => void generatePostmortem()}
-              className="min-h-11 rounded border border-line-strong bg-surface px-3 py-2 text-sm font-medium text-ink-secondary hover:bg-surface-strong disabled:cursor-not-allowed disabled:opacity-50"
+              className="sre-action min-h-11"
             >
               {postmortemPending ? 'Starting…' : 'Confirm postmortem generation'}
             </button>
-            <Link
-              to={postmortemPath(incident.id)}
-              className="inline-flex min-h-11 items-center rounded border border-line px-3 py-2 text-sm font-medium text-ink-secondary hover:bg-surface-strong"
-            >
+            <Link to={postmortemPath(incident.id)} className="sre-action min-h-11 items-center">
               Open postmortem
             </Link>
           </div>

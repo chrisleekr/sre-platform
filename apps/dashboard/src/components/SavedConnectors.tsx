@@ -54,7 +54,7 @@ export function SavedConnectors({
   return (
     <section aria-labelledby="saved-connectors-heading">
       <div className="mb-3">
-        <h2 id="saved-connectors-heading" className="text-base font-semibold text-ink">
+        <h2 id="saved-connectors-heading" className="text-base font-medium text-ink">
           Connection details
         </h2>
         <p className="mt-1 text-sm text-ink-muted">
@@ -233,7 +233,7 @@ export function SavedConnectors({
                         <dd>On-demand, read-only tools</dd>
                         <dd>
                           {c.capabilities?.topology === 'inventory' ? (
-                            <Link to={productPath('topology')} className="text-info underline">
+                            <Link to={productPath('topology')} className="text-accent underline">
                               Scheduled topology discovery, review coverage
                             </Link>
                           ) : (
@@ -289,7 +289,7 @@ export function SavedConnectors({
                       type="button"
                       disabled={!canConfigure}
                       onClick={(event) => onManage(c, event.currentTarget)}
-                      className="rounded border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-ink-secondary hover:bg-surface-subtle disabled:opacity-50"
+                      className="sre-action"
                     >
                       Manage
                     </button>
@@ -297,7 +297,7 @@ export function SavedConnectors({
                       type="button"
                       disabled={!canConfigure || busyAction !== null}
                       onClick={() => onRetest(c)}
-                      className="rounded border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-ink-secondary hover:bg-surface-subtle disabled:opacity-50"
+                      className="sre-action"
                     >
                       {busyAction?.connectorId === c.id && busyAction.kind === 'test'
                         ? 'Testing…'
@@ -330,7 +330,7 @@ export function SavedConnectors({
                         type="button"
                         disabled={!canConfigure || busyAction !== null}
                         onClick={onCancelDisconnect}
-                        className="rounded border border-line-strong bg-surface px-3 py-1.5 font-medium"
+                        className="sre-action"
                       >
                         Cancel
                       </button>
@@ -338,7 +338,7 @@ export function SavedConnectors({
                         type="button"
                         disabled={!canConfigure || busyAction !== null}
                         onClick={() => onDisconnect(c)}
-                        className="rounded bg-critical-solid px-3 py-1.5 font-medium text-on-critical disabled:opacity-50"
+                        className="sre-action sre-action-danger"
                       >
                         {busyAction?.connectorId === c.id && busyAction.kind === 'disconnect'
                           ? 'Disconnecting…'

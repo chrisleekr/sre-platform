@@ -92,7 +92,7 @@ export function LocalDevelopmentSession({ children }: { children: ReactNode }) {
   return (
     <main className="min-h-dvh bg-canvas p-6 text-ink">
       <section className="mx-auto max-w-lg rounded-xl border border-line bg-surface p-6">
-        <h1 className="text-lg font-semibold">Reconnecting to your workspace</h1>
+        <h1 className="text-lg font-medium">Reconnecting to your workspace</h1>
         <p role="status" className="mt-2 text-sm text-ink-muted">
           {error ?? 'Restoring your development session.'}
         </p>

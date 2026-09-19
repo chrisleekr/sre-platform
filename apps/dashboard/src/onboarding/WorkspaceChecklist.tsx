@@ -63,7 +63,7 @@ export function WorkspaceChecklist({
   };
   return (
     <section aria-labelledby="workspace-checklist-title">
-      <h2 id="workspace-checklist-title" className="text-xl font-bold">
+      <h2 id="workspace-checklist-title" className="text-xl font-medium">
         Finish setting up your workspace
       </h2>
       <ul className="mt-4 space-y-3">
@@ -77,7 +77,7 @@ export function WorkspaceChecklist({
               {label}
             </span>
             {!done && (
-              <Link className="font-semibold text-info" to={href}>
+              <Link className="font-semibold text-accent" to={href}>
                 {label === 'Verify your domain'
                   ? 'Verify domain'
                   : label === 'Connect an observability source'

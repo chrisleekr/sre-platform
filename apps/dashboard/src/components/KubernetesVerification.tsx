@@ -35,18 +35,14 @@ export function KubernetesVerification({
         </ul>
       )}
       <SetupActions>
-        <button
-          type="button"
-          onClick={onBack}
-          className="rounded border border-line-strong px-3 py-1.5 font-medium"
-        >
+        <button type="button" onClick={onBack} className="sre-action">
           Back
         </button>
         <button
           type="button"
           onClick={onClose}
           disabled={!passed}
-          className="rounded bg-strong px-3 py-1.5 font-medium text-on-strong disabled:opacity-50"
+          className="sre-action sre-action-primary"
         >
           Finish
         </button>

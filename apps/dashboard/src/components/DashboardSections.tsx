@@ -98,12 +98,12 @@ export function SectionHeader({
   return (
     <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
       <div>
-        <h2 id={id} className="text-base font-semibold text-ink">
+        <h2 id={id} className="text-base font-medium text-ink">
           {title}
         </h2>
         <p className="mt-0.5 text-sm text-ink-muted">{description}</p>
       </div>
-      <Link to={href} className="text-sm font-semibold text-info hover:text-info">
+      <Link to={href} className="text-sm font-semibold text-accent hover:text-info">
         {linkLabel} →
       </Link>
     </div>
@@ -147,7 +147,7 @@ export function IncidentQueue({ incidents }: { incidents: Incident[] }) {
           <li key={incident.id}>
             <Link
               to={incidentPath(incident.id)}
-              className="grid min-w-0 grid-cols-[2.25rem_0.375rem_minmax(0,1fr)] gap-3 rounded-lg border border-line bg-surface p-3 shadow-sm transition hover:-translate-y-px hover:border-line-strong hover:shadow"
+              className="grid min-w-0 grid-cols-[2.25rem_0.375rem_minmax(0,1fr)] gap-3 rounded-lg border border-line bg-surface p-3 transition hover:border-line-strong"
             >
               <span className="font-instrument text-sm font-semibold tabular-nums text-ink-faint">
                 {String(index + 1).padStart(2, '0')}
@@ -171,7 +171,7 @@ export function IncidentQueue({ incidents }: { incidents: Incident[] }) {
                     {relativeTime(updatedAt, Date.now())}
                   </time>
                 </div>
-                <h3 className="mt-2 break-words text-sm font-semibold text-ink">
+                <h3 className="mt-2 break-words text-sm font-medium text-ink">
                   {incidentDisplayTitle(incident)}
                 </h3>
                 <p className="mt-1 font-instrument text-xs text-ink-muted">
@@ -277,7 +277,7 @@ export function CorrelatedChanges({
               <Link
                 key={incident.id}
                 to={incidentPath(incident.id)}
-                className="text-xs font-semibold text-info hover:text-info"
+                className="text-xs font-semibold text-accent hover:text-info"
               >
                 {incidentDisplayTitle(incident)} →
               </Link>

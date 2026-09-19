@@ -21,7 +21,7 @@ export function TagLinkRuleControls(props: {
       aria-label="Tag link settings"
       className="rounded-xl border border-line bg-surface p-4"
     >
-      <h2 className="font-semibold">Tag links</h2>
+      <h2 className="font-medium">Tag links</h2>
       <p className="mt-1 text-sm text-ink-muted">
         Turn tenant tags such as bug:1234 into safe links. The URL must be HTTPS and contain{' '}
         <code>{'{value}'}</code>.
@@ -45,7 +45,7 @@ export function TagLinkRuleControls(props: {
                   )
                   .finally(() => setPending(false));
               }}
-              className="sre-hit-target shrink-0 rounded-md border border-line-strong bg-surface px-2.5 py-1.5 font-semibold text-ink-secondary hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50"
+              className="sre-action sre-hit-target shrink-0"
             >
               Remove
             </button>
@@ -82,7 +82,7 @@ export function TagLinkRuleControls(props: {
             value={prefix}
             onChange={(event) => setPrefix(event.target.value)}
             placeholder="bug"
-            className="mt-1 min-h-10 w-full rounded-md border border-line-strong bg-surface px-3 py-2"
+            className="sre-field mt-1 min-h-10 w-full"
           />
         </label>
         <label className="text-sm">
@@ -91,13 +91,13 @@ export function TagLinkRuleControls(props: {
             value={urlTemplate}
             onChange={(event) => setUrlTemplate(event.target.value)}
             placeholder="https://tracker.example/issues/{value}"
-            className="mt-1 min-h-10 w-full rounded-md border border-line-strong bg-surface px-3 py-2"
+            className="sre-field mt-1 min-h-10 w-full"
           />
         </label>
         <button
           type="submit"
           disabled={pending || !prefix.trim() || !urlTemplate.trim()}
-          className="sre-hit-target self-end rounded-md border border-line-strong bg-surface px-3 py-2 text-sm font-semibold text-ink-secondary hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50"
+          className="sre-action sre-hit-target self-end"
         >
           Save link
         </button>

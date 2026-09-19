@@ -81,10 +81,10 @@ export function TopologySubjectDetail({
     >
       <header className="border-b border-line bg-surface-subtle p-4">
         <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">{subject.kind}</p>
-        <h3 ref={heading} tabIndex={-1} className="mt-1 break-words text-xl font-semibold">
+        <h3 ref={heading} tabIndex={-1} className="mt-1 break-words text-xl font-medium">
           {subject.name}
         </h3>
-        <button type="button" onClick={onBack} className="mt-2 text-xs text-info underline">
+        <button type="button" onClick={onBack} className="mt-2 text-xs text-accent underline">
           Back to results
         </button>
         <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs">
@@ -130,7 +130,7 @@ export function TopologySubjectDetail({
                 <button
                   type="button"
                   onClick={() => onSelect(otherKey)}
-                  className="break-words text-left font-semibold text-info underline decoration-info-line underline-offset-4"
+                  className="break-words text-left font-semibold text-accent underline decoration-info-line underline-offset-4"
                 >
                   {other.name}
                 </button>
@@ -243,7 +243,7 @@ export function TopologySubjectDetail({
             <button
               type="button"
               onClick={() => setRelationLimit((limit) => limit + 20)}
-              className="mt-3 text-sm text-info underline"
+              className="mt-3 text-sm text-accent underline"
             >
               Show more relationships
             </button>
@@ -284,7 +284,7 @@ export function TopologySubjectDetail({
             <button
               type="button"
               onClick={() => setResourceLimit((limit) => limit + 20)}
-              className="mt-3 text-sm text-info underline"
+              className="mt-3 text-sm text-accent underline"
             >
               Show more resources
             </button>

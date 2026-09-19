@@ -46,7 +46,7 @@ export function IncidentBody({ view }: { view: IncidentLiveViewModel }) {
         <section className="min-w-0" aria-labelledby="timeline-title">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 id="timeline-title" className="font-semibold text-ink">
+              <h2 id="timeline-title" className="font-medium text-ink">
                 Incident conversation
               </h2>
               <p className="text-xs text-ink-muted">
@@ -168,7 +168,7 @@ export function IncidentBody({ view }: { view: IncidentLiveViewModel }) {
                     <button
                       type="button"
                       disabled={!canPost || !!draft.trim()}
-                      className="mt-2 min-h-11 rounded-lg border border-line-strong px-3 py-2 font-semibold disabled:opacity-50"
+                      className="sre-action mt-2 min-h-11"
                       onClick={() => {
                         setDraft(
                           'Please retry the investigation and check whether the previous blocker has cleared.',
@@ -203,7 +203,7 @@ export function IncidentBody({ view }: { view: IncidentLiveViewModel }) {
               <textarea
                 id="incident-composer"
                 rows={3}
-                className="max-h-64 min-h-24 w-full min-w-0 resize-y rounded-lg border border-line-strong bg-canvas px-3 py-2 text-sm disabled:bg-surface-strong"
+                className="sre-field max-h-64 min-h-24 w-full min-w-0 resize-y bg-canvas disabled:bg-surface-strong"
                 aria-describedby="incident-composer-status"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
@@ -245,7 +245,7 @@ export function IncidentBody({ view }: { view: IncidentLiveViewModel }) {
                 type="button"
                 onClick={submit}
                 disabled={!canPost || !draft.trim()}
-                className="min-h-11 shrink-0 rounded-lg bg-strong px-4 py-2 text-sm text-on-strong disabled:cursor-not-allowed disabled:opacity-50"
+                className="sre-action sre-action-primary min-h-11 shrink-0"
               >
                 {stream.postState?.state === 'saving' ? 'Sending…' : 'Send'}
               </button>

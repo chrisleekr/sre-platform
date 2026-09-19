@@ -64,7 +64,7 @@ export function PostmortemGrade({
       aria-label="Assessment grade"
       className="space-y-3 rounded-lg border border-line bg-surface p-4"
     >
-      <h2 className="text-lg font-semibold tracking-tight">Was the root-cause assessment right?</h2>
+      <h2 className="text-lg font-medium tracking-tight">Was the root-cause assessment right?</h2>
       {grade?.modelVerdict && (
         <p className="text-sm text-ink-muted">
           Model judge:{' '}
@@ -85,7 +85,7 @@ export function PostmortemGrade({
           rows={2}
           value={rationale}
           onChange={(event) => setRationale(event.target.value)}
-          className="mt-1 w-full resize-y rounded border border-line-strong bg-surface px-3 py-2 text-sm"
+          className="sre-field mt-1 w-full resize-y"
         />
       </label>
       {error && (
@@ -100,7 +100,7 @@ export function PostmortemGrade({
             type="button"
             disabled={pending !== null || !rationale.trim()}
             onClick={() => void submit(verdict)}
-            className="sre-hit-target rounded-lg border border-line-strong bg-surface px-4 py-2 text-sm font-semibold text-ink-secondary hover:bg-surface-subtle hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
+            className="sre-action sre-hit-target"
           >
             {pending === verdict ? 'Recording…' : VERDICT_LABELS[verdict]}
           </button>

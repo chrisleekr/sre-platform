@@ -10,7 +10,7 @@ export function IncidentTopologyMatches({ context }: { context?: IncidentTopolog
       className="mt-3 rounded-md border border-line p-3"
       aria-label="Automatic topology matches"
     >
-      <h3 className="text-sm font-semibold">Topology evidence</h3>
+      <h3 className="text-sm font-medium">Topology evidence</h3>
       <p className="mt-1 text-xs text-ink-muted">
         Scoped matches from connected systems. A match does not establish health, ownership or
         recovery.
@@ -24,7 +24,7 @@ export function IncidentTopologyMatches({ context }: { context?: IncidentTopolog
                 <>
                   <Link
                     to={`/w/topology?subject=${encodeURIComponent(subject.key)}`}
-                    className="font-medium text-info underline"
+                    className="font-medium text-accent underline"
                   >
                     {subject.name}
                   </Link>
@@ -57,7 +57,7 @@ export function IncidentTopologyMatches({ context }: { context?: IncidentTopolog
                         <Link
                           key={key}
                           to={`/w/topology?subject=${encodeURIComponent(key)}`}
-                          className="mt-1 block break-words text-xs text-info underline"
+                          className="mt-1 block break-words text-xs text-accent underline"
                         >
                           Inspect {candidate.name} ·{' '}
                           {Object.entries(candidate.scope)

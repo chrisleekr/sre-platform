@@ -14,7 +14,7 @@ function ProviderLink({ href, children }: { href: string | null; children: strin
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="font-semibold text-info underline"
+      className="font-semibold text-accent underline"
     >
       {children} ↗
     </a>

@@ -79,7 +79,7 @@ export function ReliabilityPanel(props: { mode?: 'dashboard' | 'weekly' } = {}) 
         action={
           <Link
             to={productPath(mode === 'weekly' ? 'reliability' : 'reliability/weekly')}
-            className="sre-hit-target rounded-md border border-line-strong bg-surface px-3 py-2 text-sm font-semibold text-ink-secondary hover:bg-surface-subtle hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+            className="sre-action sre-hit-target focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
           >
             {mode === 'weekly' ? 'Back to reliability' : 'Weekly report'}
           </Link>

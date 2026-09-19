@@ -17,11 +17,7 @@ export function DeliveryPreparationStatus({
   return (
     <div className="mb-3 text-sm text-warning">
       <p role="alert">{error}</p>
-      <button
-        type="button"
-        onClick={retry}
-        className="mt-2 rounded border border-line-strong px-3 py-1.5"
-      >
+      <button type="button" onClick={retry} className="sre-action mt-2">
         Retry webhook preparation
       </button>
     </div>

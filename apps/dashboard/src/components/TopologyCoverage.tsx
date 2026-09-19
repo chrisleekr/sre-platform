@@ -34,7 +34,7 @@ export function TopologyCoverage({ sources }: { sources: Coverage[] }) {
             className="flex flex-wrap items-baseline justify-between gap-2"
           >
             <a
-              className="text-info underline"
+              className="text-accent underline"
               href={`/w/connectors?connection=${encodeURIComponent(source.dataSourceId)}`}
             >
               {source.dataSourceName}

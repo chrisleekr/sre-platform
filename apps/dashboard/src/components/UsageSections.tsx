@@ -44,7 +44,7 @@ export function CostSummary({ usage }: { usage: LlmUsageSummary }) {
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 id="usage-summary-title" className="font-semibold text-ink">
+          <h2 id="usage-summary-title" className="font-medium text-ink">
             Summary
           </h2>
           <p className="mt-1 text-sm text-ink-muted">
@@ -138,7 +138,7 @@ export function UsageBreakdowns({ usage }: { usage: LlmUsageSummary }) {
         aria-labelledby="usage-workload-title"
         className="rounded-lg border border-line bg-surface p-4"
       >
-        <h2 id="usage-workload-title" className="font-semibold text-ink">
+        <h2 id="usage-workload-title" className="font-medium text-ink">
           By workload
         </h2>
         <p className="mt-1 text-sm text-ink-muted">Which SRE actions consumed the budget.</p>
@@ -173,7 +173,7 @@ export function UsageBreakdowns({ usage }: { usage: LlmUsageSummary }) {
         aria-labelledby="usage-model-title"
         className="rounded-lg border border-line bg-surface p-4"
       >
-        <h2 id="usage-model-title" className="font-semibold text-ink">
+        <h2 id="usage-model-title" className="font-medium text-ink">
           By model
         </h2>
         <p className="mt-1 text-sm text-ink-muted">Runtime and provider mix behind the spend.</p>
@@ -244,7 +244,7 @@ export function UsageTrend({ usage }: { usage: LlmUsageSummary }) {
       className="rounded-lg border border-line bg-surface p-4"
     >
       <div>
-        <h2 id="usage-trend-title" className="font-semibold text-ink">
+        <h2 id="usage-trend-title" className="font-medium text-ink">
           Cost over time
         </h2>
         <p className="mt-1 text-sm text-ink-muted">

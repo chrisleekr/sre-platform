@@ -78,7 +78,7 @@ export function BackchannelLogoutSetting({
             <button
               type="button"
               onClick={() => void copyCallback()}
-              className="rounded-md border border-line-strong bg-surface px-3 py-2 text-xs font-semibold"
+              className="sre-action text-xs"
             >
               Copy URL
             </button>

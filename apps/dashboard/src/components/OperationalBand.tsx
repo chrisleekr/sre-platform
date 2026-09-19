@@ -41,7 +41,7 @@ export function OperationalBand({
         ? 'sm:grid-cols-3'
         : 'sm:grid-cols-2';
   return (
-    <section className="overflow-hidden rounded-xl border border-line bg-surface shadow-sm">
+    <section className="overflow-hidden rounded-xl border border-line bg-surface">
       <div className="grid min-w-0 xl:grid-cols-[15rem_minmax(0,1fr)]">
         <div className="flex min-w-0 gap-3 border-b border-line bg-surface-subtle p-4 xl:border-b-0 xl:border-r">
           <SignalSpine facets={facets} />

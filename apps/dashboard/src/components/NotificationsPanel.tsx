@@ -20,11 +20,7 @@ export function NotificationsPanel() {
         description="Account, workspace, directory, and access changes that need your awareness."
         action={
           inbox.unreadCount > 0 ? (
-            <button
-              type="button"
-              className="rounded-md border border-line bg-surface px-3 py-2 text-sm font-semibold hover:bg-surface-subtle"
-              onClick={() => void inbox.markAllRead()}
-            >
+            <button type="button" className="sre-action" onClick={() => void inbox.markAllRead()}>
               Mark all read
             </button>
           ) : undefined
@@ -75,14 +71,14 @@ export function NotificationsPanel() {
                 )}
                 <div className="flex min-w-0 items-start justify-between gap-4">
                   <div className="min-w-0">
-                    <h2 className="text-base font-semibold text-ink">{item.title}</h2>
+                    <h2 className="text-base font-medium text-ink">{item.title}</h2>
                     <p className="mt-1 text-sm leading-6 text-ink-muted">{item.text}</p>
                     <p className="mt-2 text-xs text-ink-faint">{observedAt(item.createdAt)}</p>
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-2">
                     <Link
                       to={item.href}
-                      className="text-sm font-semibold text-info hover:underline"
+                      className="text-sm font-semibold text-accent hover:underline"
                       onClick={() => {
                         if (!item.readAt) void inbox.markRead(item.id);
                       }}
@@ -108,7 +104,7 @@ export function NotificationsPanel() {
               <button
                 type="button"
                 disabled={inbox.loadingMore}
-                className="rounded-md border border-line px-3 py-2 text-sm font-semibold hover:bg-surface-subtle disabled:opacity-50"
+                className="sre-action"
                 onClick={inbox.loadMore}
               >
                 {inbox.loadingMore ? 'Loading…' : 'Load older'}

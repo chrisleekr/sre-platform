@@ -70,10 +70,7 @@ export function IncidentOverview({ view }: { view: IncidentLiveViewModel }) {
   return (
     <>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <h1
-          tabIndex={-1}
-          className="mr-2 min-w-0 break-words text-2xl font-semibold tracking-tight"
-        >
+        <h1 tabIndex={-1} className="mr-2 min-w-0 break-words text-2xl font-medium tracking-tight">
           {displayTitle}
         </h1>
         {incident.purpose === 'health_check' ? (
@@ -130,7 +127,7 @@ export function IncidentOverview({ view }: { view: IncidentLiveViewModel }) {
         <button
           type="button"
           onClick={() => void copyIncidentLink()}
-          className="font-semibold text-info underline decoration-info-line underline-offset-2 hover:text-info"
+          className="font-semibold text-accent underline decoration-info-line underline-offset-2 hover:text-info"
         >
           {copyLinkState === 'copied'
             ? 'Incident link copied'
@@ -163,7 +160,7 @@ export function IncidentOverview({ view }: { view: IncidentLiveViewModel }) {
           <button
             type="button"
             onClick={view.showNewMessages}
-            className="mt-2 min-h-11 text-info underline"
+            className="mt-2 min-h-11 text-accent underline"
           >
             {view.newMessageCount > 0 &&
               `${view.newMessageCount} new conversation update${view.newMessageCount === 1 ? '' : 's'} · `}
@@ -181,7 +178,7 @@ export function IncidentOverview({ view }: { view: IncidentLiveViewModel }) {
         <span className="text-xs text-ink-muted">Jump to</span>
         <button
           type="button"
-          className="min-h-11 text-info underline"
+          className="min-h-11 text-accent underline"
           onClick={() => {
             const controls = document.getElementById(
               'incident-lifecycle-controls',
@@ -202,7 +199,7 @@ export function IncidentOverview({ view }: { view: IncidentLiveViewModel }) {
           <a
             key={href}
             href={href}
-            className="sre-hit-target flex shrink-0 items-center py-2 text-sm font-medium text-info underline decoration-info-line underline-offset-4 hover:text-ink"
+            className="sre-hit-target flex shrink-0 items-center py-2 text-sm font-medium text-accent underline decoration-info-line underline-offset-4 hover:text-ink"
           >
             {label}
           </a>
@@ -223,14 +220,14 @@ export function IncidentOverview({ view }: { view: IncidentLiveViewModel }) {
             <section className="rounded-lg border border-info-line bg-info-soft p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h2 className="text-sm font-semibold text-info">Investigation source</h2>
+                  <h2 className="text-sm font-medium text-info">Investigation source</h2>
                   <p className="mt-1 break-words text-sm text-info">
                     {workspace.investigationSubject.subjectId}
                   </p>
                 </div>
                 <a
                   href={workspace.investigationSubject.sourcePath}
-                  className="text-sm font-semibold text-info underline underline-offset-2"
+                  className="text-sm font-semibold text-accent underline underline-offset-2"
                 >
                   Open source page
                 </a>
@@ -267,7 +264,7 @@ export function IncidentOverview({ view }: { view: IncidentLiveViewModel }) {
               ) ? (
                 <button
                   type="button"
-                  className="mt-3 text-sm font-semibold text-info underline underline-offset-2"
+                  className="mt-3 text-sm font-semibold text-accent underline underline-offset-2"
                   onClick={() => {
                     const relation = (workspace.relations ?? []).find(
                       (item) =>
@@ -286,7 +283,7 @@ export function IncidentOverview({ view }: { view: IncidentLiveViewModel }) {
         <aside className="min-w-0 space-y-3" aria-label="Supporting evidence">
           <IncidentAutomationStatus incident={incident} />
           <section className="rounded-lg border border-line bg-surface p-4" id="incident-evidence">
-            <h2 className="font-semibold">Supporting evidence</h2>
+            <h2 className="font-medium">Supporting evidence</h2>
             <p className="mt-1 text-xs text-ink-muted">
               {preview.cited
                 ? 'Recorded citations for the current assessment'
@@ -338,7 +335,7 @@ export function IncidentOverview({ view }: { view: IncidentLiveViewModel }) {
             <button
               type="button"
               onClick={view.showAllEvidence}
-              className="mt-3 min-h-11 text-info underline"
+              className="mt-3 min-h-11 text-accent underline"
             >
               All evidence · {view.evidenceState.evidence.length} loaded
             </button>
@@ -348,7 +345,7 @@ export function IncidentOverview({ view }: { view: IncidentLiveViewModel }) {
               Response history and usage
             </summary>
             <div className="mb-3 px-1">
-              <h2 className="text-sm font-bold text-ink">Current response state</h2>
+              <h2 className="text-sm font-medium text-ink">Current response state</h2>
             </div>
             <dl className="grid min-w-0 gap-2 @4xl:grid-cols-2">
               <div className="relative overflow-hidden rounded-lg border border-line bg-surface p-3 pl-4">

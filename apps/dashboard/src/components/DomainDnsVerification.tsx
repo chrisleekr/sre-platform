@@ -55,7 +55,7 @@ export function DomainDnsVerification({
                 ),
               );
           }}
-          className="min-h-11 rounded-md border border-line-strong px-3 py-2 text-xs font-semibold disabled:opacity-40"
+          className="sre-action min-h-11 text-xs"
         >
           {checking ? 'Checking DNS…' : 'Verify DNS now'}
         </button>

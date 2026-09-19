@@ -107,7 +107,7 @@ export function ReliabilityReportView(props: {
           <p className="font-instrument text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-accent">
             Equal elapsed UTC comparison
           </p>
-          <h2 id="reliability-load-title" className="mt-1 text-lg font-semibold tracking-tight">
+          <h2 id="reliability-load-title" className="mt-1 text-lg font-medium tracking-tight">
             Reliability load
           </h2>
           <p className="mt-1 text-sm leading-6 text-ink-muted">
@@ -127,7 +127,7 @@ export function ReliabilityReportView(props: {
 
         <dl
           aria-label="Reliability load summary"
-          className="grid overflow-hidden rounded-xl border border-line bg-line shadow-sm sm:grid-cols-3 sm:gap-px"
+          className="grid overflow-hidden rounded-xl border border-line bg-line sm:grid-cols-3 sm:gap-px"
         >
           <ReliabilitySummaryMetric
             label="Incidents opened"
@@ -149,12 +149,9 @@ export function ReliabilityReportView(props: {
           />
         </dl>
 
-        <section
-          aria-label="Outage load"
-          className="rounded-xl border border-line bg-surface shadow-sm"
-        >
+        <section aria-label="Outage load" className="rounded-xl border border-line bg-surface">
           <div className="border-b border-line px-4 py-4 sm:px-5">
-            <h3 className="font-semibold text-ink">Reliability by service</h3>
+            <h3 className="font-medium text-ink">Reliability by service</h3>
             <p className="mt-1 text-sm text-ink-muted">
               Current period-to-date beside the same elapsed part of the previous period.
             </p>
@@ -279,12 +276,12 @@ export function ReliabilityReportView(props: {
       <div className="grid min-w-0 gap-6 xl:grid-cols-2">
         <section
           aria-labelledby="ticket-flow-title"
-          className="rounded-xl border border-line bg-surface p-4 shadow-sm sm:p-5"
+          className="rounded-xl border border-line bg-surface p-4 sm:p-5"
         >
           <p className="font-instrument text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-accent">
             Signal control
           </p>
-          <h3 id="ticket-flow-title" className="mt-1 font-semibold text-ink">
+          <h3 id="ticket-flow-title" className="mt-1 font-medium text-ink">
             Ticket flow
           </h3>
           <p className="mt-3 text-2xl font-semibold tracking-tight text-ink">
@@ -318,12 +315,12 @@ export function ReliabilityReportView(props: {
 
         <section
           aria-labelledby="top-causes-title"
-          className="rounded-xl border border-line bg-surface p-4 shadow-sm sm:p-5"
+          className="rounded-xl border border-line bg-surface p-4 sm:p-5"
         >
           <p className="font-instrument text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-accent">
             Accepted evidence
           </p>
-          <h3 id="top-causes-title" className="mt-1 font-semibold text-ink">
+          <h3 id="top-causes-title" className="mt-1 font-medium text-ink">
             Top causes
           </h3>
           {report.outages.topCauses.length === 0 ? (
@@ -369,16 +366,16 @@ export function ReliabilityReportView(props: {
           <p className="font-instrument text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-accent">
             Responder efficiency
           </p>
-          <h2 id="toil-balance-title" className="mt-1 text-lg font-semibold tracking-tight">
+          <h2 id="toil-balance-title" className="mt-1 text-lg font-medium tracking-tight">
             Human toil
           </h2>
         </div>
         <div className="grid gap-4 lg:grid-cols-2">
           <section
             aria-labelledby="toil-created-title"
-            className="rounded-xl border border-line bg-surface p-4 shadow-sm sm:p-5"
+            className="rounded-xl border border-line bg-surface p-4 sm:p-5"
           >
-            <h3 id="toil-created-title" className="font-semibold text-ink">
+            <h3 id="toil-created-title" className="font-medium text-ink">
               Toil created
             </h3>
             <dl className="mt-4">
@@ -402,9 +399,9 @@ export function ReliabilityReportView(props: {
           </section>
           <section
             aria-labelledby="toil-removed-title"
-            className="rounded-xl border border-line bg-surface p-4 shadow-sm sm:p-5"
+            className="rounded-xl border border-line bg-surface p-4 sm:p-5"
           >
-            <h3 id="toil-removed-title" className="font-semibold text-ink">
+            <h3 id="toil-removed-title" className="font-medium text-ink">
               Toil removed
             </h3>
             <dl className="mt-4">

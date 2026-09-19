@@ -57,7 +57,7 @@ function WorkspaceAccessPage({ title }: { title: string }) {
   return (
     <main className="grid min-h-dvh place-items-center bg-canvas p-6 text-ink">
       <section className="max-w-lg rounded-xl border border-line bg-surface p-6">
-        <h1 className="text-xl font-bold">{title}</h1>
+        <h1 className="text-xl font-medium">{title}</h1>
         <p className="mt-2 text-sm text-ink-muted">
           Contact your workspace administrator if you need help.
         </p>

@@ -149,7 +149,7 @@ export function SmtpSettingsCard() {
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 id="smtp-settings-title" className="text-lg font-semibold text-ink">
+          <h2 id="smtp-settings-title" className="text-lg font-medium text-ink">
             Notification email
           </h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-ink-muted">
@@ -184,7 +184,7 @@ export function SmtpSettingsCard() {
                 <input
                   value={draft.host}
                   onChange={(event) => setDraft({ ...draft, host: event.target.value })}
-                  className="rounded-md border border-line bg-canvas px-3 py-2 font-normal"
+                  className="sre-field bg-canvas font-normal"
                   autoComplete="off"
                 />
               </label>
@@ -196,7 +196,7 @@ export function SmtpSettingsCard() {
                   max="65535"
                   value={draft.port}
                   onChange={(event) => setDraft({ ...draft, port: Number(event.target.value) })}
-                  className="rounded-md border border-line bg-canvas px-3 py-2 font-normal"
+                  className="sre-field bg-canvas font-normal"
                 />
               </label>
               <label className="grid gap-1.5 text-sm font-semibold text-ink">
@@ -205,7 +205,7 @@ export function SmtpSettingsCard() {
                   type="email"
                   value={draft.from}
                   onChange={(event) => setDraft({ ...draft, from: event.target.value })}
-                  className="rounded-md border border-line bg-canvas px-3 py-2 font-normal"
+                  className="sre-field bg-canvas font-normal"
                   autoComplete="email"
                 />
               </label>
@@ -216,7 +216,7 @@ export function SmtpSettingsCard() {
                   onChange={(event) =>
                     setDraft({ ...draft, username: event.target.value || undefined })
                   }
-                  className="rounded-md border border-line bg-canvas px-3 py-2 font-normal"
+                  className="sre-field bg-canvas font-normal"
                   autoComplete="username"
                 />
               </label>
@@ -229,7 +229,7 @@ export function SmtpSettingsCard() {
                     view.passwordConfigured ? 'Stored; enter to replace' : 'Required with username'
                   }
                   onChange={(event) => setPassword(event.target.value)}
-                  className="rounded-md border border-line bg-canvas px-3 py-2 font-normal"
+                  className="sre-field bg-canvas font-normal"
                   autoComplete="new-password"
                 />
               </label>
@@ -253,7 +253,7 @@ export function SmtpSettingsCard() {
             <button
               type="button"
               disabled={busy !== null}
-              className="rounded-md bg-strong px-3 py-2 text-sm font-semibold text-on-strong disabled:opacity-50"
+              className="sre-action sre-action-primary"
               onClick={() => void save()}
             >
               {busy === 'save' ? 'Saving…' : 'Save email settings'}
@@ -261,7 +261,7 @@ export function SmtpSettingsCard() {
             <button
               type="button"
               disabled={busy !== null || !view.config}
-              className="rounded-md border border-line px-3 py-2 text-sm font-semibold hover:bg-surface-subtle disabled:opacity-50"
+              className="sre-action"
               onClick={() => void sendTest()}
             >
               {busy === 'test' ? 'Sending…' : 'Send test email'}

@@ -28,6 +28,7 @@
     "check:live-test-scripts": "bash scripts/ci/check-live-test-scripts.sh",
     "check:public-jsdoc": "bun scripts/check-public-jsdoc.mjs",
     "check:test-layout": "bash scripts/check-test-layout.sh",
+    "check:design-system": "node node_modules/vitest/vitest.mjs run --project ui apps/dashboard/src/__tests__/design-system.test.ts apps/dashboard/checks/__tests__/design-policy.test.ts apps/dashboard/checks/__tests__/screenshot-inventory.test.ts",
     "test": "vitest run",
     "test:ci:backend": "bash scripts/test-ci.sh backend",
     "test:ci:ui": "bash scripts/test-ci.sh ui",

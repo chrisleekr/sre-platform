@@ -62,18 +62,18 @@ export function SetupDialog({
         event.preventDefault();
         if (!busy) onClose();
       }}
-      className={`m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] ${width} overflow-hidden rounded-xl border border-line bg-surface p-0 text-sm text-ink shadow-xl backdrop:bg-scrim`}
+      className={`m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] ${width} overflow-hidden rounded-xl border border-line-strong bg-surface p-0 text-sm text-ink backdrop:bg-scrim`}
     >
       <div className="flex max-h-[calc(100dvh-2rem-2px)] min-h-0 flex-col has-[nav]:h-[min(52rem,calc(100dvh-2rem-2px))]">
         <header className="flex shrink-0 flex-wrap items-center justify-between gap-4 border-b border-line bg-surface px-4 py-3 sm:px-6">
-          <h2 ref={titleRef} id={titleId} tabIndex={-1} className="font-semibold tracking-tight">
+          <h2 ref={titleRef} id={titleId} tabIndex={-1} className="font-medium tracking-tight">
             {title}
           </h2>
           <button
             type="button"
             disabled={busy}
             onClick={onClose}
-            className="min-h-11 shrink-0 rounded border border-line-strong px-3 py-1.5 font-medium hover:bg-surface-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:opacity-50"
+            className="sre-action min-h-11 shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
           >
             {closeLabel}
           </button>

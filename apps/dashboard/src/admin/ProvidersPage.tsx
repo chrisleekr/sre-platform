@@ -92,12 +92,9 @@ export function ProvidersPage() {
               [provider.id]: { ...current[provider.id], ...patch },
             }));
           return (
-            <article
-              key={provider.id}
-              className="rounded-xl border border-line bg-surface p-5 shadow-sm"
-            >
+            <article key={provider.id} className="rounded-xl border border-line bg-surface p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <h2 className="text-base font-bold">{provider.displayName}</h2>
+                <h2 className="text-base font-medium">{provider.displayName}</h2>
                 <span className="rounded-full bg-surface-subtle px-2.5 py-1 text-xs font-semibold uppercase">
                   {provider.status}
                 </span>
@@ -124,14 +121,14 @@ export function ProvidersPage() {
                       onChange={(event) =>
                         update({ [key]: event.target.value || (key === 'tenantClaim' ? null : '') })
                       }
-                      className="min-w-0 rounded-lg border border-line-strong bg-canvas px-3 py-2 font-mono text-sm"
+                      className="sre-field min-w-0 bg-canvas font-mono"
                     />
                   </label>
                 ))}
                 <label className="grid gap-1 text-sm font-medium">
                   Application authentication
                   <select
-                    className="rounded-lg border border-line-strong bg-canvas px-3 py-2"
+                    className="sre-field bg-canvas"
                     value={draft.clientAuthentication ?? 'none'}
                     onChange={(event) =>
                       update({
@@ -155,7 +152,7 @@ export function ProvidersPage() {
                       onChange={(event) =>
                         setSecrets((current) => ({ ...current, [provider.id]: event.target.value }))
                       }
-                      className="rounded-lg border border-line-strong bg-canvas px-3 py-2"
+                      className="sre-field bg-canvas"
                     />
                     <span className="text-xs font-normal text-ink-muted">
                       Write-only and encrypted. Leave blank to keep the configured secret.
@@ -206,7 +203,7 @@ export function ProvidersPage() {
                   <select
                     value={draft.status}
                     onChange={(event) => update({ status: event.target.value })}
-                    className="rounded-lg border border-line-strong bg-canvas px-3 py-2"
+                    className="sre-field bg-canvas"
                   >
                     <option value="active">Active</option>
                     <option value="disabled">Disabled</option>
@@ -222,7 +219,7 @@ export function ProvidersPage() {
                   (Object.keys(drafts[provider.id] ?? {}).length === 0 && !secrets[provider.id])
                 }
                 onClick={() => void save(provider)}
-                className="mt-4 rounded-lg bg-strong px-4 py-2 text-sm font-semibold text-on-strong disabled:opacity-50"
+                className="sre-action sre-action-primary mt-4"
               >
                 Save provider
               </button>

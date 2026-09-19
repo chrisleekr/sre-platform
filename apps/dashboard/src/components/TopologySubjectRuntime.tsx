@@ -88,7 +88,7 @@ export function TopologySubjectRuntime({
           type="button"
           disabled={pending}
           onClick={() => setRevision((value) => value + 1)}
-          className="text-xs text-info underline disabled:opacity-50"
+          className="text-xs text-accent underline disabled:opacity-50"
         >
           {pending ? 'Checking…' : 'Refresh runtime'}
         </button>

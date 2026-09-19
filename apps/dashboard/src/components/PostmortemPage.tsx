@@ -44,10 +44,8 @@ const LESSON_LISTS: readonly [keyof PostmortemLessons, string][] = [
 
 const TEXTAREA =
   'mt-1 w-full resize-y rounded border border-line-strong bg-surface px-3 py-2 text-sm';
-const BUTTON =
-  'sre-hit-target rounded-lg border border-line-strong bg-surface px-4 py-2 text-sm font-semibold text-ink-secondary hover:bg-surface-subtle hover:text-ink disabled:cursor-not-allowed disabled:opacity-60';
-const PRIMARY_BUTTON =
-  'sre-hit-target rounded-lg bg-strong px-4 py-2 text-sm font-semibold text-on-strong disabled:cursor-not-allowed disabled:opacity-60';
+const BUTTON = 'sre-action sre-hit-target';
+const PRIMARY_BUTTON = 'sre-action sre-action-primary sre-hit-target';
 
 function sectionsOf(doc: PostmortemDocument): PostmortemSections {
   return {
@@ -144,10 +142,7 @@ export function PostmortemPage({ pollMs = POLL_MS }: { pollMs?: number } = {}) {
         title="Postmortem"
         description="Blameless record of contributing causes and the action items that close them."
         action={
-          <Link
-            to={incidentPath(id)}
-            className="sre-hit-target rounded-md border border-line-strong bg-surface px-3 py-2 text-sm font-semibold text-ink-secondary hover:bg-surface-subtle hover:text-ink"
-          >
+          <Link to={incidentPath(id)} className="sre-action sre-hit-target">
             Back to incident
           </Link>
         }
@@ -384,7 +379,7 @@ function PostmortemEditor({
           />
         </label>
         <div>
-          <h2 className="text-sm font-semibold">Timeline</h2>
+          <h2 className="text-sm font-medium">Timeline</h2>
           {sections.timeline.length === 0 ? (
             <p className="text-sm text-ink-muted">No timeline entries.</p>
           ) : (

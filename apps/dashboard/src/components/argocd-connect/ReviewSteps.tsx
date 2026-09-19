@@ -36,7 +36,7 @@ export function ArgoCdReviewSteps({ view }: { view: ArgoCdWizardViewModel }) {
       {step === 3 && (
         <div className="flex min-w-0 flex-col gap-4">
           <div>
-            <h2 className="font-semibold text-ink">Choose project access</h2>
+            <h2 className="font-medium text-ink">Choose project access</h2>
             <p className="mt-1 text-sm text-ink-muted">
               Reuse existing dedicated project-role tokens, or generate commands to install access.
               Neither option edits global Argo CD RBAC or your Helm values automatically.
@@ -75,7 +75,7 @@ export function ArgoCdReviewSteps({ view }: { view: ArgoCdWizardViewModel }) {
                 onChange={(event) => setExistingAccessRole(event.target.value)}
                 placeholder="incident-reader"
                 maxLength={63}
-                className="mt-1 w-full rounded border border-line-strong px-3 py-2"
+                className="sre-field mt-1 w-full"
               />
               <span className="mt-2 block text-xs font-normal text-ink-muted">
                 Use the same dedicated role name in every selected project, with one token per
@@ -91,7 +91,7 @@ export function ArgoCdReviewSteps({ view }: { view: ArgoCdWizardViewModel }) {
               className="min-w-0 space-y-3 rounded border border-line p-3"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="font-semibold">{binding.project}</h3>
+                <h3 className="font-medium">{binding.project}</h3>
                 {binding.credentialConfigured && !serverChanged && !binding.token.trim() && (
                   <span className="rounded bg-surface-subtle px-2 py-0.5 text-xs text-ink-muted">
                     Credential saved
@@ -106,7 +106,7 @@ export function ArgoCdReviewSteps({ view }: { view: ArgoCdWizardViewModel }) {
                   type="button"
                   disabled={busyProject !== null}
                   onClick={() => generateAccess(index)}
-                  className="rounded border border-line-strong px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+                  className="sre-action"
                 >
                   {busyProject === index ? 'Generating…' : 'Generate access commands'}
                 </button>
@@ -186,7 +186,7 @@ export function ArgoCdReviewSteps({ view }: { view: ArgoCdWizardViewModel }) {
                       ),
                     )
                   }
-                  className="mt-1 min-w-0 w-full rounded border border-line-strong px-2 py-1.5"
+                  className="sre-field mt-1 min-w-0 w-full"
                 />
                 <span className="mt-1 block text-xs font-normal text-ink-muted">
                   Encrypted at rest and never shown again. Saving a credential does not confirm it
@@ -223,7 +223,7 @@ export function ArgoCdReviewSteps({ view }: { view: ArgoCdWizardViewModel }) {
               type="button"
               disabled={busyProject !== null}
               onClick={continueFromCredentials}
-              className="rounded bg-strong px-3 py-1.5 text-on-strong disabled:opacity-50"
+              className="sre-action sre-action-primary"
             >
               Review
             </button>
@@ -283,7 +283,7 @@ export function ArgoCdReviewSteps({ view }: { view: ArgoCdWizardViewModel }) {
               type="button"
               disabled={busy}
               onClick={saveAndVerify}
-              className="rounded bg-strong px-3 py-1.5 text-on-strong disabled:opacity-50"
+              className="sre-action sre-action-primary"
             >
               {busy ? 'Saving and verifying…' : 'Save and verify all projects'}
             </button>
@@ -304,7 +304,7 @@ export function ArgoCdReviewSteps({ view }: { view: ArgoCdWizardViewModel }) {
             {result.details?.projects?.map((project) => (
               <section key={project.project} className="rounded border border-line p-3 text-sm">
                 <div className="flex items-center justify-between gap-2">
-                  <h3 className="font-semibold">{project.project}</h3>
+                  <h3 className="font-medium">{project.project}</h3>
                   <span className={project.status === 'healthy' ? 'text-success' : 'text-critical'}>
                     {project.status === 'healthy' ? 'Verified' : 'Failed'}
                   </span>
@@ -346,7 +346,7 @@ export function ArgoCdReviewSteps({ view }: { view: ArgoCdWizardViewModel }) {
               <button
                 type="button"
                 onClick={() => setStep(2)}
-                className="rounded bg-strong px-3 py-1.5 text-on-strong"
+                className="sre-action sre-action-primary"
               >
                 Edit configuration
               </button>
@@ -355,9 +355,7 @@ export function ArgoCdReviewSteps({ view }: { view: ArgoCdWizardViewModel }) {
               type="button"
               onClick={onClose}
               className={
-                result.status === 'healthy'
-                  ? 'rounded bg-strong px-3 py-1.5 text-on-strong'
-                  : 'rounded border border-line-strong px-3 py-1.5'
+                result.status === 'healthy' ? 'sre-action sre-action-primary' : 'sre-action'
               }
             >
               {result.status === 'healthy' ? 'Finish' : 'Close'}

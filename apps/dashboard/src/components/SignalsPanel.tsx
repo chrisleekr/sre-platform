@@ -192,7 +192,7 @@ export function SignalsPanel() {
           ) : (
             <>
               <div className="mb-3">
-                <h2 className="text-lg font-semibold tracking-tight text-ink">{queueCopy.title}</h2>
+                <h2 className="text-lg font-medium tracking-tight text-ink">{queueCopy.title}</h2>
                 <p className="mt-1 text-sm text-ink-muted">{queueCopy.description}</p>
               </div>
               {signals.length === 0 ? (
@@ -207,12 +207,12 @@ export function SignalsPanel() {
                   {signals.map((signal) => (
                     <article
                       key={signal.id}
-                      className="rounded-xl border border-line bg-surface p-4 shadow-sm sm:p-5"
+                      className="rounded-xl border border-line bg-surface p-4 sm:p-5"
                     >
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0">
                           <h3
-                            className="line-clamp-3 font-semibold leading-6 text-ink"
+                            className="line-clamp-3 font-medium leading-6 text-ink"
                             title={signal.summary}
                           >
                             {signal.summary}
@@ -280,7 +280,7 @@ export function SignalsPanel() {
                                 disabled={
                                   reviewAction?.signalId === signal.id && reviewAction.pending
                                 }
-                                className="sre-hit-target rounded-md border border-line-strong bg-surface px-3 py-2 text-sm font-semibold text-ink-secondary hover:bg-surface-subtle disabled:cursor-not-allowed disabled:opacity-50"
+                                className="sre-action sre-hit-target"
                                 onClick={() => {
                                   setReviewAction({
                                     signalId: signal.id,
@@ -360,7 +360,7 @@ export function SignalsPanel() {
         </section>
 
         {!error && pages.length > 0 && (
-          <details open className="rounded-xl border border-line bg-surface shadow-sm">
+          <details open className="rounded-xl border border-line bg-surface">
             <summary className="cursor-pointer px-4 py-4 font-semibold text-ink sm:px-5">
               Routing and tag settings
             </summary>

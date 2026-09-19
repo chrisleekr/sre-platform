@@ -114,7 +114,7 @@ function SlackConfiguration({
             type="button"
             disabled={!canConfigure}
             onClick={(event) => onEdit(event.currentTarget)}
-            className="rounded border border-line-strong px-2 py-1 text-xs font-medium hover:bg-surface-subtle disabled:opacity-50"
+            className="sre-action text-xs"
           >
             Edit Slack
           </button>
@@ -224,7 +224,7 @@ function SlackConnectionSettings({
                 setWizardTrigger(event.currentTarget);
                 setWizardOpen(true);
               }}
-              className="rounded bg-strong px-3 py-1.5 text-sm font-medium text-on-strong hover:bg-strong-hover"
+              className="sre-action sre-action-primary"
             >
               Connect Slack
             </button>

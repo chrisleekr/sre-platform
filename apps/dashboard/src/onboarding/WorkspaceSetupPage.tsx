@@ -132,7 +132,7 @@ export function WorkspaceSetupPage() {
   return (
     <PublicShell>
       {session.status !== 'authenticated' && (
-        <Link to="/sign-in" className="mb-6 inline-block text-sm font-semibold text-info">
+        <Link to="/sign-in" className="mb-6 inline-block text-sm font-semibold text-accent">
           Back to sign in
         </Link>
       )}
@@ -145,7 +145,7 @@ export function WorkspaceSetupPage() {
         <h1
           ref={headingRef}
           tabIndex={-1}
-          className="text-3xl font-bold tracking-tight outline-none"
+          className="text-3xl font-medium tracking-tight outline-none"
         >
           {heading.title}
         </h1>
@@ -163,7 +163,7 @@ export function WorkspaceSetupPage() {
           Workspace setup settings could not be loaded.{' '}
           <button
             type="button"
-            className="font-semibold text-info underline"
+            className="font-semibold text-accent underline"
             onClick={publicConfig.retry}
           >
             Try again
@@ -197,7 +197,7 @@ export function WorkspaceSetupPage() {
             </div>
             <button
               type="button"
-              className="text-sm font-semibold text-info underline"
+              className="text-sm font-semibold text-accent underline"
               onClick={editWorkspace}
             >
               Edit

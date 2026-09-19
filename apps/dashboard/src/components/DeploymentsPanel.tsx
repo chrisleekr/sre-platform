@@ -240,7 +240,7 @@ export function DeploymentsPanel() {
           />
           <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
             <div>
-              <h2 className="text-base font-semibold text-ink">Evidence ledger</h2>
+              <h2 className="text-base font-medium text-ink">Evidence ledger</h2>
               <p className="text-sm text-ink-muted">
                 Provider records, newest first. Select a row to inspect the complete evidence.
               </p>

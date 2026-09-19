@@ -190,7 +190,7 @@ export function KubernetesConnectWizard({
       {step === 1 && (
         <div className="flex min-w-0 flex-col gap-4">
           <div>
-            <h2 className="font-semibold text-ink">Connect to one Kubernetes cluster</h2>
+            <h2 className="font-medium text-ink">Connect to one Kubernetes cluster</h2>
             <p className="mt-1 text-sm text-ink-muted">
               Name the cluster, choose the monitored namespace scope, and define how its API server
               certificate is trusted.
@@ -207,7 +207,7 @@ export function KubernetesConnectWizard({
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="prod-us-east"
-              className="mt-1 min-w-0 w-full rounded border border-line-strong px-2 py-1.5"
+              className="sre-field mt-1 min-w-0 w-full"
             />
           </label>
           <label className="text-sm font-medium">
@@ -220,7 +220,7 @@ export function KubernetesConnectWizard({
                 setToken('');
               }}
               placeholder="https://api.k8s.example.com"
-              className="mt-1 min-w-0 w-full rounded border border-line-strong px-2 py-1.5"
+              className="sre-field mt-1 min-w-0 w-full"
             />
           </label>
           <label className="text-sm font-medium">
@@ -229,7 +229,7 @@ export function KubernetesConnectWizard({
               value={namespace}
               onChange={(event) => setNamespace(event.target.value)}
               placeholder="default"
-              className="mt-1 min-w-0 w-full rounded border border-line-strong px-2 py-1.5"
+              className="sre-field mt-1 min-w-0 w-full"
             />
             <span className="mt-1 block text-xs font-normal text-ink-muted">
               Leave blank to monitor all namespaces.
@@ -278,7 +278,7 @@ export function KubernetesConnectWizard({
             <button
               type="button"
               onClick={continueFromCluster}
-              className="self-start rounded bg-strong px-3 py-1.5 font-medium text-on-strong"
+              className="sre-action sre-action-primary self-start"
             >
               Continue
             </button>
@@ -300,11 +300,7 @@ export function KubernetesConnectWizard({
             onRetry={loadManifest}
           />
           <SetupActions>
-            <button
-              type="button"
-              onClick={() => setStep(1)}
-              className="rounded border border-line-strong px-3 py-1.5 font-medium"
-            >
+            <button type="button" onClick={() => setStep(1)} className="sre-action">
               Back
             </button>
             <button
@@ -314,7 +310,7 @@ export function KubernetesConnectWizard({
                 setError('');
                 setStep(3);
               }}
-              className="rounded bg-strong px-3 py-1.5 font-medium text-on-strong disabled:opacity-50"
+              className="sre-action sre-action-primary"
             >
               Continue
             </button>
@@ -325,7 +321,7 @@ export function KubernetesConnectWizard({
       {step === 3 && (
         <div className="flex min-w-0 flex-col gap-4">
           <div>
-            <h2 className="font-semibold text-ink">
+            <h2 className="font-medium text-ink">
               {accessMode === 'create'
                 ? 'Copy the generated credentials'
                 : 'Use your existing credentials'}
@@ -348,7 +344,7 @@ export function KubernetesConnectWizard({
               onChange={(event) => setToken(event.target.value)}
               rows={3}
               autoComplete="new-password"
-              className="mt-1 min-w-0 w-full resize-y rounded border border-line-strong px-2 py-1.5 font-instrument text-xs"
+              className="sre-field mt-1 min-w-0 w-full resize-y font-instrument text-xs"
             />
             <span className="mt-1 block text-xs font-normal text-ink-muted">
               {needsToken
@@ -367,7 +363,7 @@ export function KubernetesConnectWizard({
                   value={caCert}
                   onChange={(event) => setCaCert(event.target.value)}
                   rows={5}
-                  className="mt-1 min-w-0 w-full resize-y rounded border border-line-strong px-2 py-1.5 font-instrument text-xs"
+                  className="sre-field mt-1 min-w-0 w-full resize-y font-instrument text-xs"
                 />
                 <span className="mt-1 block text-xs font-normal text-ink-muted">
                   {mode === 'edit' && initialSettings?.caConfigured
@@ -391,17 +387,13 @@ export function KubernetesConnectWizard({
             </p>
           )}
           <SetupActions>
-            <button
-              type="button"
-              onClick={() => setStep(2)}
-              className="rounded border border-line-strong px-3 py-1.5 font-medium"
-            >
+            <button type="button" onClick={() => setStep(2)} className="sre-action">
               Back
             </button>
             <button
               type="button"
               onClick={continueFromCredentials}
-              className="rounded bg-strong px-3 py-1.5 font-medium text-on-strong"
+              className="sre-action sre-action-primary"
             >
               Review
             </button>
@@ -412,7 +404,7 @@ export function KubernetesConnectWizard({
       {step === 4 && (
         <div className="flex min-w-0 flex-col gap-4">
           <div>
-            <h2 className="font-semibold text-ink">Review and verify Kubernetes</h2>
+            <h2 className="font-medium text-ink">Review and verify Kubernetes</h2>
             <p className="mt-1 text-sm text-ink-muted">
               Saving creates a disabled draft. Verification checks reachability and pod access, and
               reports whether the credential can read Secrets.
@@ -456,24 +448,19 @@ export function KubernetesConnectWizard({
                   setError('');
                   setStep(1);
                 }}
-                className="rounded border border-line-strong px-3 py-1.5 font-medium disabled:opacity-50"
+                className="sre-action"
               >
                 Edit data source name
               </button>
             )}
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => setStep(3)}
-              className="rounded border border-line-strong px-3 py-1.5 font-medium disabled:opacity-50"
-            >
+            <button type="button" disabled={busy} onClick={() => setStep(3)} className="sre-action">
               Back
             </button>
             <button
               type="button"
               disabled={busy}
               onClick={saveAndVerify}
-              className="rounded bg-strong px-3 py-1.5 font-medium text-on-strong disabled:opacity-50"
+              className="sre-action sre-action-primary"
             >
               {busy ? 'Verifying…' : 'Save and verify'}
             </button>

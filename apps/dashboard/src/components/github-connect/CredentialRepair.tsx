@@ -8,7 +8,7 @@ export function GitHubCredentialRepair({ view }: { view: GitHubWizardViewModel }
       className="space-y-4 rounded-lg border border-line p-4"
     >
       <div>
-        <h3 className="font-semibold">Repair this connection</h3>
+        <h3 className="font-medium">Repair this connection</h3>
         <p className="mt-1 text-sm text-ink-muted">
           App {view.appSlug || view.appId}. Leave replacement fields blank to keep the saved
           credentials. Changes take effect only after Save, sync, and verify.
@@ -59,7 +59,7 @@ export function GitHubCredentialRepair({ view }: { view: GitHubWizardViewModel }
               autoComplete="new-password"
               value={view.webhookSecret}
               onChange={(event) => view.setWebhookSecret(event.target.value)}
-              className="mt-1 w-full rounded border border-line-strong px-3 py-2"
+              className="sre-field mt-1 w-full"
             />
           </label>
           <p className="text-xs text-ink-muted">
@@ -70,7 +70,7 @@ export function GitHubCredentialRepair({ view }: { view: GitHubWizardViewModel }
             <button
               type="button"
               onClick={() => view.setWebhookSecret('')}
-              className="min-h-11 rounded border border-line-strong px-3 py-1.5"
+              className="sre-action min-h-11"
             >
               Keep saved webhook secret
             </button>
@@ -96,7 +96,7 @@ export function GitHubCredentialRepair({ view }: { view: GitHubWizardViewModel }
               rows={5}
               value={view.privateKey}
               onChange={(event) => view.setPrivateKey(event.target.value)}
-              className="mt-1 w-full resize-y rounded border border-line-strong px-3 py-2 font-instrument text-xs"
+              className="sre-field mt-1 w-full resize-y font-instrument text-xs"
             />
           </label>
           <p className="text-xs text-ink-muted">
@@ -107,7 +107,7 @@ export function GitHubCredentialRepair({ view }: { view: GitHubWizardViewModel }
             <button
               type="button"
               onClick={() => view.setPrivateKey('')}
-              className="min-h-11 rounded border border-line-strong px-3 py-1.5"
+              className="sre-action min-h-11"
             >
               Keep saved private key
             </button>

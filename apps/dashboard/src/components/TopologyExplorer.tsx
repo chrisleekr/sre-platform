@@ -155,7 +155,7 @@ export function TopologyExplorer({
     <section className="min-w-0 space-y-4" aria-label="Automatic topology discovery">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold">Discovered topology</h2>
+          <h2 className="text-lg font-medium">Discovered topology</h2>
           {graph && (
             <p className="mt-1 text-xs text-ink-muted">
               {subjects.length} subjects · {graph.operational.relations.length} resolved
@@ -163,12 +163,7 @@ export function TopologyExplorer({
             </p>
           )}
         </div>
-        <button
-          type="button"
-          disabled={loading}
-          onClick={onRefresh}
-          className="rounded-md border border-line-strong px-3 py-2 text-sm font-medium disabled:opacity-50"
-        >
+        <button type="button" disabled={loading} onClick={onRefresh} className="sre-action">
           Refresh view
         </button>
       </div>
@@ -187,14 +182,14 @@ export function TopologyExplorer({
       )}
       {!loading && !error && !subjects.length && (
         <div className="rounded-lg border border-line bg-surface p-5">
-          <h3 className="font-semibold">No discovery evidence yet</h3>
+          <h3 className="font-medium">No discovery evidence yet</h3>
           <p className="mt-2 max-w-2xl text-sm text-ink-muted">
             Supported inventory sources are collected in the background. No manual mapping is
             required. Check connection access and discovery coverage if evidence is missing.
           </p>
           <a
             href="/w/connectors"
-            className="mt-3 inline-block text-sm font-medium text-info underline"
+            className="mt-3 inline-block text-sm font-medium text-accent underline"
           >
             Review connections
           </a>
@@ -237,7 +232,11 @@ export function TopologyExplorer({
               ))}
             </div>
             {view === 'map' && (search || kind || source || scope) && (
-              <button type="button" onClick={clearFilters} className="text-sm text-info underline">
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="text-sm text-accent underline"
+              >
                 Clear filters
               </button>
             )}
@@ -340,7 +339,7 @@ export function TopologyExplorer({
                 <div className="flex flex-wrap justify-between gap-2 border-b border-line px-4 py-3 text-xs text-ink-muted">
                   <span>{filtered.length} matching subjects</span>
                   {(search || kind || source || scope) && (
-                    <button type="button" onClick={clearFilters} className="text-info underline">
+                    <button type="button" onClick={clearFilters} className="text-accent underline">
                       Clear filters
                     </button>
                   )}
@@ -398,7 +397,7 @@ export function TopologyExplorer({
                       type="button"
                       disabled={currentPage === 0}
                       onClick={() => setPage(currentPage - 1)}
-                      className="px-2 py-2 text-info disabled:text-ink-muted disabled:opacity-50"
+                      className="px-2 py-2 text-accent disabled:text-ink-muted disabled:opacity-50"
                     >
                       Previous
                     </button>
@@ -409,7 +408,7 @@ export function TopologyExplorer({
                       type="button"
                       disabled={(currentPage + 1) * pageSize >= filtered.length}
                       onClick={() => setPage(currentPage + 1)}
-                      className="px-2 py-2 text-info disabled:text-ink-muted disabled:opacity-50"
+                      className="px-2 py-2 text-accent disabled:text-ink-muted disabled:opacity-50"
                     >
                       Next
                     </button>
@@ -423,7 +422,7 @@ export function TopologyExplorer({
               ) : null
             ) : view === 'list' ? (
               <div className="rounded-lg border border-dashed border-line-strong p-6 text-sm text-ink-muted">
-                <h3 className="font-semibold text-ink">
+                <h3 className="font-medium text-ink">
                   {selected
                     ? 'This subject is no longer in the current discovery.'
                     : 'Select a subject to follow its relationships'}

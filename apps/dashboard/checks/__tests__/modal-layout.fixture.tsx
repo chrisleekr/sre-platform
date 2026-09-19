@@ -4,6 +4,7 @@ import { SetupDialog } from '../../src/components/SetupDialog';
 import { SetupActions } from '../../src/components/SetupDialogSlots';
 import { SetupProgress } from '../../src/components/SetupProgress';
 import { SetupCommand } from '../../src/components/SetupCommand';
+import { ConversationMarkdown } from '../../src/components/ConversationMarkdown';
 import '../../src/index.css';
 import { GitLabFlowFixture } from './gitlab-flow.fixture';
 import { GitHubRecoveryFixture } from './github-recovery.fixture';
@@ -16,6 +17,7 @@ function Fixture() {
   return (
     <main className="p-6">
       <select
+        className="sre-field"
         aria-label="Dialog size"
         value={size}
         onChange={(e) => setSize(e.target.value as typeof size)}
@@ -25,6 +27,7 @@ function Fixture() {
         ))}
       </select>
       <button
+        className="sre-action"
         onClick={() => {
           setOpen(true);
           setStep(1);
@@ -53,6 +56,11 @@ function Fixture() {
             <h3 className="mb-4 text-lg font-semibold">
               {step === 1 ? 'Configure access' : 'Review access'}
             </h3>
+            <div className="mb-4 rounded-lg bg-strong p-4 text-on-strong">
+              <ConversationMarkdown idPrefix="focus-check" inverted>
+                {'[Investigation evidence](https://example.com/evidence)'}
+              </ConversationMarkdown>
+            </div>
             <SetupCommand
               command={
                 'argocd proj role add-policy default incident-reader --resource applications --action get --object production/checkout-service --permission allow'
@@ -63,16 +71,25 @@ function Fixture() {
               <label key={index} className="my-4 block">
                 Field {index + 1}
                 <input
-                  className="mt-2 block w-full rounded border p-3"
+                  className="sre-field mt-2 block w-full"
                   defaultValue={`Resource ${index + 1}`}
                 />
               </label>
             ))}
             <SetupActions>
-              <button type="button" onClick={() => setStep(1)} disabled={step === 1}>
+              <button
+                className="sre-action"
+                type="button"
+                onClick={() => setStep(1)}
+                disabled={step === 1}
+              >
                 Back
               </button>
-              <button type="submit" form="modal-layout-form">
+              <button
+                className="sre-action sre-action-primary"
+                type="submit"
+                form="modal-layout-form"
+              >
                 Continue
               </button>
             </SetupActions>

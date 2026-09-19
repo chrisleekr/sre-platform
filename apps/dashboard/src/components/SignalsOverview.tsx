@@ -29,7 +29,7 @@ export function SignalsOverview(props: {
   return (
     <dl
       aria-label="Signal inbox status"
-      className="grid overflow-hidden rounded-xl border border-line bg-line shadow-sm sm:grid-cols-3 sm:gap-px"
+      className="grid overflow-hidden rounded-xl border border-line bg-line sm:grid-cols-3 sm:gap-px"
     >
       <div className="bg-surface p-4">
         <dt className="font-instrument text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-ink-faint">

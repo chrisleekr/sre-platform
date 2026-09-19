@@ -61,7 +61,7 @@ export function GitLabManagementPanel({
       className="space-y-3 rounded-lg border border-line p-4"
       aria-label="Automatic project hook management"
     >
-      <h3 className="font-semibold">Automatic project hooks</h3>
+      <h3 className="font-medium">Automatic project hooks</h3>
       <p className="text-sm text-ink-muted">
         A workspace administrator must approve ongoing management for this saved connection.
         Investigation stays read-only. Existing manual hooks are not adopted or removed.
@@ -117,7 +117,7 @@ export function GitLabManagementPanel({
         <button
           type="button"
           disabled={busy}
-          className="rounded border border-line-strong px-3 py-2"
+          className="sre-action"
           onClick={() =>
             void run(async () => {
               setStatus(await api.status(connectorId));
@@ -129,7 +129,7 @@ export function GitLabManagementPanel({
         <button
           type="button"
           disabled={busy}
-          className="rounded border border-line-strong px-3 py-2"
+          className="sre-action"
           onClick={() =>
             void run(async () => {
               setReview(await api.preview(connectorId, destination));
@@ -237,7 +237,7 @@ export function GitLabManagementPanel({
               autoComplete="new-password"
               value={token}
               onChange={(event) => setToken(event.target.value)}
-              className="mt-1 w-full rounded border border-line-strong bg-input px-3 py-2"
+              className="sre-field mt-1 w-full bg-input"
             />
           </label>
           <p className="text-xs text-ink-muted">
@@ -258,7 +258,7 @@ export function GitLabManagementPanel({
           <button
             type="button"
             disabled={busy || !approved || !token.trim()}
-            className="rounded bg-strong px-3 py-2 font-medium text-on-strong"
+            className="sre-action sre-action-primary"
             onClick={() =>
               void run(async () => {
                 await api.authorize(connectorId, {

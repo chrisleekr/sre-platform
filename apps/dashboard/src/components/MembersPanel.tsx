@@ -66,15 +66,11 @@ export function MembersPanel({
     <section className="rounded-xl border border-line bg-surface p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold">Members</h1>
+          <h1 className="text-xl font-medium">Members</h1>
           <p className="text-sm text-ink-muted">People with access to this workspace.</p>
         </div>
         {canManage && (
-          <button
-            type="button"
-            className="rounded-lg bg-strong px-4 py-2 text-sm font-semibold text-on-strong"
-            onClick={onInvite}
-          >
+          <button type="button" className="sre-action sre-action-primary" onClick={onInvite}>
             Invite member
           </button>
         )}
@@ -179,7 +175,7 @@ export function MembersPanel({
       </div>
       {canManage && pendingInvitations.length > 0 && (
         <section className="mt-6">
-          <h2 className="font-semibold">Pending invitations</h2>
+          <h2 className="font-medium">Pending invitations</h2>
           <ul className="mt-2 space-y-2">
             {pendingInvitations.map((invitation) => (
               <li
@@ -220,16 +216,12 @@ export function MembersPanel({
             approvals remain attributed to them.
           </p>
           <SetupActions>
-            <button
-              type="button"
-              className="rounded-lg border border-line px-4 py-2"
-              onClick={() => setRemoveTarget(undefined)}
-            >
+            <button type="button" className="sre-action" onClick={() => setRemoveTarget(undefined)}>
               Cancel
             </button>
             <button
               type="button"
-              className="rounded-lg bg-critical px-4 py-2 text-on-strong"
+              className="sre-action sre-action-danger"
               onClick={() => {
                 onRemove(removeTarget.userId);
                 setRemoveTarget(undefined);
@@ -354,7 +346,7 @@ export function MembersPage() {
             );
           }}
         >
-          <h2 className="font-semibold">Invite member</h2>
+          <h2 className="font-medium">Invite member</h2>
           <div className="mt-3 flex flex-wrap gap-3">
             <label className="min-w-56 flex-1 text-sm">
               Email
@@ -363,7 +355,7 @@ export function MembersPage() {
                 required
                 value={inviteEmail}
                 onChange={(event) => setInviteEmail(event.target.value)}
-                className="mt-1 w-full rounded-lg border border-line-strong px-3 py-2"
+                className="sre-field mt-1 w-full"
               />
             </label>
             <label className="text-sm">
@@ -371,7 +363,7 @@ export function MembersPage() {
               <select
                 value={inviteRole}
                 onChange={(event) => setInviteRole(event.target.value as 'admin' | 'member')}
-                className="mt-1 block rounded-lg border border-line-strong px-3 py-2"
+                className="sre-field mt-1 block"
               >
                 <option value="member">Member</option>
                 <option value="admin">Admin</option>
@@ -379,14 +371,10 @@ export function MembersPage() {
             </label>
           </div>
           <div className="mt-3 flex gap-2">
-            <button type="submit" className="rounded-lg bg-strong px-4 py-2 text-on-strong">
+            <button type="submit" className="sre-action sre-action-primary">
               Send invitation
             </button>
-            <button
-              type="button"
-              className="rounded-lg border border-line px-4 py-2"
-              onClick={() => setInviting(false)}
-            >
+            <button type="button" className="sre-action" onClick={() => setInviting(false)}>
               Cancel
             </button>
           </div>

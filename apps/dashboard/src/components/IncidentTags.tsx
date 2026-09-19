@@ -91,7 +91,7 @@ export function IncidentTags(props: {
                   key={row.id}
                   type="button"
                   disabled={pending}
-                  className="mr-2 mt-2 rounded-md border border-line px-2 py-1 text-sm"
+                  className="sre-action mr-2 mt-2"
                   onClick={() => {
                     setDraft(row.tag);
                     setSuggestionId(row.id);
@@ -124,7 +124,7 @@ export function IncidentTags(props: {
               disabled={pending}
               onChange={(event) => setDraft(event.target.value)}
               placeholder="cause:deployment"
-              className="min-w-0 flex-1 rounded-md border border-line bg-canvas px-3 py-2 text-sm"
+              className="sre-field min-w-0 flex-1 bg-canvas"
             />
             <datalist id="incident-tag-history">
               {props.data.historySuggestions.map((row) => (
@@ -133,11 +133,7 @@ export function IncidentTags(props: {
                 </option>
               ))}
             </datalist>
-            <button
-              type="submit"
-              disabled={pending}
-              className="rounded-md border border-line px-3 py-2 text-sm font-medium"
-            >
+            <button type="submit" disabled={pending} className="sre-action">
               {suggestionId ? 'Apply suggestion' : 'Save tag'}
             </button>
           </form>

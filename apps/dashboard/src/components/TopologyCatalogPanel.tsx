@@ -176,7 +176,7 @@ export function TopologyCatalogPanel({
   return (
     <section className="min-w-0">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold">Service catalog</h2>
+        <h2 className="text-lg font-medium">Service catalog</h2>
         {!graph.historicalAt && canConfigure && (
           <TopologyCatalogManager
             graph={graph}
@@ -288,7 +288,7 @@ export function TopologyCatalogPanel({
                   setSelectedName(null);
                   setSelectedIncidentId('');
                 }}
-                className="mt-1 block w-full rounded border border-line-strong bg-surface px-3 py-1.5 text-sm"
+                className="sre-field mt-1 block w-full"
               >
                 <option value="">All environments (combined runtime)</option>
                 {environments.map((name) => (
@@ -307,7 +307,7 @@ export function TopologyCatalogPanel({
                 aria-label="Search services"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                className="mt-1 block w-full min-w-0 rounded border border-line-strong bg-surface px-3 py-1.5 text-sm text-ink focus:border-info-line focus:outline-none"
+                className="sre-field mt-1 block w-full min-w-0"
               />
             </label>
             <label className="min-w-0 text-xs font-medium text-ink-muted">
@@ -317,7 +317,7 @@ export function TopologyCatalogPanel({
                 disabled={Boolean(graph.historicalAt)}
                 value={statusFilter}
                 onChange={(event) => setStatusFilter(event.target.value as ServiceStatus | 'all')}
-                className="mt-1 block w-full min-w-0 rounded border border-line-strong bg-surface px-3 py-1.5 text-sm text-ink focus:border-info-line focus:outline-none"
+                className="sre-field mt-1 block w-full min-w-0"
               >
                 <option value="all">All statuses</option>
                 {TOPOLOGY_STATUSES.map(({ status, label }) => (
@@ -334,7 +334,7 @@ export function TopologyCatalogPanel({
                 disabled={Boolean(graph.historicalAt)}
                 value={sourceFilter}
                 onChange={(event) => setSourceFilter(event.target.value as TopologySource | 'all')}
-                className="mt-1 block w-full min-w-0 rounded border border-line-strong bg-surface px-3 py-1.5 text-sm text-ink focus:border-info-line focus:outline-none"
+                className="sre-field mt-1 block w-full min-w-0"
               >
                 <option value="all">All sources</option>
                 <option value="kubernetes">Kubernetes</option>
@@ -353,7 +353,7 @@ export function TopologyCatalogPanel({
                     setSelectedName(null);
                     setSelectedIncidentId(event.target.value);
                   }}
-                  className="mt-1 block w-full min-w-0 rounded border border-line-strong bg-surface px-3 py-1.5 text-sm text-ink focus:border-info-line focus:outline-none"
+                  className="sre-field mt-1 block w-full min-w-0"
                 >
                   <option value="">No incident overlay</option>
                   {currentActiveIncidents.map((incident) => (

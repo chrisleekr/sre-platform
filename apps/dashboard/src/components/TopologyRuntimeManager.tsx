@@ -147,7 +147,7 @@ export function TopologyRuntimeManager({
                   type="button"
                   disabled={busy}
                   onClick={() => edit(binding)}
-                  className="text-info underline"
+                  className="text-accent underline"
                 >
                   Edit mapping
                 </button>
@@ -294,7 +294,7 @@ export function TopologyRuntimeManager({
           )}
           <button
             disabled={busy || !selected}
-            className="justify-self-start rounded bg-strong px-4 py-2 text-sm text-on-strong"
+            className="sre-action sre-action-primary justify-self-start"
           >
             {busy
               ? 'Saving…'

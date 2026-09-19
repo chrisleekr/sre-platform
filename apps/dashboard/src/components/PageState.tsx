@@ -40,11 +40,7 @@ export function StatePanel({
         <p className="mt-1 max-w-2xl text-sm leading-6 text-ink-muted">{description}</p>
       )}
       {onRetry && (
-        <button
-          type="button"
-          onClick={onRetry}
-          className="mt-4 w-fit rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm font-semibold text-ink-secondary hover:bg-surface-subtle hover:text-ink"
-        >
+        <button type="button" onClick={onRetry} className="sre-action mt-4 w-fit">
           Retry
         </button>
       )}

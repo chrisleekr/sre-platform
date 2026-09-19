@@ -288,7 +288,7 @@ export function SettingsPanel({ embedded = false }: { embedded?: boolean } = {})
             aria-labelledby={`${group.id}-title`}
             className="mt-4 rounded-lg border border-line bg-surface p-4"
           >
-            <h2 id={`${group.id}-title`} className="font-semibold text-ink">
+            <h2 id={`${group.id}-title`} className="font-medium text-ink">
               {group.title}
             </h2>
             <p className="mt-1 text-sm text-ink-muted">{group.description}</p>
@@ -374,7 +374,7 @@ export function SettingsPanel({ embedded = false }: { embedded?: boolean } = {})
                             setInvalidKey(null);
                             setSaveError(null);
                           }}
-                          className="rounded border border-line-strong px-2 py-1.5 text-sm disabled:bg-surface-strong"
+                          className="sre-field disabled:bg-surface-strong"
                         />
                         <span id={descriptionId} className="text-xs text-ink-muted">
                           {archivePolicy && !archiveEnabled
@@ -387,7 +387,7 @@ export function SettingsPanel({ embedded = false }: { embedded?: boolean } = {})
                         aria-label={`Save ${setting.key}`}
                         disabled={pending}
                         onClick={() => void saveNumeric(setting.key, setting.value)}
-                        className="rounded bg-strong px-3 py-1.5 text-sm font-medium text-on-strong disabled:bg-ink-faint"
+                        className="sre-action sre-action-primary"
                       >
                         Save
                       </button>

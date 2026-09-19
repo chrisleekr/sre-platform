@@ -41,7 +41,7 @@ function EvidenceDetailView({ detail }: { detail: EvidenceDetail }) {
       : null;
   return (
     <div className="min-w-0 space-y-3">
-      <h3 className="break-words font-semibold">{toolDisplayLabel(detail.tool)}</h3>
+      <h3 className="break-words font-medium">{toolDisplayLabel(detail.tool)}</h3>
       {detail.summary && <p className="break-all text-sm">{detail.summary}</p>}
       <p className="text-xs text-ink-muted">
         Recorded {formatAbsoluteTime(detail.recordedAt)} · Execution {detail.latencyMs} ms ·{' '}
@@ -52,7 +52,7 @@ function EvidenceDetailView({ detail }: { detail: EvidenceDetail }) {
           href={detail.referenceUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex min-h-11 items-center break-all text-info underline"
+          className="inline-flex min-h-11 items-center break-all text-accent underline"
         >
           Open provider reference ↗
         </a>
@@ -231,7 +231,7 @@ export function IncidentEvidenceWorkspace({
                   setQuery(event.target.value);
                   setPage(0);
                 }}
-                className="mt-1 min-h-11 w-full min-w-0 rounded border border-line-strong p-2"
+                className="sre-field mt-1 min-h-11 w-full min-w-0 p-2"
               />
             </label>
             <label className="min-w-0 text-xs">
@@ -242,7 +242,7 @@ export function IncidentEvidenceWorkspace({
                   setSource(event.target.value);
                   setPage(0);
                 }}
-                className="mt-1 min-h-11 w-full min-w-0 rounded border border-line-strong p-2"
+                className="sre-field mt-1 min-h-11 w-full min-w-0 p-2"
               >
                 <option value="">All sources</option>
                 {[
@@ -260,7 +260,7 @@ export function IncidentEvidenceWorkspace({
                   setOutcome(event.target.value);
                   setPage(0);
                 }}
-                className="mt-1 min-h-11 w-full min-w-0 rounded border border-line-strong p-2"
+                className="sre-field mt-1 min-h-11 w-full min-w-0 p-2"
               >
                 <option value="">All outcomes</option>
                 {[...new Set(evidence.map((item) => item.outcome))].map((value) => (
@@ -366,7 +366,7 @@ export function IncidentEvidenceWorkspace({
           className="mb-4 rounded border border-assessment-line bg-assessment-soft p-3 text-sm"
           aria-label="Originating claim"
         >
-          <h3 className="font-semibold text-assessment">Opened from this assessment</h3>
+          <h3 className="font-medium text-assessment">Opened from this assessment</h3>
           <p className="mt-1 whitespace-pre-wrap break-words">
             {[...context].slice(0, 600).join('')}
             {[...context].length > 600 ? '…' : ''}
@@ -376,11 +376,7 @@ export function IncidentEvidenceWorkspace({
       {content}
       {selectedId && (
         <SetupActions>
-          <button
-            type="button"
-            onClick={onBack}
-            className="min-h-11 rounded border border-line-strong px-3 py-2"
-          >
+          <button type="button" onClick={onBack} className="sre-action min-h-11">
             Back to evidence
           </button>
         </SetupActions>

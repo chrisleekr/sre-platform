@@ -3,8 +3,6 @@ import { BrowserRouter } from 'react-router-dom';
 import { LiveIncidentConversation } from '../../src/components/incident-conversation/live';
 import { triageWorkspace } from './incident-triage-data.fixture';
 import '../../src/index.css';
-import '@fontsource-variable/ibm-plex-sans';
-import '@fontsource/ibm-plex-mono';
 
 const credentials = async () => ({ kind: 'bearer' as const, token: 'isolated-fixture' });
 createRoot(document.getElementById('root')!).render(

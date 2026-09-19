@@ -59,7 +59,7 @@ export function CodeContextPanel({
     >
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 id="code-context-title" className="font-semibold text-ink">
+          <h2 id="code-context-title" className="font-medium text-ink">
             Code context
           </h2>
           <p className="mt-1 text-xs text-ink-muted">
@@ -109,7 +109,7 @@ export function CodeContextPanel({
                       href={href}
                       target="_blank"
                       rel="noreferrer"
-                      className="break-words font-semibold text-info underline"
+                      className="break-words font-semibold text-accent underline"
                     >
                       {repository.fullName}
                     </a>
@@ -138,7 +138,7 @@ export function CodeContextPanel({
                           repository.path,
                         )
                       }
-                      className="mt-2 min-h-9 rounded border border-line-strong bg-surface px-2 py-1 text-xs font-medium text-ink-secondary hover:bg-surface-subtle disabled:opacity-50"
+                      className="sre-action mt-2 min-h-9 text-xs"
                     >
                       {confirmingRepositoryId === relationshipKey
                         ? 'Confirming…'
@@ -150,7 +150,7 @@ export function CodeContextPanel({
             })}
           </ul>
           <div className="min-w-0">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+            <h3 className="text-xs font-medium uppercase tracking-wide text-ink-muted">
               Recent synchronized changes
             </h3>
             {events.length === 0 ? (

@@ -7,7 +7,7 @@ export function TopologySummary({ graph }: { graph: TopologyGraph }) {
   ).length;
   return (
     <div>
-      <h2 className="text-sm font-semibold text-ink">
+      <h2 className="text-sm font-medium text-ink">
         {graph.historicalAt ? 'Recorded topology' : 'Operational overview'}
       </h2>
       <p className="text-xs text-ink-muted">
@@ -104,7 +104,7 @@ export function TopologyRepresentation({
           type="button"
           aria-pressed={value === option}
           onClick={() => onChange(option)}
-          className="rounded border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-ink-secondary hover:bg-surface-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus aria-pressed:border-line-strong aria-pressed:bg-line"
+          className="sre-action focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus aria-pressed:border-line-strong aria-pressed:bg-line"
         >
           {option === 'map' ? 'Map' : 'List'}
         </button>

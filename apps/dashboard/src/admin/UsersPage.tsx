@@ -80,22 +80,20 @@ export function UsersPage() {
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Email or subject"
-          className="rounded-lg border border-line-strong bg-canvas px-3 py-2"
+          className="sre-field bg-canvas"
         />
         <select
           aria-label="User status"
           value={status}
           onChange={(event) => setStatus(event.target.value)}
-          className="rounded-lg border border-line-strong bg-canvas px-3 py-2"
+          className="sre-field bg-canvas"
         >
           <option value="">All statuses</option>
           <option value="active">Active</option>
           <option value="disabled">Disabled</option>
           <option value="deleted">Deleted</option>
         </select>
-        <button className="rounded-lg bg-strong px-4 py-2 font-semibold text-on-strong">
-          Apply
-        </button>
+        <button className="sre-action sre-action-primary">Apply</button>
       </form>
       {error && <InlineAlert message={error} />}
       <div className="grid gap-4 xl:grid-cols-2">
@@ -105,13 +103,10 @@ export function UsersPage() {
             (membership) => membership.status === 'active',
           );
           return (
-            <article
-              key={user.id}
-              className="min-w-0 rounded-xl border border-line bg-surface p-5 shadow-sm"
-            >
+            <article key={user.id} className="min-w-0 rounded-xl border border-line bg-surface p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h2 className="truncate text-base font-bold">
+                  <h2 className="truncate text-base font-medium">
                     {user.email ?? 'Deleted account'}
                   </h2>
                   <p className="mt-1 truncate font-mono text-xs text-ink-faint">{user.subject}</p>
@@ -198,7 +193,7 @@ export function UsersPage() {
                       setReasons((current) => ({ ...current, [user.id]: event.target.value }))
                     }
                     placeholder="Reason required for disable or delete"
-                    className="mt-4 w-full rounded-lg border border-line-strong bg-canvas px-3 py-2 text-sm"
+                    className="sre-field mt-4 w-full bg-canvas"
                   />
                   <div className="mt-3 flex flex-wrap gap-2">
                     {user.status === 'active' ? (
@@ -213,7 +208,7 @@ export function UsersPage() {
                             reason,
                           )
                         }
-                        className="rounded-lg border border-critical-line px-3 py-2 text-sm font-semibold text-critical hover:bg-critical-soft disabled:opacity-60"
+                        className="rounded-md border border-critical-line px-3 py-2 text-sm font-semibold text-critical hover:bg-critical-soft disabled:opacity-60"
                       >
                         Disable
                       </button>
@@ -222,7 +217,7 @@ export function UsersPage() {
                         type="button"
                         disabled={Boolean(busy)}
                         onClick={() => void run(`${user.id}:enable`, `/users/${user.id}/enable`)}
-                        className="rounded-lg bg-strong px-3 py-2 text-sm font-semibold text-on-strong disabled:opacity-60"
+                        className="sre-action sre-action-primary"
                       >
                         Enable
                       </button>
@@ -233,7 +228,7 @@ export function UsersPage() {
                       onClick={() =>
                         void run(`${user.id}:signout`, `/users/${user.id}/sign-out-everywhere`)
                       }
-                      className="rounded-lg border border-line-strong px-3 py-2 text-sm font-semibold disabled:opacity-60"
+                      className="sre-action"
                     >
                       Sign out everywhere
                     </button>
@@ -244,7 +239,7 @@ export function UsersPage() {
                         onClick={() =>
                           void run(`${user.id}:revoke`, `/users/${user.id}/revoke-admin`)
                         }
-                        className="rounded-lg border border-warning-line px-3 py-2 text-sm font-semibold text-warning disabled:opacity-60"
+                        className="rounded-md border border-warning-line px-3 py-2 text-sm font-semibold text-warning disabled:opacity-60"
                       >
                         Revoke admin
                       </button>
@@ -260,7 +255,7 @@ export function UsersPage() {
                         onClick={() =>
                           void run(`${user.id}:grant`, `/users/${user.id}/grant-admin`)
                         }
-                        className="rounded-lg border border-line-strong px-3 py-2 text-sm font-semibold disabled:opacity-50"
+                        className="sre-action"
                       >
                         Grant admin
                       </button>
@@ -271,7 +266,7 @@ export function UsersPage() {
                       onClick={() =>
                         void run(`${user.id}:delete`, `/users/${user.id}`, 'DELETE', reason)
                       }
-                      className="ml-auto rounded-lg bg-critical-solid px-3 py-2 text-sm font-semibold text-on-strong disabled:opacity-60"
+                      className="sre-action sre-action-danger ml-auto"
                     >
                       Delete account
                     </button>

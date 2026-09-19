@@ -132,7 +132,7 @@ export function ScimProvisioningSetting(props: Props) {
             type="button"
             disabled={props.disabled || busy}
             onClick={() => void save(true, true)}
-            className="rounded-md bg-strong px-3 py-2 text-xs font-semibold text-on-strong disabled:opacity-50"
+            className="sre-action sre-action-primary text-xs"
           >
             Enable SCIM
           </button>
@@ -146,7 +146,7 @@ export function ScimProvisioningSetting(props: Props) {
             value={attribute}
             disabled={props.disabled || busy}
             onChange={(event) => setAttribute(event.target.value as 'externalId' | 'userName')}
-            className="rounded-md border border-line-strong bg-canvas px-3 py-2"
+            className="sre-field bg-canvas"
           >
             <option value="externalId">SCIM externalId</option>
             <option value="userName">SCIM userName</option>
@@ -184,7 +184,7 @@ export function ScimProvisioningSetting(props: Props) {
             <button
               type="button"
               onClick={() => void copy(endpoint, 'URL')}
-              className="rounded-md border border-line-strong bg-surface px-3 py-2 text-xs font-semibold"
+              className="sre-action text-xs"
             >
               Copy URL
             </button>
@@ -201,7 +201,7 @@ export function ScimProvisioningSetting(props: Props) {
               type="button"
               disabled={props.disabled || busy}
               onClick={() => void save(true, false)}
-              className="rounded-md border border-line-strong bg-surface px-3 py-2 text-xs font-semibold disabled:opacity-50"
+              className="sre-action text-xs"
             >
               Save policy
             </button>
@@ -236,7 +236,7 @@ export function ScimProvisioningSetting(props: Props) {
             <button
               type="button"
               onClick={() => void copy(token, 'Token')}
-              className="rounded-md border border-line-strong bg-surface px-3 py-2 text-xs font-semibold"
+              className="sre-action text-xs"
             >
               Copy token
             </button>
@@ -296,7 +296,7 @@ export function ScimProvisioningSetting(props: Props) {
                 type="button"
                 disabled={startIndex === 1}
                 onClick={() => setStartIndex(Math.max(1, startIndex - PAGE_SIZE))}
-                className="rounded-md border border-line-strong px-3 py-2 text-xs font-semibold disabled:opacity-40"
+                className="sre-action text-xs"
               >
                 Previous
               </button>
@@ -304,7 +304,7 @@ export function ScimProvisioningSetting(props: Props) {
                 type="button"
                 disabled={startIndex + PAGE_SIZE > accounts.total}
                 onClick={() => setStartIndex(startIndex + PAGE_SIZE)}
-                className="rounded-md border border-line-strong px-3 py-2 text-xs font-semibold disabled:opacity-40"
+                className="sre-action text-xs"
               >
                 Next
               </button>

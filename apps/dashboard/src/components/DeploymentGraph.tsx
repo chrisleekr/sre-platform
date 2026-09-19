@@ -258,14 +258,14 @@ export function DeploymentGraph({
         <button
           type="button"
           onClick={fitServices}
-          className="rounded border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-ink-secondary hover:bg-surface-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+          className="sre-action focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
         >
           Fit services
         </button>
         <button
           type="button"
           onClick={resetView}
-          className="rounded border border-line-strong bg-surface px-3 py-1.5 text-sm font-medium text-ink-secondary hover:bg-surface-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+          className="sre-action focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
         >
           Reset view
         </button>

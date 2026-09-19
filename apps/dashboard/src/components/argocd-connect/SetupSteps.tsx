@@ -41,7 +41,7 @@ export function ArgoCdSetupSteps({ view }: { view: ArgoCdWizardViewModel }) {
         <div className="flex min-w-0 flex-col gap-4">
           <ConnectorSetupGuide provider="argocd" />
           <div>
-            <h2 className="font-semibold text-ink">Connect to one Argo CD server</h2>
+            <h2 className="font-medium text-ink">Connect to one Argo CD server</h2>
             <p className="mt-1 text-sm text-ink-muted">
               Project access is configured separately in the next steps. Enter the server address
               here. For HTTPS, choose how to verify its certificate.
@@ -62,7 +62,7 @@ export function ArgoCdSetupSteps({ view }: { view: ArgoCdWizardViewModel }) {
               }
               value={baseUrl}
               onChange={(event) => setBaseUrl(event.target.value)}
-              className="mt-1 min-w-0 w-full rounded border border-line-strong px-2 py-1.5"
+              className="sre-field mt-1 min-w-0 w-full"
             />
           </label>
           <p id="argocd-url-help" className="text-xs text-ink-muted">
@@ -114,7 +114,7 @@ export function ArgoCdSetupSteps({ view }: { view: ArgoCdWizardViewModel }) {
                 value={caCert}
                 onChange={(event) => setCaCert(event.target.value)}
                 rows={5}
-                className="mt-1 min-w-0 w-full resize-y rounded border border-line-strong px-2 py-1.5 font-instrument text-xs"
+                className="sre-field mt-1 min-w-0 w-full resize-y font-instrument text-xs"
               />
               <span className="mt-1 block text-xs font-normal text-ink-muted">
                 {mode === 'edit' && initialSettings?.caConfigured
@@ -142,7 +142,7 @@ export function ArgoCdSetupSteps({ view }: { view: ArgoCdWizardViewModel }) {
             <button
               type="button"
               onClick={continueFromServer}
-              className="self-start rounded bg-strong px-3 py-1.5 text-on-strong"
+              className="sre-action sre-action-primary self-start"
             >
               Continue
             </button>
@@ -153,7 +153,7 @@ export function ArgoCdSetupSteps({ view }: { view: ArgoCdWizardViewModel }) {
       {step === 2 && (
         <div className="flex min-w-0 flex-col gap-4">
           <div>
-            <h2 className="font-semibold text-ink">Choose Argo CD projects and applications</h2>
+            <h2 className="font-medium text-ink">Choose Argo CD projects and applications</h2>
             <p className="mt-1 text-sm text-ink-muted">
               Each project gets its own credential and verification result. List available projects
               from an authenticated Argo CD CLI, then add only the projects this tenant needs.
@@ -205,7 +205,7 @@ export function ArgoCdSetupSteps({ view }: { view: ArgoCdWizardViewModel }) {
                         ),
                       )
                     }
-                    className="mt-1 min-w-0 w-full rounded border border-line-strong px-2 py-1.5"
+                    className="sre-field mt-1 min-w-0 w-full"
                   />
                 </label>
                 {binding.applications.map((scope, scopeIndex) => (
@@ -235,7 +235,7 @@ export function ArgoCdSetupSteps({ view }: { view: ArgoCdWizardViewModel }) {
                               ),
                             )
                           }
-                          className="mt-1 min-w-0 w-full rounded border border-line-strong px-2 py-1.5"
+                          className="sre-field mt-1 min-w-0 w-full"
                         />
                       </label>
                     )}
@@ -263,7 +263,7 @@ export function ArgoCdSetupSteps({ view }: { view: ArgoCdWizardViewModel }) {
                             ),
                           )
                         }
-                        className="mt-1 min-w-0 w-full rounded border border-line-strong px-2 py-1.5"
+                        className="sre-field mt-1 min-w-0 w-full"
                       />
                     </label>
                     {binding.applications.length > 1 && (
@@ -313,7 +313,7 @@ export function ArgoCdSetupSteps({ view }: { view: ArgoCdWizardViewModel }) {
                         ),
                       )
                     }
-                    className="rounded border border-line-strong px-2 py-1 text-xs font-medium"
+                    className="sre-action text-xs"
                   >
                     Add application scope
                   </button>
@@ -338,7 +338,7 @@ export function ArgoCdSetupSteps({ view }: { view: ArgoCdWizardViewModel }) {
             type="button"
             disabled={projects.length >= 50}
             onClick={() => setProjects((current) => [...current, newProject('')])}
-            className="self-start rounded border border-line-strong px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+            className="sre-action self-start"
           >
             Add project
           </button>
@@ -347,7 +347,7 @@ export function ArgoCdSetupSteps({ view }: { view: ArgoCdWizardViewModel }) {
             <input
               value={labelSelector}
               onChange={(event) => setLabelSelector(event.target.value)}
-              className="mt-1 min-w-0 w-full rounded border border-line-strong px-2 py-1.5"
+              className="sre-field mt-1 min-w-0 w-full"
             />
           </label>
           {error && (
@@ -362,7 +362,7 @@ export function ArgoCdSetupSteps({ view }: { view: ArgoCdWizardViewModel }) {
             <button
               type="button"
               onClick={continueFromProjects}
-              className="rounded bg-strong px-3 py-1.5 text-on-strong"
+              className="sre-action sre-action-primary"
             >
               Continue
             </button>

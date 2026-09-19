@@ -79,7 +79,7 @@ export function IncidentRelationships({
       className="@container min-w-0 rounded-lg border border-info-line bg-info-soft p-4"
       aria-labelledby="relations-title"
     >
-      <h2 id="relations-title" className="font-semibold text-info">
+      <h2 id="relations-title" className="font-medium text-info">
         Incident graph
       </h2>
       <p className="mt-1 text-sm text-info">
@@ -106,7 +106,7 @@ export function IncidentRelationships({
             {causalChildren.map((relation) => (
               <li key={relation.id}>
                 <Link
-                  className="font-semibold text-info underline"
+                  className="font-semibold text-accent underline"
                   to={incidentPath(relation.sourceIncidentId)}
                 >
                   {relation.sourceIncident?.title || relation.sourceIncidentId.slice(0, 8)}
@@ -159,7 +159,7 @@ export function IncidentRelationships({
                     {relation.type.replaceAll('_', ' ')}
                   </span>
                   {' · '}
-                  <Link className="font-semibold text-info underline" to={incidentPath(otherId)}>
+                  <Link className="font-semibold text-accent underline" to={incidentPath(otherId)}>
                     {otherIncident?.title || otherId.slice(0, 8)}
                   </Link>
                 </div>

@@ -76,7 +76,7 @@ export function VerifyEmailPage() {
   }
   return (
     <PublicShell>
-      <h1 className="text-2xl font-bold">Check your work email</h1>
+      <h1 className="text-2xl font-medium">Check your work email</h1>
       {(session.error || session.isStarting) && (
         <SignInStartNotice
           error={session.error?.message}
@@ -141,7 +141,7 @@ export function VerifyEmailPage() {
       <div className="mt-2 flex flex-wrap gap-4 text-sm">
         <button
           type="button"
-          className="font-semibold text-info underline disabled:text-ink-muted"
+          className="font-semibold text-accent underline disabled:text-ink-muted"
           disabled={
             saving || session.isStarting || !proof || proof.resendAt > now || proof.expiresAt <= now
           }
@@ -154,14 +154,14 @@ export function VerifyEmailPage() {
         {retry ? (
           <button
             type="button"
-            className="font-semibold text-info underline"
+            className="font-semibold text-accent underline"
             disabled={saving || session.isStarting}
             onClick={() => session.signIn({ providerId: retry.providerId }, retry)}
           >
             Restart this sign-in
           </button>
         ) : (
-          <Link className="font-semibold text-info underline" to="/sign-in">
+          <Link className="font-semibold text-accent underline" to="/sign-in">
             Return to sign-in
           </Link>
         )}

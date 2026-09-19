@@ -120,7 +120,7 @@ function SelectedIncident({
     <div className="mt-3 border-l-2 border-accent pl-3 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <a
-          className="font-medium text-info underline"
+          className="font-medium text-accent underline"
           href={`/w/incidents/${encodeURIComponent(incidentId)}`}
         >
           Open incident
@@ -129,7 +129,7 @@ function SelectedIncident({
           type="button"
           onClick={refresh}
           disabled={loading}
-          className="text-xs text-info underline disabled:opacity-50"
+          className="text-xs text-accent underline disabled:opacity-50"
         >
           Refresh incident matches
         </button>
@@ -190,7 +190,7 @@ function SelectedIncident({
                     type="button"
                     disabled={!present || error}
                     onClick={() => onSelect(subject.key)}
-                    className="mt-2 text-xs font-medium text-info underline disabled:opacity-50"
+                    className="mt-2 text-xs font-medium text-accent underline disabled:opacity-50"
                   >
                     Inspect {subject.name}
                   </button>

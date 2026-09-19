@@ -21,7 +21,7 @@ export function TopologyImpact({
       aria-label="Dependency impact"
       className="rounded-lg border border-line bg-surface p-4 text-sm"
     >
-      <h2 className="font-semibold break-words">Dependency impact: {service}</h2>
+      <h2 className="font-medium break-words">Dependency impact: {service}</h2>
       <p className="mt-1 text-xs text-ink-muted">
         If this service fails, these callers may be affected. Known calls and declarations model
         possible exposure, not observed outages or proven protection.
@@ -89,7 +89,7 @@ export function TopologyImpact({
                           <button
                             type="button"
                             onClick={() => onSelect(node.name, node.subjectKey)}
-                            className="break-all text-info underline"
+                            className="break-all text-accent underline"
                           >
                             {node.name}
                           </button>
@@ -123,7 +123,7 @@ export function TopologyImpact({
                     <li key={node.subjectKey ?? node.name}>
                       <button
                         type="button"
-                        className="sre-hit-target break-all text-info underline"
+                        className="sre-hit-target break-all text-accent underline"
                         onClick={() => onSelect(node.name, node.subjectKey)}
                       >
                         {node.name}
