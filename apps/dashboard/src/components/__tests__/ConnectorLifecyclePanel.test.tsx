@@ -84,6 +84,9 @@ test('selects readable incidents and signals, previews evidence, and binds with 
     connectorVersion: 7,
     reason: 'Checked the exact provider test',
   });
+  expect(body).not.toHaveProperty('startsAt');
+  expect(body).not.toHaveProperty('verified');
+  expect(body).not.toHaveProperty('scope');
 });
 test('a failed signal load offers a retry that reloads the same incident', async () => {
   vi.mocked(authenticatedFetch)
@@ -141,6 +144,53 @@ test('changing a provider monitor discards the earlier preview', async () => {
   await screen.findByText(/Verified episode:/);
   fireEvent.change(screen.getByLabelText('Provider monitor ID'), { target: { value: '74' } });
   await waitFor(() => expect(screen.queryByText('Bind this episode')).toBeNull());
+});
+test('an unverified preview shows an operator sentence, never the provider reason code', async () => {
+  vi.mocked(authenticatedFetch)
+    .mockReset()
+    .mockResolvedValueOnce(
+      Response.json({ signals: [{ id: 'signal-internal', summary: 'Checkout', state: 'firing' }] }),
+    )
+    .mockResolvedValueOnce(
+      Response.json({ verified: false, reason: 'episode_not_retained' }, { status: 422 }),
+    )
+    .mockResolvedValueOnce(
+      Response.json({ verified: false, reason: 'future_provider_code' }, { status: 422 }),
+    );
+  render(
+    <ConnectorLifecyclePanel connector={connector} getCredentials={getCredentials} canConfigure />,
+  );
+  fireEvent.change(screen.getByLabelText('Open incident'), {
+    target: { value: 'incident-internal' },
+  });
+  await screen.findByText('Notification: Checkout (firing)');
+  fireEvent.change(screen.getByLabelText('Provider signal'), {
+    target: { value: 'signal-internal' },
+  });
+  fireEvent.change(screen.getByLabelText('Provider monitor ID'), { target: { value: '73' } });
+  fireEvent.click(screen.getByText('Preview provider evidence'));
+  expect((await screen.findByRole('status')).textContent).toBe(
+    'The provider no longer retains this episode.',
+  );
+  fireEvent.click(screen.getByText('Preview provider evidence'));
+  await screen.findByText('Provider evidence could not be verified.');
+  expect(screen.queryByText(/_/)).toBeNull();
+});
+test('snapshot connectors are not pointed at a binding they cannot make', () => {
+  render(
+    <ConnectorLifecyclePanel
+      connector={{
+        ...connector,
+        type: 'kubernetes',
+        capabilities: { ...connector.capabilities!, alertLifecycle: 'structured_snapshot' },
+      }}
+      getCredentials={getCredentials}
+      canConfigure
+    />,
+  );
+  expect(screen.getByText(/no provider alert episode to bind/)).toBeDefined();
+  expect(screen.queryByText(/exact saved monitor binding/)).toBeNull();
+  expect(screen.queryByText('Preview provider evidence')).toBeNull();
 });
 test('evidence-only connectors disclose missing lifecycle coverage and expose no binding action', () => {
   render(
@@ -204,7 +254,13 @@ test('Datadog cycle association is explicit, keeps read-only reconciliation avai
     target: { value: 'legacy-signal' },
   });
   fireEvent.change(screen.getByLabelText('Provider monitor ID'), { target: { value: '127' } });
-  fireEvent.click(screen.getByText('Preview provider evidence'));
+  const previewButton = screen.getByText('Preview provider evidence') as HTMLButtonElement;
+  // A blank scope can never match a Datadog group, so it is caught before a provider read.
+  expect(previewButton.disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText('Exact alert group scope'), {
+    target: { value: 'env:prod' },
+  });
+  fireEvent.click(previewButton);
   await screen.findByText(
     'API evidence verified. Native association requires an explicit cycle key.',
   );
@@ -227,5 +283,6 @@ test('Datadog cycle association is explicit, keeps read-only reconciliation avai
   );
   expect(JSON.parse(String(vi.mocked(authenticatedFetch).mock.calls[3]?.[2]?.body))).toMatchObject({
     cycleKey: 'opaque-cycle',
+    scope: 'env:prod',
   });
 });

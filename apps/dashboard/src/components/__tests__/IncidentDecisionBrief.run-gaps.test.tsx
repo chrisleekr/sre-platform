@@ -72,3 +72,10 @@ test('a run without gaps renders no still-to-verify heading', () => {
   const view = render(<InvestigationResult run={{ ...run, gaps: [] }} />);
   expect(view.queryByText('Still to verify')).toBeNull();
 });
+
+test('the compact summary is cut on code points, so an emoji at the cut stays whole', () => {
+  // 278 ASCII units put the emoji's surrogate pair across the old code-unit cut at 279.
+  const summary = `${'a'.repeat(278)}🔥${'b'.repeat(10)}`;
+  const view = render(<InvestigationResult run={{ ...run, summary }} compact />);
+  expect(view.getByText(`${'a'.repeat(278)}🔥…`)).toBeTruthy();
+});

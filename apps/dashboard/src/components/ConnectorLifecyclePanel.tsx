@@ -1,10 +1,43 @@
-import { productPath } from '../lib/routes';
+import { incidentPath } from '../lib/routes';
 import { useIncidents } from '../lib/useIncidents';
 import { useEffect, useState } from 'react';
 import { authenticatedFetch } from '../lib/authenticatedFetch';
 import type { CredentialGetter } from '../lib/request-credentials';
 import type { ConnectorSummary } from '../lib/connectors';
 import { config } from '../config';
+
+/** A successful preview. The three versions are the optimistic-concurrency token a bind echoes. */
+interface EpisodePreview {
+  startsAt: string;
+  status: string;
+  nativeAssociation?: 'cycle_key_required' | 'awaiting_authenticated_event';
+  signalVersion: number;
+  lifecycleVersion: number;
+  connectorVersion: number;
+}
+
+// The route returns provider readEpisode codes verbatim; operators need the action, not the code.
+const UNVERIFIED_MESSAGES: Record<string, string> = {
+  exact_group_required: 'Enter the exact alert group scope.',
+  invalid_monitor_id: 'The monitor ID is not a valid provider monitor ID.',
+  invalid_monitor_or_event_time:
+    'The monitor ID or the signal time is not valid for this provider.',
+  monitor_identity_mismatch: 'The provider returned a different monitor for this ID.',
+  episode_order_unverified:
+    'The provider shows no trigger for this monitor and group before the signal arrived.',
+  group_state_unverified: 'The provider group state is neither alerting nor cleared.',
+  monitor_state_unavailable: 'The provider monitor is paused or reports neither up nor down.',
+  unsupported_check_family: 'Only uptime checks can be verified.',
+  invalid_episode_time: 'The signal has no usable episode time.',
+  unsupported_period_schema: 'The provider returned history in an unsupported format.',
+  invalid_history_cursor: 'The provider returned an unusable history page.',
+  history_window_exhausted: 'The episode is older than the history the provider returns.',
+  episode_not_retained: 'The provider no longer retains this episode.',
+  ambiguous_episode: 'More than one provider episode matches this signal.',
+  conflicting_provider_evidence: 'Provider history and alert records disagree about this episode.',
+  provider_read_failed: 'The provider could not be read. Check the connection and retry.',
+};
+const UNVERIFIED_FALLBACK = 'Provider evidence could not be verified.';
 
 /** Previews exact provider evidence before an administrator binds a historical signal. */
 function LifecycleBindingForm({
@@ -58,7 +91,7 @@ function LifecycleBindingForm({
   const [cycleKey, setCycleKey] = useState('');
   const [canonicalIncidentId, setCanonicalIncidentId] = useState('');
   const [reason, setReason] = useState('');
-  const [preview, setPreview] = useState<Record<string, unknown> | null>(null);
+  const [preview, setPreview] = useState<EpisodePreview | null>(null);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   async function run(mode: 'preview' | 'bind' | 'reconcile') {
@@ -73,11 +106,18 @@ function LifecycleBindingForm({
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
-            ...preview,
+            ...(mode === 'bind' && preview
+              ? {
+                  signalVersion: preview.signalVersion,
+                  lifecycleVersion: preview.lifecycleVersion,
+                  connectorVersion: preview.connectorVersion,
+                }
+              : {}),
             mode,
             signalId: signalId.trim(),
             monitorId: monitorId.trim(),
-            scope,
+            // A blank scope must reach the server as absent so it fails before any provider read.
+            ...(scope.trim() ? { scope } : {}),
             ...(connector.type === 'datadog' && cycleKey.trim()
               ? { cycleKey: cycleKey.trim() }
               : {}),
@@ -90,13 +130,19 @@ function LifecycleBindingForm({
       if (!response.ok) {
         if (typeof result.canonicalIncidentId === 'string')
           setCanonicalIncidentId(result.canonicalIncidentId);
+        const unverified =
+          typeof result.reason === 'string'
+            ? Object.hasOwn(UNVERIFIED_MESSAGES, result.reason)
+              ? UNVERIFIED_MESSAGES[result.reason]
+              : UNVERIFIED_FALLBACK
+            : undefined;
         throw new Error(
-          [result.error ?? result.reason ?? 'Verification unavailable', result.nextStep]
+          [result.error ?? unverified ?? 'Verification unavailable', result.nextStep]
             .filter(Boolean)
             .join(' '),
         );
       }
-      if (mode === 'preview') setPreview(result);
+      if (mode === 'preview') setPreview(result as unknown as EpisodePreview);
       else {
         setPreview(null);
         setMessage(
@@ -222,7 +268,12 @@ function LifecycleBindingForm({
         <div className="flex flex-wrap gap-2">
           <button
             className="sre-action"
-            disabled={busy || !signalId.trim() || !monitorId.trim()}
+            disabled={
+              busy ||
+              !signalId.trim() ||
+              !monitorId.trim() ||
+              (connector.type === 'datadog' && !scope.trim())
+            }
             onClick={() => void run('preview')}
           >
             Preview provider evidence
@@ -234,8 +285,7 @@ function LifecycleBindingForm({
         {preview && (
           <>
             <p className="text-sm">
-              Verified episode: {String(preview.startsAt)}. Current provider result:{' '}
-              {String(preview.status)}.
+              Verified episode: {preview.startsAt}. Current provider result: {preview.status}.
             </p>
             {preview.nativeAssociation && (
               <p className="text-sm text-warning">
@@ -263,10 +313,7 @@ function LifecycleBindingForm({
         )}
       </>
       {canonicalIncidentId && (
-        <a
-          className="text-sm text-accent underline"
-          href={productPath(`incidents/${canonicalIncidentId}`)}
-        >
+        <a className="text-sm text-accent underline" href={incidentPath(canonicalIncidentId)}>
           Review canonical incident
         </a>
       )}
@@ -286,16 +333,17 @@ export function ConnectorLifecyclePanel(props: {
   canConfigure: boolean;
 }) {
   const { connector, canConfigure } = props;
-  const supportsRead = ['read', 'events_and_read'].includes(
-    connector.capabilities?.alertLifecycle ?? 'none',
-  );
+  const lifecycle = connector.capabilities?.alertLifecycle ?? 'none';
+  const supportsRead = lifecycle === 'read' || lifecycle === 'events_and_read';
   return (
     <section className="mt-6 space-y-3 rounded border border-line p-4">
       <h2 className="font-medium">Alert lifecycle coverage</h2>
       <p className="text-sm text-ink-muted">
-        {connector.capabilities?.alertLifecycle === 'none'
+        {lifecycle === 'none'
           ? 'Evidence access only. This connector cannot authorize incident recovery.'
-          : 'Automatic recovery requires an authenticated provider episode or an exact saved monitor binding. Slack notification wording and model output remain advisory.'}
+          : lifecycle === 'structured_snapshot'
+            ? 'Polled snapshots are evidence only. This connector has no provider alert episode to bind, so it cannot authorize incident recovery.'
+            : 'Automatic recovery requires an authenticated provider episode or an exact saved monitor binding. Slack notification wording and model output remain advisory.'}
       </p>
       {Boolean(connector.lifecycle?.pendingEpisodes) && (
         <p role="status" className="text-sm text-warning">

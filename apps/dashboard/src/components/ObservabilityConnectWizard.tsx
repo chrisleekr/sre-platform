@@ -49,14 +49,14 @@ export function ObservabilityConnectWizard({
     eventToken?: string;
     insecureTlsAcknowledged?: boolean;
     insecureHttpAcknowledged?: boolean;
-  }) => Promise<{ connectorId: string }>;
+  }) => Promise<{ connectorId: string; webhookPath?: string }>;
   onRunTest: (id: string) => Promise<ConnectorTestResult>;
   returnFocusTo?: HTMLElement | null;
   onClose: () => void;
 }) {
   const label = type === 'datadog' ? 'Datadog' : 'Grafana';
   const [step, setStep] = useState(1);
-  const [savedConnectorId, setSavedConnectorId] = useState(connectorId);
+  const [persisted, setPersisted] = useState({ connectorId, webhookPath: '' });
   const [name, setName] = useState(initialName ?? label);
   const [site, setSite] = useState(
     typeof initialSettings?.site === 'string' ? initialSettings.site : 'datadoghq.com',
@@ -168,7 +168,7 @@ export function ObservabilityConnectWizard({
               : undefined
             : token.trim() || undefined;
         const saved = await onSave({
-          ...(savedConnectorId ? { id: savedConnectorId } : {}),
+          ...(persisted.connectorId ? { id: persisted.connectorId } : {}),
           name: name.trim(),
           settings:
             type === 'datadog'
@@ -195,7 +195,7 @@ export function ObservabilityConnectWizard({
           ...(usesHttps && trust === 'insecure' ? { insecureTlsAcknowledged: true } : {}),
           ...(usesHttp && httpAcknowledged ? { insecureHttpAcknowledged: true } : {}),
         });
-        setSavedConnectorId(saved.connectorId);
+        setPersisted({ ...saved, webhookPath: saved.webhookPath ?? '' });
         setResult(await onRunTest(saved.connectorId));
         setStep(4);
       } catch (cause) {
@@ -492,7 +492,7 @@ export function ObservabilityConnectWizard({
           name={name}
           onClose={onClose}
           type={type}
-          connectorId={eventDelivery ? savedConnectorId : undefined}
+          webhookPath={eventDelivery ? persisted.webhookPath : undefined}
         />
       )}
     </SetupDialog>

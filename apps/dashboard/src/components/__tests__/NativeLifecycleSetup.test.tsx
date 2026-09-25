@@ -13,7 +13,6 @@ afterEach(() => {
   dialogs.restore();
 });
 const id = '00000000-0000-4000-8000-000000000073';
-const onSave = async () => ({ connectorId: id });
 const onRunTest = async () => ({
   status: 'healthy' as const,
   reachable: true,
@@ -24,6 +23,8 @@ const onRunTest = async () => ({
 test.each(['datadog', 'grafana'] as const)(
   '%s first native setup immediately exposes the complete endpoint and authentication steps',
   async (type) => {
+    // A webhook key differs from the connector id, so the URL must come from the server.
+    const onSave = async () => ({ connectorId: id, webhookPath: `/webhooks/${type}/webhook-key` });
     render(
       <ObservabilityConnectWizard
         type={type}
@@ -54,7 +55,10 @@ test.each(['datadog', 'grafana'] as const)(
       });
     fireEvent.click(screen.getByRole('button', { name: 'Review' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save and verify' }));
-    expect(await screen.findByText(`https://sre.example/webhooks/${type}/${id}`)).toBeDefined();
+    expect(
+      await screen.findByText(`https://sre.example/webhooks/${type}/webhook-key`),
+    ).toBeDefined();
+    expect(screen.queryByText(new RegExp(id))).toBeNull();
     expect(screen.getByText(/Authorization: Bearer/)).toBeDefined();
     expect(screen.queryByText('independent-event-token')).toBeNull();
   },

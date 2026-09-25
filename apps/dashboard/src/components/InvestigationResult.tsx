@@ -12,6 +12,8 @@ export function InvestigationResult({
   const summary = run ? investigationResultSummary(run) : null;
   if (!run || !summary) return null;
   const gaps = compact ? [] : (run.gaps ?? []);
+  // Count code points so a cut never splits a surrogate pair into a replacement glyph.
+  const characters = [...summary];
   return (
     <section
       className="mt-3 rounded-md border border-line p-3"
@@ -21,7 +23,7 @@ export function InvestigationResult({
         Latest investigation result: {investigationRunOutcomeLabel(run.outcome)}
       </h3>
       <p className="mt-1 whitespace-pre-wrap break-words text-sm text-ink-secondary">
-        {compact && summary.length > 280 ? `${summary.slice(0, 279)}…` : summary}
+        {compact && characters.length > 280 ? `${characters.slice(0, 279).join('')}…` : summary}
       </p>
       {gaps.length > 0 && (
         <>

@@ -8,13 +8,14 @@ export function ObservabilityVerificationResult({
   name,
   onClose,
   type,
-  connectorId,
+  webhookPath,
 }: {
   result: ConnectorTestResult;
   name: string;
   onClose(): void;
   type: 'datadog' | 'grafana';
-  connectorId?: string;
+  /** The server-issued path. It is keyed by the webhook key, which need not equal the connector id. */
+  webhookPath?: string;
 }) {
   return (
     <div className="flex flex-col gap-4">
@@ -32,8 +33,8 @@ export function ObservabilityVerificationResult({
           <li key={warning}>{warning}</li>
         ))}
       </ul>
-      {result.status === 'healthy' && connectorId && (
-        <NativeWebhookInstructions type={type} webhookPath={`/webhooks/${type}/${connectorId}`} />
+      {result.status === 'healthy' && webhookPath && (
+        <NativeWebhookInstructions type={type} webhookPath={webhookPath} />
       )}
       <SetupActions>
         <button
