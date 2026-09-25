@@ -180,6 +180,14 @@ describe('TRIAGE_SYSTEM_PROMPT investigation sequence', () => {
     expect(TRIAGE_SYSTEM_PROMPT).toContain('recommend-only');
   });
 
+  // Common false conclusions: working set read as memory pressure, pod age read as deploy
+  // history, and an infrastructure change recommended without a way back.
+  test('pins memory, deploy-history and infrastructure-change evidence rules', () => {
+    expect(TRIAGE_SYSTEM_PROMPT).toContain('RSS against the limit, not working set');
+    expect(TRIAGE_SYSTEM_PROMPT).toContain('requires deployment history');
+    expect(TRIAGE_SYSTEM_PROMPT).toContain('names its risk, validation and rollback');
+  });
+
   // the prompt-injection guard enumerates runbook/knowledge-base content (seed + tool)
   // as untrusted, not just alert/topology/tool-result text.
   test('lists runbook and knowledge-base content as untrusted data', () => {

@@ -1,7 +1,142 @@
 import { describe, expect, test } from 'vitest';
-import { parseReportRecovery } from '../report-recovery';
+import { parseReportRecovery, reportRecoveryTool } from '../report-recovery';
+
+const attemptedEvidenceId = '11111111-1111-4111-8111-111111111111';
+const blockingQuestion = {
+  question: 'Is the affected service healthy after the rollout?',
+  category: 'missing_capability',
+  evidenceKind: 'runtime_state',
+  attemptedEvidenceIds: [attemptedEvidenceId],
+  resolutionRelevance: 'blocking',
+  nextAction: 'Restore Kubernetes read access and check the affected deployment readiness.',
+};
+
+describe('reportRecoveryTool structured questions', () => {
+  const humanReport = {
+    outcome: 'needs_human',
+    summary: 'Current workload health could not be read.',
+    evidence: [],
+    evidenceIds: [],
+    unknowns: [],
+    nextStep: null,
+    questions: [blockingQuestion],
+  };
+  const recoveredReport = {
+    outcome: 'recovered',
+    summary: 'The affected service is healthy.',
+    evidence: [{ name: 'Readiness', before: 'Unavailable', now: 'All replicas ready' }],
+    evidenceIds: [attemptedEvidenceId],
+    unknowns: [],
+    nextStep: null,
+    questions: [],
+  };
+
+  test('requires questions for model-facing recovery', () => {
+    const { questions: _questions, ...withoutQuestions } = recoveredReport;
+    expect(reportRecoveryTool.inputSchema.safeParse(withoutQuestions).success).toBe(false);
+    expect(reportRecoveryTool.inputSchema.safeParse(recoveredReport).success).toBe(true);
+  });
+
+  test('requires an actionable blocker for needs_human', () => {
+    expect(reportRecoveryTool.inputSchema.safeParse(humanReport).success).toBe(true);
+    for (const questions of [
+      [],
+      [{ ...blockingQuestion, resolutionRelevance: 'follow_up' }],
+      [{ ...blockingQuestion, nextAction: '' }],
+      [{ ...blockingQuestion, nextAction: null }],
+      [{ ...blockingQuestion, category: 'unknown' }],
+    ]) {
+      expect(reportRecoveryTool.inputSchema.safeParse({ ...humanReport, questions }).success).toBe(
+        false,
+      );
+    }
+  });
+
+  test('rejects blockers on recovered while preserving follow-up work', () => {
+    expect(
+      reportRecoveryTool.inputSchema.safeParse({
+        ...recoveredReport,
+        questions: [blockingQuestion],
+      }).success,
+    ).toBe(false);
+    const followUp = {
+      ...blockingQuestion,
+      question: 'What caused the original transient failure?',
+      category: 'historical_gap',
+      resolutionRelevance: 'follow_up',
+      nextAction: 'Review retained deployment events for recurrence prevention.',
+    };
+    expect(parseReportRecovery({ ...recoveredReport, questions: [followUp] })).toMatchObject({
+      outcome: 'recovered',
+      questions: [followUp],
+      unknowns: [followUp.question],
+    });
+  });
+
+  test('validates attempted evidence references without treating attempts as health proof', () => {
+    expect(reportRecoveryTool.inputSchema.safeParse(humanReport).success).toBe(true);
+    expect(
+      reportRecoveryTool.inputSchema.safeParse({
+        ...humanReport,
+        questions: [{ ...blockingQuestion, attemptedEvidenceIds: [] }],
+      }).success,
+    ).toBe(true);
+    expect(
+      reportRecoveryTool.inputSchema.safeParse({
+        ...humanReport,
+        questions: [{ ...blockingQuestion, attemptedEvidenceIds: ['invented receipt'] }],
+      }).success,
+    ).toBe(false);
+    expect(
+      reportRecoveryTool.inputSchema.safeParse({
+        ...humanReport,
+        outcome: 'recovered',
+        questions: [{ ...blockingQuestion, resolutionRelevance: 'follow_up' }],
+      }).success,
+    ).toBe(false);
+  });
+});
 
 describe('parseReportRecovery', () => {
+  test('preserves absent legacy questions as unclassified', () => {
+    const report = parseReportRecovery({
+      recovered: false,
+      summary: 'Health could not be verified by the previous worker.',
+      unknowns: ['Current health is unknown.'],
+      nextStep: null,
+    });
+    expect(report).toMatchObject({
+      outcome: 'needs_human',
+      summary: 'Health could not be verified by the previous worker.',
+      unknowns: ['Current health is unknown.'],
+      nextStep: null,
+    });
+    expect(report).not.toHaveProperty('questions');
+  });
+
+  test('rejects malformed provided questions rather than falling back to the legacy decoder', () => {
+    for (const questions of [
+      null,
+      'Current health is unknown.',
+      [{ ...blockingQuestion, nextAction: '' }],
+      [{ ...blockingQuestion, attemptedEvidenceIds: ['invented receipt'] }],
+    ]) {
+      expect(
+        parseReportRecovery({
+          outcome: 'needs_human',
+          summary: 'This malformed report must not be accepted.',
+          unknowns: ['A legacy question must not bypass the structured contract.'],
+          questions,
+        }),
+      ).toMatchObject({
+        outcome: 'needs_human',
+        recovered: false,
+        summary: 'Recovery could not be verified.',
+        unknowns: ['The engine did not produce a valid recovery report.'],
+      });
+    }
+  });
+
   test('accepts verified recovery only with stated current evidence', () => {
     expect(
       parseReportRecovery({
