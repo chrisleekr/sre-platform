@@ -400,6 +400,8 @@ describe('incident workspace projections', () => {
         'investigationStatus',
         'latestInvestigationRun',
         'lifecycleVersion',
+        'resolutionPolicy',
+        'resolutionBasis',
         'pendingAutomation',
         'queuedResponderWork',
         'rcaSummary',

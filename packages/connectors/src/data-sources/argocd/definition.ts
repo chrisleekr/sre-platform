@@ -3,6 +3,7 @@ import type { ConnectorMetadata } from '../../registry';
 export const ARGOCD_CONNECTOR_METADATA = {
   type: 'argocd',
   capabilities: {
+    alertLifecycle: 'structured_snapshot',
     topology: 'inventory',
     availability: 'ready',
     configuration: 'tenant',

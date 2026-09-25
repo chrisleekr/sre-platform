@@ -3,6 +3,7 @@ import { assertSafeHttpsUrl, dnsLookup, type HostLookup } from '../../ssrf';
 import type { NormalizedSnapshot, RuntimeArtifact } from '../../types';
 import { obj, str } from '../../values';
 import { normalizeInfrastructureObservation } from '../../subject-observations';
+import { boundedSignal } from '../../request-signal';
 
 type FetchLike = typeof fetch;
 
@@ -299,12 +300,14 @@ async function validateApiBase(
  * - `ktext` returns the raw body (pod logs) with the same throw-on-error guard;
  * - `kstat` returns the status code without throwing (the probe path, which must distinguish
  *   200/401/403/404); a network/timeout error still rejects.
- * Shared by `fetchTriageContext`, `snapshot`, the generic tools, and `probeKubernetes`.
+ * Shared by `fetchTriageContext`, `snapshot`, the generic tools, and `probeKubernetes`. `signal` is
+ * the tool caller's cancellation; the other paths omit it and keep the plain timeout.
  */
 export async function k8sClient(
   config: ConnectorConfig,
   fetchImpl: FetchLike,
   lookup: HostLookup = dnsLookup,
+  signal?: AbortSignal,
 ): Promise<{
   kjson: (path: string) => Promise<unknown>;
   ktext: (path: string) => Promise<string>;
@@ -322,7 +325,7 @@ export async function k8sClient(
       tls,
       // fetch has no default timeout; bound the request so a dead API server cannot hang the
       // engine loop and worker slot (CWE-400).
-      signal: AbortSignal.timeout(8000),
+      signal: boundedSignal(8000, signal),
       // A 3xx could otherwise bounce the bearer token to an attacker-chosen host.
       redirect: 'error',
     };

@@ -10,7 +10,6 @@ import {
   createIncident,
   getPreviousMonitorEpisodeTx,
   getPreviousProviderEpisode,
-  getPreviousSlackMonitorEpisodeTx,
   getSignalByProviderEpisode,
   incidentSignals,
   incidents,
@@ -240,19 +239,41 @@ test('archived incidents remain deduplicated but are excluded from recurrence an
         randomUUID(),
       ),
     ).toBeUndefined();
-    expect(
-      await getPreviousSlackMonitorEpisodeTx(
-        tx,
-        'C-ARCHIVED',
-        'alertmanager-bot',
-        'monitor:checkout-errors',
-        randomUUID(),
-      ),
-    ).toBeUndefined();
   });
   expect(
     await listActiveSlackSignalsByMonitorKeys(app.db, tenantId, 'C-ARCHIVED', 'alertmanager-bot', [
       'monitor:checkout-errors',
     ]),
   ).toEqual([]);
+});
+
+test('active Slack monitor lookup includes advisory unknown signals and excludes resolved ones', async () => {
+  const channel = `C-ADVISORY-${randomUUID().slice(0, 8)}`;
+  const incident = await createIncident(app.db, tenantId, {
+    fingerprint: `advisory-${randomUUID()}`,
+    alertSource: 'slack',
+    service: 'checkout',
+    severity: 'sev3',
+  });
+  const observe = (suffix: string, monitorKey: string, state: 'unknown' | 'resolved') =>
+    applySignalObservation(app.db, tenantId, {
+      incidentId: incident.id,
+      surface: 'slack',
+      channel,
+      externalMessageId: `message-${suffix}`,
+      state,
+      summary: `Advisory ${suffix}`,
+      contentHash: `content-${suffix}`,
+      monitorKey,
+      eventKey: `slack:${channel}:message-${suffix}:producer:bot:B1`,
+      eventAt: new Date('2026-08-26T04:00:00.000Z'),
+    });
+  const advisory = await observe('advisory', 'monitor:advisory', 'unknown');
+  await observe('cleared', 'monitor:cleared', 'resolved');
+
+  const rows = await listActiveSlackSignalsByMonitorKeys(app.db, tenantId, channel, 'bot:B1', [
+    'monitor:advisory',
+    'monitor:cleared',
+  ]);
+  expect(rows.map((row) => row.id)).toEqual([advisory.signal.id]);
 });

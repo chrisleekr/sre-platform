@@ -16,7 +16,12 @@ import {
   buildResumePrompt,
   reassessmentTurnBudget,
 } from './shared';
-import { ProviderRateLimitError, ProviderUnavailableError } from './types';
+import {
+  isProviderConfigurationStatus,
+  ProviderConfigurationError,
+  ProviderRateLimitError,
+  ProviderUnavailableError,
+} from './types';
 import { providerFetch } from './provider-fetch';
 import type {
   LlmUsageObserver,
@@ -159,11 +164,20 @@ function classifyOpenAIProviderError(
   return null;
 }
 
-/** Keep provider response bodies and request data out of persisted job errors. */
-function sanitizeOpenAIHardError(err: unknown): Error {
+/**
+ * Keep provider response bodies and request data out of persisted job errors (CWE-209). A rejected
+ * configuration becomes `ProviderConfigurationError`, matching the Claude bindings, so the worker
+ * stops redelivering a request that cannot succeed.
+ *
+ * @param err - Error thrown by the OpenAI SDK or the request path.
+ * @param label - Prefix naming the caller in the generic message.
+ */
+export function sanitizeOpenAIHardError(err: unknown, label = 'openai'): Error {
   const status = err instanceof OpenAI.APIError ? err.status : undefined;
+  if (status !== undefined && isProviderConfigurationStatus(status))
+    return new ProviderConfigurationError(status);
   return new Error(
-    status ? `openai request failed with status ${status}` : 'openai request failed',
+    status ? `${label} request failed with status ${status}` : `${label} request failed`,
   );
 }
 

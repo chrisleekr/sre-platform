@@ -9,7 +9,7 @@ import {
   type Surface,
   type Tx,
 } from '@sre/db';
-import type { InvestigationTrigger } from '@sre/contracts';
+import type { InvestigationTrigger, ResolutionPolicy } from '@sre/contracts';
 import type { Queue } from '@sre/queue';
 import type { Redis } from 'ioredis';
 import {
@@ -57,6 +57,7 @@ export interface ConversationOrigin {
  * triage engine in the job payload.
  */
 export interface IncidentSignal {
+  resolutionPolicy?: ResolutionPolicy;
   tenantId: string;
   source: string;
   fingerprint: string;
@@ -185,6 +186,7 @@ export async function routeToIncident(
     const opened = await openIncidentWorkspace(
       { appDb: deps.appDb, queue: deps.queue, appendOpenerTx: deps.appendOpenerTx },
       {
+        resolutionPolicy: signal.resolutionPolicy,
         tenantId: signal.tenantId,
         fingerprint: signal.fingerprint,
         source: signal.source,

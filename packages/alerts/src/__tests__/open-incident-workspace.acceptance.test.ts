@@ -129,3 +129,129 @@ describe('workspace opening acceptance', () => {
     expect(deliveries.length).toBeGreaterThan(0);
   });
 });
+
+test('trusted exact provider enrollment selects provider-clear without changing a reused strict incident', async () => {
+  const fingerprint = `provider-policy:${randomUUID()}`;
+  const signal = {
+    surface: 'slack',
+    channel: 'C_PROVIDER',
+    externalMessageId: randomUUID(),
+    state: 'firing' as const,
+    summary: 'Checkout monitor firing',
+    contentHash: randomUUID(),
+    eventKey: `provider:${randomUUID()}:producer:bot:B_MONITOR`,
+    eventAt: new Date(),
+    provider: 'statuscake',
+    providerGroupKey: 'statuscake:uptime:https://checkout.example/health',
+    monitorKey: 'checkout-availability',
+    alertName: 'Website availability',
+  };
+  const trusted = {
+    tenantId,
+    source: 'slack',
+    service: 'checkout',
+    severity: 'sev3',
+    fingerprint,
+    signal,
+    resolutionPolicy: 'provider_clear' as const,
+  };
+  const opened = await openIncidentWorkspace({ appDb: app.db, queue }, trusted);
+  const [row] = await admin.db
+    .select()
+    .from(incidents)
+    .where(sql`id = ${opened.incidentId}`);
+  expect(row).toMatchObject({ resolutionPolicy: 'provider_clear', resolutionBasis: null });
+
+  const manual = await openIncidentWorkspace(
+    { appDb: app.db, queue },
+    {
+      tenantId,
+      source: 'manual',
+      service: 'checkout',
+      severity: 'sev3',
+      fingerprint: `${fingerprint}:strict`,
+    },
+  );
+  const reused = await openIncidentWorkspace(
+    { appDb: app.db, queue },
+    { ...trusted, fingerprint: `${fingerprint}:strict` },
+  );
+  expect(reused.incidentId).toBe(manual.incidentId);
+  const [strict] = await admin.db
+    .select()
+    .from(incidents)
+    .where(sql`id = ${manual.incidentId}`);
+  expect(strict).toMatchObject({ resolutionPolicy: 'verified_recovery', resolutionBasis: null });
+});
+
+test.each(['manual', 'degraded', 'health_check'] as const)(
+  '%s creation retains verified-recovery policy',
+  async (kind) => {
+    const opened = await openIncidentWorkspace(
+      { appDb: app.db, queue },
+      {
+        tenantId,
+        source: kind === 'manual' ? 'manual' : 'slack',
+        service: 'checkout',
+        severity: 'sev3',
+        fingerprint: `strict-policy:${randomUUID()}`,
+        purpose: kind === 'health_check' ? 'health_check' : 'incident',
+        investigationStatus: kind === 'degraded' ? 'degraded' : 'queued',
+      },
+    );
+    const [row] = await admin.db
+      .select()
+      .from(incidents)
+      .where(sql`id = ${opened.incidentId}`);
+    expect(row).toMatchObject({ resolutionPolicy: 'verified_recovery', resolutionBasis: null });
+  },
+);
+
+test.each([
+  { name: 'trusted degraded alert', purpose: 'incident' as const, expected: 'provider_clear' },
+  {
+    name: 'health check with explicit provider policy',
+    purpose: 'health_check' as const,
+    expected: 'verified_recovery',
+  },
+])(
+  '$name persists the correct policy independently of degraded investigation',
+  async ({ purpose, expected }) => {
+    const opened = await openIncidentWorkspace(
+      { appDb: app.db, queue },
+      {
+        tenantId,
+        source: 'slack',
+        service: 'checkout',
+        severity: 'sev3',
+        fingerprint: `degraded-provider-policy:${randomUUID()}`,
+        purpose,
+        investigationStatus: 'degraded',
+        resolutionPolicy: 'provider_clear',
+        signal: {
+          surface: 'slack',
+          channel: 'C_PROVIDER',
+          externalMessageId: randomUUID(),
+          state: 'firing',
+          summary: 'The exact provider monitor is firing.',
+          contentHash: randomUUID(),
+          eventKey: `provider:${randomUUID()}:producer:bot:B_MONITOR`,
+          eventAt: new Date(),
+          provider: 'statuscake',
+          providerGroupKey: 'statuscake:uptime:https://checkout.example/health',
+          monitorKey: 'checkout-availability',
+          alertName: 'Website availability',
+        },
+      },
+    );
+    const [row] = await admin.db
+      .select()
+      .from(incidents)
+      .where(sql`id = ${opened.incidentId}`);
+    expect(row).toMatchObject({
+      resolutionPolicy: expected,
+      investigationStatus: 'degraded',
+      resolutionBasis: null,
+    });
+  },
+);

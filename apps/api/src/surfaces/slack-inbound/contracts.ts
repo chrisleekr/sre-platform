@@ -94,6 +94,7 @@ export interface SlackEnvelope {
     channel?: string;
     thread_ts?: string;
     ts?: string;
+    blocks?: { block_id?: string }[];
     attachments?: SlackAttachment[];
     event_ts?: string;
     edited?: { user?: string; ts?: string };
@@ -106,6 +107,7 @@ export interface SlackEnvelope {
       channel?: string;
       thread_ts?: string;
       ts?: string;
+      blocks?: { block_id?: string }[];
       attachments?: SlackAttachment[];
       edited?: { user?: string; ts?: string };
     };
@@ -163,6 +165,7 @@ export type SlackProcessorOutcome =
   | 'dropped_archived'
   | 'dropped_mention_twin'
   | 'suppressed_provider_control_notification'
+  | 'suppressed_native_alert_opener'
   | 'dropped_untracked_edit'
   | 'dropped_untracked_thread';
 

@@ -60,7 +60,7 @@ async function acceptEdit(rootTs: string) {
 }
 
 describe('Slack inbound suppression integrity', () => {
-  test('commits terminal state before reconciling an incident locked by classification', async () => {
+  test('commits suppression without acquiring an incident lock or revising its signal', async () => {
     const rootTs = '1788001800.000100';
     const classificationTs = '1788001805.000100';
     const editTs = '1788001810.000100';
@@ -91,10 +91,7 @@ describe('Slack inbound suppression integrity', () => {
     const locked = new Promise<void>((resolve) => {
       markLocked = resolve;
     });
-    let classificationPid = 0;
     const classification = withTenant(__fixture.app.db, __fixture.tenantB, async (tx) => {
-      const [session] = await tx.execute<{ pid: number }>(sql`SELECT pg_backend_pid() AS pid`);
-      classificationPid = session!.pid;
       await tx.execute(sql`set local lock_timeout = '1s'`);
       await lockCausalGraphTx(tx, __fixture.tenantB);
       await lockIncidentWorkTx(tx, __fixture.tenantB, [incident.id]);
@@ -127,18 +124,7 @@ describe('Slack inbound suppression integrity', () => {
     );
     let visibilityFailure: unknown;
     try {
-      // Observe reconciliation waiting on our lock before checking its preceding commit.
-      await vi.waitFor(
-        async () => {
-          const [waiting] = await __fixture.admin.sql`
-            SELECT EXISTS (
-              SELECT 1 FROM pg_stat_activity
-              WHERE ${classificationPid} = ANY(pg_blocking_pids(pid))
-            ) AS blocked`;
-          expect(waiting!.blocked).toBe(true);
-        },
-        { timeout: 10_000 },
-      );
+      await expect(suppression).resolves.toBe('suppressed_provider_control_notification');
       const [row] = await __fixture.admin.db
         .select({ disposition: surfaceInboundEvents.terminalDisposition })
         .from(surfaceInboundEvents)
@@ -160,7 +146,7 @@ describe('Slack inbound suppression integrity', () => {
         .select({ state: incidentSignals.state })
         .from(incidentSignals)
         .where(eq(incidentSignals.incidentId, incident.id)),
-    ).resolves.toEqual([{ state: 'resolved' }]);
+    ).resolves.toEqual([{ state: 'firing' }]);
   }, 15_000);
 
   test('post-commit Redis failures do not replay durable suppression', async () => {
@@ -212,18 +198,18 @@ describe('Slack inbound suppression integrity', () => {
       publishHub.mockRestore();
     }
 
-    expect(hubPublishCount).toBe(1);
-    expect(publishJob).toHaveBeenCalledTimes(1);
-    expect(onError).toHaveBeenCalledTimes(2);
+    expect(hubPublishCount).toBe(0);
+    expect(publishJob).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
     await expect(
       __fixture.admin.db
         .select({ state: incidentSignals.state })
         .from(incidentSignals)
         .where(eq(incidentSignals.incidentId, incident.id)),
-    ).resolves.toEqual([{ state: 'resolved' }]);
+    ).resolves.toEqual([{ state: 'firing' }]);
   });
 
-  test('an equal-version retry completes reconciliation after its first transaction fails', async () => {
+  test('an equal-version suppression retry never enters lifecycle reconciliation', async () => {
     const rootTs = '1788002000.000100';
     const editTs = '1788002010.000100';
     const incident = await createIncident(__fixture.app.db, __fixture.tenantB, {
@@ -257,7 +243,8 @@ describe('Slack inbound suppression integrity', () => {
         handleSlackEvent(deps, __fixture.classifyConfigId, __fixture.tenantBConfig(), event, {
           intakeId: receipt.row.id,
         }),
-      ).rejects.toBe(reconciliationFailure);
+      ).resolves.toBe('suppressed_provider_control_notification');
+      expect(observeSignal).not.toHaveBeenCalled();
       await expect(
         __fixture.admin.db
           .select({ disposition: surfaceInboundEvents.terminalDisposition })
@@ -285,7 +272,7 @@ describe('Slack inbound suppression integrity', () => {
         .select({ state: incidentSignals.state })
         .from(incidentSignals)
         .where(eq(incidentSignals.incidentId, incident.id)),
-    ).resolves.toEqual([{ state: 'resolved' }]);
+    ).resolves.toEqual([{ state: 'firing' }]);
     await expect(
       __fixture.admin.db
         .select({ id: jobs.id })
@@ -293,12 +280,12 @@ describe('Slack inbound suppression integrity', () => {
         .where(
           sql`${jobs.tenantId} = ${__fixture.tenantB} and ${jobs.type} = 'recovery.verify' and ${jobs.payload}->>'incidentId' = ${incident.id}`,
         ),
-    ).resolves.toHaveLength(1);
+    ).resolves.toHaveLength(0);
     await expect(
       __fixture.admin.db
         .select({ id: incidentMessages.id })
         .from(incidentMessages)
         .where(eq(incidentMessages.incidentId, incident.id)),
-    ).resolves.toHaveLength(1);
+    ).resolves.toHaveLength(0);
   });
 });

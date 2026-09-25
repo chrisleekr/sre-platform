@@ -1,6 +1,7 @@
 import {
   incidents,
   isChannelSubscribed,
+  lockResponseGroupWorkTx,
   lookupSurfaceIdentity,
   persistSurfaceIdentity,
   resolveUserByEmail,
@@ -152,6 +153,8 @@ export async function incidentAcceptsReplyTx(
   tenantId: string,
   incidentId: string,
 ): Promise<boolean> {
+  // The caller's human append takes group work locks; taking the row first would invert that order.
+  await lockResponseGroupWorkTx(tx, tenantId, incidentId);
   const rows = await tx
     .select({ archivedAt: incidents.archivedAt })
     .from(incidents)

@@ -54,7 +54,7 @@ const INGRESS = [
     // Its definition plus the three inbound conversation paths that adapt onto it.
     symbol: 'routeToIncident',
     allowed: [
-      'apps/api/src/alertmanager-webhook/processor.ts',
+      'packages/alerts/src/provider-lifecycle/processor.ts',
       'apps/api/src/signals.ts',
       'apps/triage-worker/src/classify-consumer/core.ts',
       'packages/alerts/src/route-to-incident.ts',

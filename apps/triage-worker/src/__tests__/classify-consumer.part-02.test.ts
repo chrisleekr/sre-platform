@@ -1,3 +1,4 @@
+import { slackInboundConnector } from '@sre/connectors';
 import { getIncidentLifecycleTx, listUnresolvedSignals } from '@sre/db';
 
 import { describe, expect, test, vi } from 'vitest';
@@ -5,20 +6,8 @@ import { describe, expect, test, vi } from 'vitest';
 import { makeClassifyHandler } from '../classify-consumer';
 
 import { makeFakeClassifier } from '../engine/classify';
-import type { LlmRuntimeManager } from '../llm-runtime';
 
-// the classify consumer on the `sre:classify` stream. It runs the
-// correlation LLM over the active-incident candidate set, drops not-worthy chatter while preserving
-// alert-shaped provider messages, and on a new_incident verdict routes a NEW incident through the
-// funnel (routeToIncident). On repeated
-// provider outage — or any hard/parse error — it FAILS OPEN to a degraded incident rather than
-// dropping the message (degrade-and-redeliver). belongs_to correlation behavior lives
-// in classify-consumer.correlation.test.ts; these tests cover the not_worthy / new_incident / fail-open
-// / pre-bind / mention-open paths.
-//
-// Hermetic by construction: the funnel is injected as a `route` collaborator spy, and the @sre/db
-// correlation-shortlist reads are mocked (candidate set defaults to empty), so these behavior tests
-// need no live Postgres/Valkey. The funnel itself is covered by route-to-incident.test.ts.
+// Advisory Slack recovery behavior with injected persistence and routing.
 vi.mock('@sre/db', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
   return {
@@ -32,6 +21,7 @@ vi.mock('@sre/db', async (importOriginal) => {
     getSignalByExternal: vi.fn(async () => undefined),
     listUnresolvedSignals: vi.fn(async () => []),
     listSignalsByExternalRoot: vi.fn(async () => []),
+    listActiveSlackSignalsByMonitorKeys: vi.fn(async () => []),
     getIncidentLifecycleTx: vi.fn(async () => ({ status: 'open', version: 0 })),
     prepareResponseGroupRecoveryTx: vi.fn(async (_tx, _tenantId: string, incidentId: string) => ({
       rootIncidentId: incidentId,
@@ -47,28 +37,54 @@ import { createFixture } from './classify-consumer.fixture';
 const __fixture = createFixture();
 
 describe('makeClassifyHandler', () => {
-  test('passes the attempt signal to the runtime and rethrows an aborted provider call', async () => {
-    const controller = new AbortController();
-    const reason = new Error('deadline');
-    const execute = vi.fn(async (meta, run) => {
-      expect(meta.signal).toBe(controller.signal);
-      controller.abort(reason);
-      return run({
-        classifier: {
-          classify: vi.fn(async () => {
-            throw reason;
-          }),
-        },
-      } as never);
+  test('a model-selected recovery with exact wording overlap remains advisory without connector verification', async () => {
+    const producerId = 'bot:B_PROVIDER';
+    vi.mocked(listUnresolvedSignals).mockResolvedValueOnce([
+      {
+        id: 'signal-checkout',
+        incidentId: 'incident-checkout',
+        channel: 'C123',
+        externalMessageId: 'root-checkout',
+        summary: 'checkout.example.com latency is high',
+        service: 'checkout',
+        title: 'checkout latency',
+        severity: 'sev2',
+        lastEventKey: `slack:C123:root-checkout:producer:${producerId}`,
+      },
+    ] as never);
+    const observeSignalTx = vi.fn(async () => ({
+      observation: {
+        applied: true,
+        allResolved: true,
+        signal: { id: 'signal-checkout', version: 2 },
+      },
+      message: null,
+    }));
+    const insertRecoveryTx = vi.fn(async () => ({ jobId: 'unverified-recovery' }));
+    const handler = makeClassifyHandler({
+      classify: makeFakeClassifier(() => ({ decision: 'resolves_signal', signalIndex: 1 })),
+      route: vi.fn(async () => ({ deduped: true })),
+      hub: { observeSignalTx, publishAppended: async () => {} } as never,
+      embedder: __fixture.fakeEmbedder,
+      appDb: __fixture.stubDb,
+      redis: __fixture.stubRedis,
+      reservationRedis: __fixture.stubRedis,
+      queue: { insertRecoveryTx, publishJob: vi.fn() } as never,
     });
-    const { handler, route, onOutcome } = __fixture.setup({
-      classifyImpl: () => ({ decision: 'not_worthy' }),
-      llm: { execute } as unknown as LlmRuntimeManager,
-    });
-
-    await expect(handler(__fixture.makeJob(), { signal: controller.signal })).rejects.toBe(reason);
-    expect(route).not.toHaveBeenCalled();
-    expect(onOutcome).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'fail_open' }));
+    await handler(
+      __fixture.makeJob({
+        attempts: 5,
+        payload: __fixture.makeCandidate({
+          author: 'bot',
+          producerId,
+          text: 'checkout.example.com latency has recovered and is healthy',
+          signalState: 'firing',
+          eventKey: `slack:C123:recovery-advisory:producer:${producerId}`,
+        }),
+      }),
+    );
+    expect(observeSignalTx).not.toHaveBeenCalled();
+    expect(insertRecoveryTx).not.toHaveBeenCalled();
   });
 
   // --- the inbound 24h dedup window -------------------------------------------
@@ -93,7 +109,7 @@ describe('makeClassifyHandler', () => {
     expect(route).not.toHaveBeenCalled();
   });
 
-  test('a StatusCake went-Up root resolves one authorized signal and queues recovery verification', async () => {
+  test('a StatusCake went-Up root cannot clear a signal without connector verification', async () => {
     const producerId = 'bot:B_STATUSCAKE';
     const statusCakeSignal = {
       id: 'statuscake-signal',
@@ -157,28 +173,12 @@ describe('makeClassifyHandler', () => {
     await handler(__fixture.makeJob({ payload: recovery }));
 
     expect(route).not.toHaveBeenCalled();
-    expect(observeSignalTx).toHaveBeenCalledWith(
-      expect.anything(),
-      'tenant-1',
-      expect.objectContaining({
-        incidentId: statusCakeSignal.incidentId,
-        externalMessageId: statusCakeSignal.externalMessageId,
-        state: 'resolved',
-        eventVersion: '1787901766830379',
-      }),
-      recovery.text,
-    );
-    expect(insertRecoveryTx).toHaveBeenCalledWith(
-      expect.anything(),
-      'tenant-1',
-      statusCakeSignal.incidentId,
-      0,
-      'signal-0:2:resolved',
-    );
-    expect(publishJob).toHaveBeenCalledWith('statuscake-recovery-job');
+    expect(observeSignalTx).not.toHaveBeenCalled();
+    expect(insertRecoveryTx).not.toHaveBeenCalled();
+    expect(publishJob).not.toHaveBeenCalled();
   });
 
-  test('a model-selected recovery requires identity overlap unique to its target', async () => {
+  test('model-selected recovery remains advisory even when a target exists', async () => {
     const producerId = 'bot:B_PROVIDER';
     const signal = {
       id: 'signal-checkout',
@@ -218,8 +218,10 @@ describe('makeClassifyHandler', () => {
     );
 
     expect(observeSignalTx).not.toHaveBeenCalled();
-    expect(route).toHaveBeenCalledOnce();
-    expect(onOutcome).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'fail_open' }));
+    expect(route).not.toHaveBeenCalled();
+    expect(onOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'resolution_unmatched' }),
+    );
   });
 
   test('negated recovery language cannot mutate a uniquely identified authorized signal', async () => {
@@ -262,10 +264,10 @@ describe('makeClassifyHandler', () => {
 
     expect(observeSignalTx).not.toHaveBeenCalled();
     expect(insertRecoveryTx).not.toHaveBeenCalled();
-    expect(route).toHaveBeenCalledOnce();
+    expect(route).not.toHaveBeenCalled();
   });
 
-  test('an ambiguous edit can select only the signal identified by its Slack root', async () => {
+  test('an ambiguous edit cannot change an exact-root signal', async () => {
     const producerId = 'bot:B_PROVIDER';
     const exact = {
       id: 'signal-exact',
@@ -316,10 +318,10 @@ describe('makeClassifyHandler', () => {
       }),
     );
 
-    expect(classifyFn).toHaveBeenCalledTimes(1);
+    expect(classifyFn).not.toHaveBeenCalled();
   });
 
-  test('a separate Alertmanager resolution matches beyond the classifier candidate cap', async () => {
+  test('legacy Alertmanager text cannot clear signals beyond the classifier candidate cap', async () => {
     const generatorUrl = 'https://prometheus.example/graph?g0.expr=checkout_errors';
     const producerId = 'bot:B_ALERT';
     const candidates = Array.from({ length: 26 }, (_, index) => ({
@@ -376,23 +378,12 @@ describe('makeClassifyHandler', () => {
     await handler(__fixture.makeJob({ payload: resolved }));
 
     expect(classifyFn).not.toHaveBeenCalled();
-    expect(observeSignalTx).toHaveBeenCalledWith(
-      expect.anything(),
-      'tenant-1',
-      expect.objectContaining({ incidentId: 'incident-0' }),
-      resolved.text,
-    );
-    expect(insertRecoveryTx).toHaveBeenCalledWith(
-      expect.anything(),
-      'tenant-1',
-      'incident-0',
-      0,
-      'signal-0:2:resolved',
-    );
-    expect(publishJob).toHaveBeenCalledWith('recovery-job');
+    expect(observeSignalTx).not.toHaveBeenCalled();
+    expect(insertRecoveryTx).not.toHaveBeenCalled();
+    expect(publishJob).not.toHaveBeenCalled();
   });
 
-  test('applies a complete grouped resolution atomically and enqueues one recovery', async () => {
+  test('a complete text-derived group remains advisory for every member', async () => {
     const producerId = 'bot:B_ALERT';
     vi.mocked(listUnresolvedSignals).mockResolvedValueOnce([
       {
@@ -489,9 +480,119 @@ describe('makeClassifyHandler', () => {
     await handler(__fixture.makeJob({ payload: resolved }));
 
     expect(classifyFn).not.toHaveBeenCalled();
-    expect(observeSignalTx).toHaveBeenCalledTimes(2);
-    expect(insertRecoveryTx).toHaveBeenCalledTimes(1);
-    expect(publishAppended).toHaveBeenCalledTimes(2);
-    expect(publishJob).toHaveBeenCalledWith('group-recovery');
+    expect(observeSignalTx).not.toHaveBeenCalled();
+    expect(insertRecoveryTx).not.toHaveBeenCalled();
+    expect(publishAppended).not.toHaveBeenCalled();
+    expect(publishJob).not.toHaveBeenCalled();
+  });
+});
+
+describe('adapter-to-consumer advisory uptime notifications', () => {
+  function uptime(
+    state: 'Up' | 'Down',
+    url = 'https://checkout.example/health',
+    ts = '1787991000.000100',
+  ) {
+    const result = slackInboundConnector.evaluate(
+      {
+        type: 'message',
+        subtype: 'bot_message',
+        channel: 'C123',
+        ts,
+        bot_id: 'B_UPTIME',
+        text: `Website | Your site '<${url}|checkout>' went ${state} [HTTP ${state === 'Up' ? 200 : 503}]`,
+      },
+      { botUserId: 'U_PLATFORM' },
+    );
+    if (result?.disposition !== 'admit') throw new Error('Fixture must be admitted');
+    return result.candidate;
+  }
+
+  test('a normalized bot notification cannot select provider-clear policy', async () => {
+    const { handler, route, classifyFn } = __fixture.setup({
+      classifyImpl: () => ({ decision: 'not_worthy' }),
+    });
+    await handler(__fixture.makeJob({ payload: uptime('Down') }));
+    expect(classifyFn).toHaveBeenCalledTimes(1);
+    expect(route).toHaveBeenCalledOnce();
+    expect(route.mock.calls[0]?.[0].resolutionPolicy).not.toBe('provider_clear');
+  });
+
+  test.each([
+    'matched',
+    'unmatched',
+    'ambiguous',
+    'other channel',
+    'other producer',
+    'other monitor',
+    'legacy identity',
+    'stale',
+    'duplicate',
+  ] as const)('recognized recovery is deterministic and isolated: %s', async (scenario) => {
+    const down = uptime('Down');
+    const up = uptime('Up', 'https://checkout.example/health', '1787991100.000100');
+    const observation = down.observations?.[0];
+    const signal = {
+      ...observation,
+      id: 'uptime-signal',
+      incidentId: 'uptime-incident',
+      channel: 'C123',
+      externalMessageId: down.externalId,
+      summary: down.text,
+      service: 'checkout',
+      title: 'Checkout monitor down',
+      severity: 'sev3',
+      lastEventKey: down.eventKey,
+    };
+    let targets = [signal];
+    if (scenario === 'unmatched') targets = [];
+    if (scenario === 'ambiguous')
+      targets = [
+        signal,
+        { ...signal, id: 'other', incidentId: 'other', externalMessageId: 'other-root' },
+      ];
+    if (scenario === 'other channel') targets = [{ ...signal, channel: 'C_OTHER' }];
+    if (scenario === 'other producer')
+      targets = [{ ...signal, lastEventKey: 'slack:C123:other:producer:bot:B_OTHER' }];
+    if (scenario === 'other monitor')
+      targets = [{ ...signal, monitorKey: 'another-monitor', providerGroupKey: 'another-monitor' }];
+    if (scenario === 'legacy identity')
+      targets = [
+        { ...signal, monitorKey: undefined, providerGroupKey: undefined, provider: undefined },
+      ];
+    vi.mocked(listUnresolvedSignals).mockResolvedValueOnce(targets as never);
+    const applied = scenario !== 'stale' && scenario !== 'duplicate';
+    const observeSignalTx = vi.fn(async () => ({
+      observation: { applied, allResolved: true, signal: { id: 'uptime-signal', version: 2 } },
+      message: null,
+    }));
+    const insertRecoveryTx = vi.fn(async () => ({ jobId: 'uptime-recovery' }));
+    const classifyFn = vi.fn(() => ({ decision: 'not_worthy' as const }));
+    const route = vi.fn();
+    const onOutcome = vi.fn();
+    const handler = makeClassifyHandler({
+      classify: makeFakeClassifier(classifyFn),
+      route,
+      hub: { observeSignalTx, publishAppended: vi.fn() } as never,
+      embedder: __fixture.fakeEmbedder,
+      appDb: __fixture.stubDb,
+      redis: __fixture.stubRedis,
+      reservationRedis: __fixture.stubRedis,
+      queue: { insertRecoveryTx, publishJob: vi.fn() } as never,
+      onOutcome,
+    });
+    await handler(__fixture.makeJob({ payload: up }));
+    expect(classifyFn).not.toHaveBeenCalled();
+    expect(route).not.toHaveBeenCalled();
+    if (['matched', 'stale', 'duplicate'].includes(scenario)) {
+      expect(observeSignalTx).not.toHaveBeenCalled();
+      expect(insertRecoveryTx).not.toHaveBeenCalled();
+    } else {
+      expect(observeSignalTx).not.toHaveBeenCalled();
+      expect(insertRecoveryTx).not.toHaveBeenCalled();
+      expect(onOutcome).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'resolution_unmatched' }),
+      );
+    }
   });
 });

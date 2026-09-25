@@ -5,7 +5,7 @@ import {
   threadExternalId,
 } from '@sre/db';
 
-import type { AlertmanagerWebhookDeps } from '../alertmanager-webhook';
+import type { NativeLifecycleDeps as AlertmanagerWebhookDeps } from './contracts';
 import type { NormalizedAlert } from './normalize';
 
 interface DeduplicatedEpisodeIntake {

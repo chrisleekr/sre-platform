@@ -1,10 +1,17 @@
-import { routeToIncident } from '@sre/alerts';
+import { retainProviderEpisode } from './retain-episode';
+import { updateAcceptedEpisode } from './update-episode';
+import { assertAlertConnectorGeneration } from './generation';
+import { routeToIncident } from '../route-to-incident';
 import {
   acceptAlertEpisodeIntakeTx,
+  acceptAlertEpisodeIntake,
+  getSignalByProviderEpisode,
+  getBindingByExternal,
+  threadExternalId,
   activateSurfaceBinding,
   claimAlertEpisodeRootPost,
   getAlertEpisodeIntake,
-  getIncidentLifecycleTx,
+  isChannelSubscribed,
   getPreviousMonitorEpisodeTx,
   prepareResponseGroupRecoveryTx,
   decideIncidentEpisodeRouteTx,
@@ -14,14 +21,13 @@ import {
   recordAlertEpisodeRootPost,
   recordIncidentRelationTx,
   recordSignalCorrelationDecisionTx,
-  upsertAlertEpisodeIntake,
   withTenant,
   type Tx,
 } from '@sre/db';
 import { incidentUrl, type HubMessage } from '@sre/hub';
 import { SlackApiError } from '@sre/surfaces';
 
-import type { AlertmanagerWebhookDeps } from '../alertmanager-webhook';
+import type { NativeLifecycleOutcome, NativeLifecycleDeps } from './contracts';
 import {
   DEFAULT_COHORT_WINDOW_MS,
   ROOT_POST_STALE_MS,
@@ -42,115 +48,26 @@ import {
 import { finalizeDeduplicatedEpisode } from './deduplicated-episode';
 import { recordAlertmanagerDisposition } from './disposition';
 
-async function updateAcceptedEpisode(
-  deps: AlertmanagerWebhookDeps,
-  tenantId: string,
-  connectorId: string,
-  incidentId: string,
-  groupKey: string,
-  alert: NormalizedAlert,
-  materialHash: string,
-  observedAt: Date,
-  thread: { channel: string; threadId: string },
-): Promise<void> {
-  let currentIncidentId = incidentId;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    let message: HubMessage | null = null;
-    let jobId: string | null = null;
-    let movedTo: string | null = null;
-    await withTenant(deps.appDb, tenantId, async (tx) => {
-      const observed = await deps.hub.observeSignalTx(
-        tx,
-        tenantId,
-        {
-          incidentId: currentIncidentId,
-          ...signalObservation(connectorId, groupKey, alert, materialHash, observedAt),
-        },
-        alertText(alert),
-      );
-      message = observed.message;
-      if (!observed.observation.applied) {
-        // A human merge can move the episode after this delivery read its intake. Retry against the
-        // signal's current owner in a fresh transaction so the provider update is not silently lost.
-        if (!observed.message && observed.observation.signal.incidentId !== currentIncidentId)
-          movedTo = observed.observation.signal.incidentId;
-        return;
-      }
-      const lifecycle = await getIncidentLifecycleTx(tx, currentIncidentId);
-      if (!lifecycle) throw new Error('provider episode incident disappeared');
-      if (observed.observation.allResolved) {
-        const recovery = await prepareResponseGroupRecoveryTx(tx, tenantId, currentIncidentId);
-        if (!recovery) return;
-        jobId = (
-          await deps.route.queue.insertRecoveryTx(
-            tx,
-            tenantId,
-            recovery.rootIncidentId,
-            recovery.lifecycleVersion,
-            recovery.signalFence,
-          )
-        ).jobId;
-      } else {
-        jobId = (
-          await deps.route.queue.insertReassessmentTx(
-            tx,
-            tenantId,
-            currentIncidentId,
-            observed.observation.signal.id,
-            observed.observation.signal.version,
-            observed.observation.investigationTriggerReason,
-          )
-        ).jobId;
-      }
-    });
-    if (movedTo) {
-      currentIncidentId = movedTo;
-      continue;
-    }
-    if (message)
-      await deps.hub.publishAppended(message).catch((error) =>
-        deps.log?.error('Alertmanager signal publish failed; durable replay will recover', {
-          tenantId,
-          incidentId: currentIncidentId,
-          operation: 'hub_publish',
-          errorType: error instanceof Error ? error.name : typeof error,
-        }),
-      );
-    if (jobId)
-      await deps.route.queue.publishJob(jobId).catch((error) =>
-        deps.log?.error('Alertmanager job publish failed; queue reconciliation will recover', {
-          tenantId,
-          incidentId: currentIncidentId,
-          jobId,
-          operation: 'job_publish',
-          errorType: error instanceof Error ? error.name : typeof error,
-        }),
-      );
-    await recordAlertmanagerDisposition({
-      db: deps.appDb,
-      tenantId,
-      connectorId,
-      incidentId: currentIncidentId,
-      channel: thread.channel,
-      threadId: thread.threadId,
-      eventKey: `alertmanager:${connectorId}:${alert.fingerprint}:${alert.startsAt.toISOString()}:${alert.status}:${materialHash}`,
-      signalKey: `alertmanager:${connectorId}:${alert.fingerprint}:${alert.startsAt.toISOString()}`,
-      observedAt,
-      alert,
-    });
-    return;
-  }
-  throw new Error('provider episode moved repeatedly during update');
-}
-
+/** Persists an authenticated provider episode through the existing incident opener.
+ * @param deps - Tenant persistence, hub and queue dependencies.
+ * @param connector - Verified connector generation and delivery configuration.
+ * @param incomingGroupKey - Provider group identity.
+ * @param incomingExternalUrl - Sanitized provider URL.
+ * @param incomingAlert - Provider-owned lifecycle observation.
+ * @param observedAt - Platform receipt time, not the provider episode start.
+ */
 export async function processAlert(
-  deps: AlertmanagerWebhookDeps,
-  connector: { id: string; tenantId: string; settings: unknown },
+  deps: NativeLifecycleDeps,
+  connector: { id: string; tenantId: string; settings: unknown; lifecycleVersion?: number },
   incomingGroupKey: string,
   incomingExternalUrl: string | null,
-  incomingAlert: NormalizedAlert,
+  incomingAlert: Omit<NormalizedAlert, 'startsAt'> & {
+    startsAt: Date | null;
+    episodeKey?: string;
+    repeatedTrigger?: boolean;
+  },
   observedAt: Date,
-): Promise<'accepted' | 'deferred' | 'retry'> {
+): Promise<NativeLifecycleOutcome> {
   const settings = object(connector.settings);
   const configuredChannel = string(settings.alertChannel);
   if (!configuredChannel) throw new Error('Prometheus data source has no Slack alert channel');
@@ -159,17 +76,27 @@ export async function processAlert(
     incomingGroupKey,
     incomingExternalUrl,
     incomingAlert,
+    connector.lifecycleVersion,
   );
   const { groupingWindowMs, maxIncidentAgeMs } = episodeGroupingPolicy(settings);
-  let intake = await upsertAlertEpisodeIntake(deps.appDb, connector.tenantId, {
+  const retainedIntake = await retainProviderEpisode(deps.appDb, connector, {
     dataSourceId: connector.id,
     providerFingerprint: incomingAlert.fingerprint,
     startsAt: incomingAlert.startsAt,
+    opaqueEpisodeKey: incomingAlert.episodeKey,
+    repeatedTrigger: incomingAlert.repeatedTrigger,
     materialHash: incomingMaterialHash,
     observation: stored,
     channel: configuredChannel,
     observedAt,
   });
+  if (!retainedIntake) return 'acknowledged';
+  let intake = retainedIntake;
+  if (intake.failureCategory === 'native_cycle_association_required')
+    return 'native_cycle_association_required';
+  if (intake.failureCategory === 'binding_episode_mismatch') return 'binding_episode_mismatch';
+  if (intake.failureCategory === 'conflicting_episode_times') return 'conflicting_episode_times';
+  if (!intake.startsAt) return 'deferred';
   let episode = restoreStoredAlertmanagerEpisode(intake);
 
   if (
@@ -193,6 +120,45 @@ export async function processAlert(
     episode = restoreStoredAlertmanagerEpisode(intake);
   }
 
+  if (intake.state === 'pending' || intake.state === 'rejected') {
+    const existing = await getSignalByProviderEpisode(
+      deps.appDb,
+      connector.tenantId,
+      connector.id,
+      episode.alert.fingerprint,
+      episode.alert.startsAt,
+    );
+    if (existing?.surface === 'slack') {
+      await withTenant(deps.appDb, connector.tenantId, async (tx) => {
+        await assertAlertConnectorGeneration(tx, connector);
+        const root = existing.externalMessageId.split('#')[0]!;
+        const binding = await getBindingByExternal(
+          tx,
+          connector.tenantId,
+          'slack',
+          threadExternalId({ channel: existing.channel, threadId: root }),
+        );
+        if (
+          !binding ||
+          binding.incidentId !== existing.incidentId ||
+          binding.channel !== episode.channel
+        )
+          throw new Error('explicit provider episode has no matching subscribed source thread');
+        if (await claimAlertEpisodeRootPost(tx, connector.tenantId, intake.id)) {
+          await recordAlertEpisodeRootPost(tx, connector.tenantId, intake.id, root);
+          await acceptAlertEpisodeIntake(
+            tx,
+            connector.tenantId,
+            intake.id,
+            existing.incidentId,
+            binding.id,
+          );
+        }
+      });
+      intake = (await getAlertEpisodeIntake(deps.appDb, connector.tenantId, intake.id)) ?? intake;
+      episode = restoreStoredAlertmanagerEpisode(intake);
+    }
+  }
   if (intake.state === 'accepted' && intake.incidentId) {
     await updateAcceptedEpisode(
       deps,
@@ -204,11 +170,14 @@ export async function processAlert(
       episode.materialHash,
       observedAt,
       { channel: episode.channel, threadId: intake.rootMessageId! },
+      connector.lifecycleVersion,
+      intake.observation.lifecycleVersion,
     );
     return 'accepted';
   }
-
   if (intake.state === 'pending' || intake.state === 'rejected') {
+    if (!(await isChannelSubscribed(deps.appDb, connector.tenantId, 'slack', episode.channel)))
+      return 'unsubscribed';
     if (!(await claimAlertEpisodeRootPost(deps.appDb, connector.tenantId, intake.id)))
       return 'retry';
     try {
@@ -216,6 +185,7 @@ export async function processAlert(
         connector.tenantId,
         episode.channel,
         alertText(episode.alert),
+        intake.id,
       );
       if (
         !(await recordAlertEpisodeRootPost(
@@ -240,15 +210,16 @@ export async function processAlert(
     intake = (await getAlertEpisodeIntake(deps.appDb, connector.tenantId, intake.id)) ?? intake;
     episode = restoreStoredAlertmanagerEpisode(intake);
   }
-
   if (intake.state === 'posting') return 'retry';
   if (intake.state === 'uncertain') return 'deferred';
   if (intake.state !== 'posted' || !intake.rootMessageId)
     throw new Error(`alert intake cannot route from ${intake.state}`);
-
+  // Recheck after recording a successful post; revocation must not turn it into an uncertain send.
+  if (!(await isChannelSubscribed(deps.appDb, connector.tenantId, 'slack', episode.channel)))
+    return 'unsubscribed';
   const { alert, channel, groupKey, materialHash } = episode;
   const monitorKey = alertmanagerMonitorKey(connector.id, alert);
-  const episodeKey = `alertmanager:${connector.id}:${alert.fingerprint}:${alert.startsAt.toISOString()}`;
+  const episodeKey = `${alert.provider ?? 'alertmanager'}:${connector.id}:${alert.fingerprint}:${alert.startsAt.toISOString()}`;
   const incidentFingerprint = hash({
     connectorId: connector.id,
     fingerprint: alert.fingerprint,
@@ -258,15 +229,21 @@ export async function processAlert(
   const routedEffects: {
     message: HubMessage | null;
     jobId: string | null;
+    recoveryJobId: string | null;
     cohortJobId: string | null;
   } = {
     message: null,
     jobId: null,
+    recoveryJobId: null,
     cohortJobId: null,
   };
   const result = await routeToIncident(deps.route, {
+    resolutionPolicy: 'provider_clear',
     tenantId: connector.tenantId,
-    source: 'prometheus',
+    source:
+      alert.provider === undefined || alert.provider === 'alertmanager'
+        ? 'prometheus'
+        : alert.provider,
     fingerprint: incidentFingerprint,
     dedupKey: episodeKey,
     service: service(alert.labels),
@@ -279,7 +256,11 @@ export async function processAlert(
       originSurface: 'slack',
       originMessageId: episodeKey,
     },
-    context: { provider: 'alertmanager', ...intake.observation, fingerprint: alert.fingerprint },
+    context: {
+      provider: alert.provider ?? 'alertmanager',
+      ...intake.observation,
+      fingerprint: alert.fingerprint,
+    },
     investigationTrigger: {
       reason: 'new_episode',
       automatic: true,
@@ -300,8 +281,16 @@ export async function processAlert(
         correlationDecision: decision,
       };
     },
-    signal: signalObservation(connector.id, groupKey, alert, materialHash, observedAt),
+    signal: signalObservation(
+      connector.id,
+      groupKey,
+      alert,
+      materialHash,
+      observedAt,
+      intake.observation.lifecycleVersion,
+    ),
     onRoutedTx: async (tx: Tx, routed) => {
+      await assertAlertConnectorGeneration(tx, connector);
       let signalId = routed.signalId;
       if (routed.reused) {
         const observed = await deps.hub.observeSignalTx(
@@ -309,7 +298,14 @@ export async function processAlert(
           connector.tenantId,
           {
             incidentId: routed.incidentId,
-            ...signalObservation(connector.id, groupKey, alert, materialHash, observedAt),
+            ...signalObservation(
+              connector.id,
+              groupKey,
+              alert,
+              materialHash,
+              observedAt,
+              intake.observation.lifecycleVersion,
+            ),
           },
           alertText(alert),
         );
@@ -336,6 +332,24 @@ export async function processAlert(
         ).jobId;
       }
       if (!signalId) throw new Error('provider episode route has no durable signal');
+      if (alert.status === 'resolved') {
+        const recovery = await prepareResponseGroupRecoveryTx(
+          tx,
+          connector.tenantId,
+          routed.incidentId,
+        );
+        // Separate from jobId: a reused incident also queued a reassessment that must be published.
+        if (recovery)
+          routedEffects.recoveryJobId = (
+            await deps.route.queue.insertRecoveryTx(
+              tx,
+              connector.tenantId,
+              recovery.rootIncidentId,
+              recovery.lifecycleVersion,
+              recovery.signalFence,
+            )
+          ).jobId;
+      }
       if (!routed.correlationDecision)
         throw new Error('provider episode route has no correlation decision');
       await recordSignalCorrelationDecisionTx(tx, signalId, routed.correlationDecision);
@@ -374,7 +388,7 @@ export async function processAlert(
           sourceIncidentId: routed.incidentId,
           targetIncidentId: previous.incidentId,
           type: 'recurrence_of',
-          rationale: 'Alertmanager reported a new episode from the same monitor rule.',
+          rationale: 'The provider reported a new episode from the same monitor rule.',
           evidence: [
             `monitor_key:${monitorKey}`,
             `provider_fingerprint:${alert.fingerprint}`,
@@ -384,48 +398,29 @@ export async function processAlert(
           decidedBy: 'system',
         });
       if (previous && previous.incidentId !== routed.incidentId) {
-        const previousId =
-          previous && previous.incidentId !== routed.incidentId ? previous.incidentId : null;
-        const previousUrl = previousId
-          ? (incidentUrl(deps.dashboardBaseUrl, previousId) ?? previousId)
-          : null;
+        const previousId = previous.incidentId;
+        const previousUrl = incidentUrl(deps.dashboardBaseUrl, previousId) ?? previousId;
         relationshipMessages.push(
           (
             await deps.hub.appendTxOnce(tx, connector.tenantId, routed.incidentId, {
               author: 'system',
               kind: 'relationship',
-              content: [
-                previousUrl
-                  ? `Recurring monitor rule. Prior incident: ${previousUrl}. This firing remains a separate investigation.`
-                  : null,
-              ]
-                .filter(Boolean)
-                .join('\n'),
+              content: `Recurring monitor rule. Prior incident: ${previousUrl}. This firing remains a separate investigation.`,
               originMessageId: `alertmanager:relationships:${signalId}`,
             })
           ).message,
         );
 
-        const backlinkNotices = new Map<string, string[]>();
-        if (previousId) {
-          const notices = backlinkNotices.get(previousId) ?? [];
-          notices.push(
-            `A new firing from this monitor rule opened a separate incident: ${incidentUrl(deps.dashboardBaseUrl, routed.incidentId) ?? routed.incidentId}.`,
-          );
-          backlinkNotices.set(previousId, notices);
-        }
-        for (const [relatedIncidentId, notices] of backlinkNotices) {
-          relationshipMessages.push(
-            (
-              await deps.hub.appendTxOnce(tx, connector.tenantId, relatedIncidentId, {
-                author: 'system',
-                kind: 'relationship',
-                content: notices.join('\n'),
-                originMessageId: `alertmanager:relationship-backlink:${signalId}:${relatedIncidentId}`,
-              })
-            ).message,
-          );
-        }
+        relationshipMessages.push(
+          (
+            await deps.hub.appendTxOnce(tx, connector.tenantId, previousId, {
+              author: 'system',
+              kind: 'relationship',
+              content: `A new firing from this monitor rule opened a separate incident: ${incidentUrl(deps.dashboardBaseUrl, routed.incidentId) ?? routed.incidentId}.`,
+              originMessageId: `alertmanager:relationship-backlink:${signalId}:${previousId}`,
+            })
+          ).message,
+        );
       }
     },
   });
@@ -465,6 +460,16 @@ export async function processAlert(
           errorType: error instanceof Error ? error.name : typeof error,
         },
       ),
+    );
+  const recoveryJobToPublish = routedEffects.recoveryJobId;
+  if (recoveryJobToPublish)
+    await deps.route.queue.publishJob(recoveryJobToPublish).catch((error) =>
+      deps.log?.error('Provider recovery publish failed; queue reconciliation will recover', {
+        tenantId: connector.tenantId,
+        jobId: recoveryJobToPublish,
+        operation: 'job_publish',
+        errorType: error instanceof Error ? error.name : typeof error,
+      }),
     );
   const cohortJobToPublish = routedEffects.cohortJobId;
   if (cohortJobToPublish)

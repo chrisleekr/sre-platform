@@ -63,6 +63,7 @@ export interface ResolutionCandidate {
   severity: string;
   alertName?: string | null;
   providerGroupKey?: string | null;
+  monitorKey?: string | null;
 }
 
 /** The mention pull path has no not_worthy verdict (a human is the gate): belongs_to | new_incident. */

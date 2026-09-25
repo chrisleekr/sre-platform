@@ -28,6 +28,8 @@ export const ALERT_INTAKE_STATES = [
 export type AlertIntakeState = (typeof ALERT_INTAKE_STATES)[number];
 
 export interface StoredAlertmanagerObservation {
+  lifecycleVersion?: number;
+  provider?: 'alertmanager' | 'grafana' | 'datadog' | 'statuscake';
   status: 'firing' | 'resolved';
   groupKey: string;
   alertName: string;
@@ -49,7 +51,8 @@ export const alertEpisodeIntakes = pgTable(
       .references(() => tenants.id, { onDelete: 'cascade' }),
     dataSourceId: uuid('data_source_id').notNull(),
     providerFingerprint: text('provider_fingerprint').notNull(),
-    startsAt: timestamp('starts_at', { withTimezone: true, precision: 3 }).notNull(),
+    startsAt: timestamp('starts_at', { withTimezone: true, precision: 3 }),
+    opaqueEpisodeKey: text('opaque_episode_key'),
     materialHash: text('material_hash').notNull(),
     observation: jsonb('observation').$type<StoredAlertmanagerObservation>().notNull(),
     channel: text('channel').notNull(),
@@ -69,6 +72,11 @@ export const alertEpisodeIntakes = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true, precision: 3 }).defaultNow().notNull(),
   },
   (t) => [
+    unique('alert_episode_intakes_opaque_episode_uq').on(
+      t.tenantId,
+      t.dataSourceId,
+      t.opaqueEpisodeKey,
+    ),
     unique('alert_episode_intakes_episode_uq').on(
       t.tenantId,
       t.dataSourceId,
@@ -98,6 +106,11 @@ export const alertEpisodeIntakes = pgTable(
     check(
       'alert_episode_intakes_root_state',
       sql`(state in ('pending', 'posting', 'rejected', 'uncertain') and root_message_id is null) or (state in ('posted', 'accepted') and root_message_id is not null)`,
+    ),
+    // Postgres treats NULLs as distinct, so a row with neither key escapes both unique constraints.
+    check(
+      'alert_episode_intakes_episode_identity',
+      sql`starts_at is not null or opaque_episode_key is not null`,
     ),
     check(
       'alert_episode_intakes_acceptance',

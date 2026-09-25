@@ -1,0 +1,1 @@
+ALTER TABLE "alert_episode_intakes" ADD CONSTRAINT "alert_episode_intakes_episode_identity" CHECK (starts_at is not null or opaque_episode_key is not null);

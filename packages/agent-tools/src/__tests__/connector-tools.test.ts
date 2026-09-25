@@ -132,4 +132,23 @@ describe('connectorTools adapter', () => {
     const conn = fakeConnector([echo, { ...echo, description: 'a clashing duplicate' }]);
     expect(() => connectorTools(conn)).toThrow(/duplicate tool name: echo/i);
   });
+
+  it('passes the run signal to the connector tool', async () => {
+    const seen: (AbortSignal | undefined)[] = [];
+    const observer: ConnectorTool<{ q: string }, string> = {
+      ...echo,
+      name: 'observer',
+      run: async (_input, options) => {
+        seen.push(options?.signal);
+        return 'ok';
+      },
+    };
+    const [def] = connectorTools(fakeConnector([observer]));
+    const { ctx } = makeCtx();
+    const controller = new AbortController();
+
+    await runTool(def!, { ...ctx, signal: controller.signal }, { q: 'x' });
+
+    expect(seen).toEqual([controller.signal]);
+  });
 });

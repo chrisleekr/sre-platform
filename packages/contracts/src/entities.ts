@@ -34,6 +34,9 @@ export type EntityCapability = (typeof ENTITY_CAPABILITIES)[number];
 
 /** The system that produced an observation. It is not assumed to be the affected entity. */
 export interface SignalSource {
+  /** Connector generation that authenticated this lifecycle observation. */
+  lifecycleVersion?: number;
+  lifecycleState?: 'firing' | 'resolved';
   kind: 'monitor' | 'platform_observer' | 'human_report' | 'connector';
   provider: string;
   dataSourceId: string | null;

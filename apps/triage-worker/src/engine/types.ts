@@ -164,6 +164,7 @@ export interface TriageResult {
     outcome?: 'recovered' | 'recheck' | 'needs_human';
     recovered: boolean;
     evidence: ReportRecovery['evidence'];
+    questions?: ReportRecovery['questions'];
     evidenceIds?: string[];
     unknowns: string[];
     nextStep: string | null;
@@ -186,6 +187,8 @@ export interface TriageResult {
   causeTagSuggestions?: Array<{ tag: string; evidenceIds: string[] }>;
   /** Safest next diagnostic step or the exact context needed from a responder. */
   nextStep?: string | null;
+  /** Open checks named by the evidence reviewer when it rejected this result, already scrubbed. */
+  reviewGaps?: string[];
   /** The provider model that produced the result (e.g. claude-opus-4-8). */
   model?: string;
 }
@@ -218,6 +221,22 @@ export class ProviderUnavailableError extends Error {
   }
 }
 
+/**
+ * The provider rejected the request itself (400/401/403/404). Retrying the same configuration
+ * cannot succeed, so the job is not redelivered. The message carries only the code-owned status.
+ */
+export class ProviderConfigurationError extends Error {
+  constructor(readonly status: number) {
+    super(`AI provider rejected the configured request (status ${status})`);
+    this.name = 'ProviderConfigurationError';
+  }
+}
+
+/** Statuses that mean the configured request is wrong, not that the provider is unavailable. */
+export function isProviderConfigurationStatus(status: number): boolean {
+  return status === 400 || status === 401 || status === 403 || status === 404;
+}
+
 /** A provider rejected work until capacity or account quota becomes available. */
 export class ProviderRateLimitError extends Error {
   constructor() {
@@ -240,6 +259,8 @@ export interface StructuredGenerationOptions {
   system?: string;
   /** Per-attempt job deadline from the queue handler context. Aborting rejects the pending provider call. */
   signal?: AbortSignal;
+  /** Shorten over-length strings to the schema maximum; arrays are never trimmed, a dropped item is a dropped finding. */
+  repairOverlength?: boolean;
 }
 
 export interface StructuredGenerator {

@@ -1,9 +1,12 @@
-import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { IncidentCorrelationFeedback } from '@sre/contracts';
 import { type Tx } from '../rls';
+import { clearRecoveryTx } from '../signal-repo/recovery-state';
+import { listResponseGroupIncidentIdsTx } from './causal';
 import {
   approvals,
   incidentRelations,
+  incidentSignals,
   incidents,
   jobs,
   type IncidentRelationDecider,
@@ -120,6 +123,73 @@ export async function recordIncidentRelationTx(
     current[0].decidedByUserId === (input.decidedByUserId ?? null)
   )
     return current[0];
+
+  const previousCausal = await tx
+    .select({ id: incidentRelations.id })
+    .from(incidentRelations)
+    .where(
+      and(
+        eq(incidentRelations.type, 'caused_by'),
+        isNull(incidentRelations.supersededAt),
+        or(
+          and(
+            eq(incidentRelations.sourceIncidentId, input.sourceIncidentId),
+            eq(incidentRelations.targetIncidentId, input.targetIncidentId),
+          ),
+          and(
+            eq(incidentRelations.sourceIncidentId, input.targetIncidentId),
+            eq(incidentRelations.targetIncidentId, input.sourceIncidentId),
+          ),
+        ),
+      ),
+    )
+    .limit(1);
+  const changesMembership =
+    input.type !== 'recurrence_of' && (input.type === 'caused_by' || Boolean(previousCausal[0]));
+  const affectedIds = changesMembership
+    ? [
+        ...new Set([
+          ...(await listResponseGroupIncidentIdsTx(tx, tenantId, input.sourceIncidentId)),
+          ...(await listResponseGroupIncidentIdsTx(tx, tenantId, input.targetIncidentId)),
+        ]),
+      ]
+    : [];
+  if (affectedIds.length) {
+    await lockIncidentWorkTx(tx, tenantId, affectedIds);
+    // A membership change moves the response root and the signal set it governs. When any member
+    // carries a signal, that recovery basis changes for every member, so all of them are fenced,
+    // including members with no signal of their own. Without signals, only members that already hold
+    // recovery or resolution state have anything to invalidate.
+    const [groupSignal] = await tx
+      .select({ id: incidentSignals.id })
+      .from(incidentSignals)
+      .where(inArray(incidentSignals.incidentId, affectedIds))
+      .limit(1);
+    const stale = await tx
+      .select({ id: incidents.id })
+      .from(incidents)
+      .where(
+        and(
+          inArray(incidents.id, affectedIds),
+          groupSignal
+            ? undefined
+            : or(isNotNull(incidents.recoveryState), isNotNull(incidents.resolutionBasis)),
+        ),
+      )
+      .orderBy(incidents.id)
+      .for('update');
+    for (const incident of stale) await clearRecoveryTx(tx, tenantId, incident.id);
+    if (stale.length)
+      await tx
+        .update(incidents)
+        .set({ lifecycleVersion: sql`${incidents.lifecycleVersion} + 1` })
+        .where(
+          inArray(
+            incidents.id,
+            stale.map((incident) => incident.id),
+          ),
+        );
+  }
 
   await tx
     .update(incidentRelations)

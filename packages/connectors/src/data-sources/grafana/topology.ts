@@ -9,10 +9,13 @@ import { connect, gget, validateUid, type FetchLike, type GrafanaConnectorOption
 
 function readIssue(error: unknown): TopologyCollection['issue'] {
   const status = (error as { status?: number } | null)?.status;
-  return (
-    topologyReadIssue(error) ??
-    (status === 401 || status === 403 ? 'permission_denied' : 'unreachable')
-  );
+  const known = topologyReadIssue(error);
+  if (known) return known;
+  if (status === 401 || status === 403) return 'permission_denied';
+  // A 429 must read as rate_limited: that is the only issue that pauses continuations and sets the
+  // connector cooldown, so reporting it as unreachable kept the scan pressing a throttling Grafana.
+  if (status === 429) return 'rate_limited';
+  return 'unreachable';
 }
 
 /** Read dashboard references to configured backends without proxying queries or claiming trace access.
@@ -174,6 +177,11 @@ export function grafanaTopology(
             } catch (error) {
               dashboards.completeness = 'partial';
               dashboards.issue = readIssue(error);
+              if (dashboards.issue === 'rate_limited') {
+                // Stop reading and keep this page so the pass after the cooldown re-reads it.
+                nextPage = String(page);
+                break;
+              }
             }
           }
         } catch (error) {

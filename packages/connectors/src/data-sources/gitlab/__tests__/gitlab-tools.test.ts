@@ -7,6 +7,7 @@ import {
   z,
   type IDataSourceConnector,
 } from './test-helpers';
+import { abortableFetch, expectCancelledInFlight } from '../../../__tests__/request-signal.fixture';
 
 /** A fake fetch for the tool tests: routes by a caller-supplied handler, returning a real Response. */
 function fakeToolFetch(handler: (url: string) => Response) {
@@ -293,5 +294,16 @@ describe('group-scoped GitLab connector', () => {
       }),
     ).rejects.toThrow(/project API path/);
     expect(fetches).toBe(0);
+  });
+});
+
+describe('tool cancellation', () => {
+  it('aborts an in-flight GitLab request when the calling investigation is cancelled', async () => {
+    const { impl, signals } = abortableFetch();
+    const tool = toolByName(
+      makeGitLabConnector(cfg({ settings: { projectId: 42 } }), impl, publicLookup),
+      'list_pipelines',
+    );
+    await expectCancelledInFlight((signal) => tool.run({}, { signal }), signals);
   });
 });

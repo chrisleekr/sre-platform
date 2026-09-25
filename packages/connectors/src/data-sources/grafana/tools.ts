@@ -1,7 +1,7 @@
 import * as z from 'zod';
 import type { ConnectorConfig } from '../../registry';
 import type { HostLookup } from '../../ssrf';
-import type { ConnectorTool } from '../../types';
+import type { ConnectorTool, ToolRunOptions } from '../../types';
 import {
   DEFAULT_LIMIT,
   buildGetUrl,
@@ -20,7 +20,7 @@ function gtool<S extends z.ZodType>(def: {
   name: string;
   description: string;
   inputSchema: S;
-  run: (input: z.infer<S>) => Promise<unknown>;
+  run: (input: z.infer<S>, options?: ToolRunOptions) => Promise<unknown>;
 }): ConnectorTool {
   return def as ConnectorTool;
 }
@@ -45,7 +45,10 @@ export function makeGrafanaTools(
   lookup: HostLookup,
   options: GrafanaConnectorOptions,
 ): ConnectorTool[] {
-  const client = () => connect(config, lookup, options);
+  const client = async (call?: ToolRunOptions) => ({
+    ...(await connect(config, lookup, options)),
+    signal: call?.signal,
+  });
 
   return [
     gtool({
@@ -56,8 +59,8 @@ export function makeGrafanaTools(
         'rule source; default "grafana" (Grafana-managed rules). Pass an external datasource UID to read ' +
         'rules managed by that datasource.',
       inputSchema: z.object({ datasourceUid: z.string().optional() }),
-      run: async ({ datasourceUid }) => {
-        const c = await client();
+      run: async ({ datasourceUid }, call) => {
+        const c = await client(call);
         const uid = validateUid('datasourceUid', datasourceUid ?? 'grafana');
         return gget(fetchImpl, c, `/api/prometheus/${uid}/api/v1/rules`);
       },
@@ -75,8 +78,8 @@ export function makeGrafanaTools(
         inhibited: z.boolean().optional(),
         active: z.boolean().optional(),
       }),
-      run: async ({ filter, silenced, inhibited, active }) => {
-        const c = await client();
+      run: async ({ filter, silenced, inhibited, active }, call) => {
+        const c = await client(call);
         // AM v2 GET /alerts defaults active/silenced/inhibited all to true, so an unset silenced/inhibited
         // would return muted alerts as if paging. Default to paging-only (active, not silenced, not
         // inhibited) to match the tool's contract; the caller can still opt back in explicitly.
@@ -94,8 +97,8 @@ export function makeGrafanaTools(
         'Get one Grafana-managed alert rule by UID: its full definition — the query, condition, ' +
         'thresholds, and folder. Use to see the exact rule behind a firing alert.',
       inputSchema: z.object({ uid: z.string() }),
-      run: async ({ uid }) => {
-        const c = await client();
+      run: async ({ uid }, call) => {
+        const c = await client(call);
         return gget(fetchImpl, c, `/api/v1/provisioning/alert-rules/${validateUid('uid', uid)}`);
       },
     }),
@@ -111,8 +114,8 @@ export function makeGrafanaTools(
         type: z.enum(['dash-db', 'dash-folder']).optional(),
         limit: z.number().int().positive().optional(),
       }),
-      run: async ({ query, tag, type, limit }) => {
-        const c = await client();
+      run: async ({ query, tag, type, limit }, call) => {
+        const c = await client(call);
         return gget(fetchImpl, c, '/api/search', { query, tag, type, limit: clampLimit(limit) });
       },
     }),
@@ -122,8 +125,8 @@ export function makeGrafanaTools(
         'Get one dashboard by UID: its full model — panels, their queries, and the datasources they read. ' +
         'Use to understand how a service is visualized and which signals its owners watch.',
       inputSchema: z.object({ uid: z.string() }),
-      run: async ({ uid }) => {
-        const c = await client();
+      run: async ({ uid }, call) => {
+        const c = await client(call);
         return gget(fetchImpl, c, `/api/dashboards/uid/${validateUid('uid', uid)}`);
       },
     }),
@@ -142,8 +145,8 @@ export function makeGrafanaTools(
         dashboardUID: z.string().optional(),
         limit: z.number().int().positive().optional(),
       }),
-      run: async ({ from, to, tags, type, dashboardUID, limit }) => {
-        const c = await client();
+      run: async ({ from, to, tags, type, dashboardUID, limit }, call) => {
+        const c = await client(call);
         const nowMs = Date.now();
         return gget(fetchImpl, c, '/api/annotations', {
           from: optMs(from, nowMs),
@@ -161,8 +164,8 @@ export function makeGrafanaTools(
         'List the datasources this Grafana fronts (name, type, uid) — discover what backends are behind ' +
         'it. Secret credentials are redacted by Grafana (only which secret fields are set is returned).',
       inputSchema: z.object({}),
-      run: async () => {
-        const c = await client();
+      run: async (_input, call) => {
+        const c = await client(call);
         return gget(fetchImpl, c, '/api/datasources');
       },
     }),
@@ -177,8 +180,8 @@ export function makeGrafanaTools(
         path: z.string(),
         query: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
       }),
-      run: async ({ path, query }) => {
-        const c = await client();
+      run: async ({ path, query }, call) => {
+        const c = await client(call);
         // Validate first (origin + /api/ + no-%), then refuse the proxy/resources tunnels on the
         // normalized pathname before the fetch.
         const url = buildGetUrl(c.base, path, query);

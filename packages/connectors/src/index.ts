@@ -64,7 +64,24 @@ export {
   alertmanagerSmeeUrl,
 } from './data-sources/prometheus/alertmanager-auth';
 export { PromCreds, type PromAuth, type PromFetchInit } from './data-sources/prometheus/auth';
-export { makeStatusCakeConnector, statusCakeConnectorDefinition } from './data-sources/statuscake';
+export {
+  makeStatusCakeConnector,
+  statusCakeConnectorDefinition,
+  STATUSCAKE_MAX_LISTED_TESTS,
+  StatusCakeSetupError,
+  listStatusCakeUptimeTests,
+  statusCakeDelivery,
+  statusCakeMonitorBound,
+  statusCakeReceiverUrl,
+  statusCakeSetupApi,
+  syncStatusCakeContactGroups,
+  type StatusCakeDelivery,
+  type StatusCakeSetupApi,
+  type StatusCakeSetupMode,
+  type StatusCakeSetupResult,
+  type StatusCakeTestSetupState,
+  type StatusCakeUptimeTest,
+} from './data-sources/statuscake';
 export {
   DEPLOY_STATUSES,
   coerceDeployStatus,
@@ -125,3 +142,11 @@ export * from './types';
 export { gitLabRevisionKey } from './data-sources/gitlab/event-identity';
 export * from './entity-coverage';
 export * from './issues';
+
+export type {
+  AlertLifecycle,
+  AlertLifecycleObservation,
+  AlertLifecycleQuery,
+  AlertLifecycleResult,
+  AlertLifecycleSubjectMatch,
+} from './alert-lifecycle';

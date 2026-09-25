@@ -16,6 +16,7 @@ import {
   type StuckJobInfo,
   type StreamEntry,
 } from './contracts';
+import { coalesceKeyFilter, requeueUnlessSuperseded } from './coalescing';
 
 function warn(msg: string, details: object): void {
   console.warn(JSON.stringify({ level: 'warn', pkg: '@sre/queue', msg, ...details }));
@@ -299,15 +300,14 @@ export class QueueConsumer {
         }
         await this.redis.xack(this.stream, this.group, streamId);
       } else {
-        // Leave a matched requeue pending for XAUTOCLAIM; ack only a superseded delivery.
-        const requeued = await this.db
-          .update(jobs)
-          .set({ status: 'queued', lastError: message, updatedAt: sql`now()` })
-          .where(
-            and(eq(jobs.id, jobId), eq(jobs.status, 'processing'), eq(jobs.attempts, attempts)),
-          )
-          .returning({ id: jobs.id });
-        if (requeued.length === 0) {
+        // Leave a matched requeue pending for XAUTOCLAIM; ack a superseded or retired delivery.
+        const requeued = await requeueUnlessSuperseded(
+          this.db,
+          job,
+          and(eq(jobs.id, jobId), eq(jobs.status, 'processing'), eq(jobs.attempts, attempts)),
+          { lastError: message },
+        );
+        if (!requeued) {
           await this.redis.xack(this.stream, this.group, streamId);
         }
       }
@@ -401,9 +401,9 @@ export class QueueConsumer {
    * only backstop, and without this the row sits `processing` forever and the page is never answered.
    *
    * Taking a `processing` row is safe because only a DEAD handler goes stale: the heartbeat
-   * renews `updated_at` every idleMs/4 while a handler runs, and the invariant at
-   * apps/triage-worker/src/index.ts:250 keeps this `olderThanMs` (60s) above process()'s `idleMs`
-   * (30s). If that judgement is somehow wrong, the CAS in handleOne still refuses the delivery.
+   * renews `updated_at` every idleMs/4 while a handler runs, and the reconcile invariant beside
+   * `TRIAGE_RECONCILE_MS` in apps/triage-worker/src/index.ts keeps this `olderThanMs` (60s) above
+   * process()'s `idleMs` (30s). If that judgement is somehow wrong, the CAS in handleOne still refuses the delivery.
    *
    * A live handler that ignores its deadline is handled by handleOne's ceiling and stuck watchdog.
    * The watchdog's fenced requeue is exactly what this method's `queued` clause recovers. The
@@ -430,11 +430,8 @@ export class QueueConsumer {
         )`,
       );
     for (const { id, attempts, status, tenantId, type, payload } of stuck) {
-      const incidentId =
-        typeof payload === 'object' && payload !== null && 'incidentId' in payload
-          ? (payload as { incidentId?: unknown }).incidentId
-          : undefined;
-      if (status === 'processing' && typeof incidentId === 'string') {
+      const sameKey = coalesceKeyFilter(type, payload);
+      if (status === 'processing' && sameKey) {
         const successor = await this.db
           .select({ id: jobs.id })
           .from(jobs)
@@ -443,12 +440,12 @@ export class QueueConsumer {
               eq(jobs.tenantId, tenantId),
               eq(jobs.type, type),
               eq(jobs.status, 'queued'),
-              sql`payload->>'incidentId' = ${incidentId}`,
+              sameKey,
             ),
           )
           .limit(1);
         if (successor[0]) {
-          // The queued successor carries newer coalesced input and rebuilds durable incident context.
+          // The queued successor carries newer coalesced input and rebuilds durable context.
           // Retiring the stranded predecessor avoids violating the queued uniqueness fence while
           // preserving the only run that can still make progress.
           const retired = await this.db
@@ -480,10 +477,14 @@ export class QueueConsumer {
       // would clobber a LIVE claim back to `queued`, fence out the running handler and let a second
       // consumer claim it, the double-run the heartbeat exists to prevent. At 0 rows the live
       // claim stands and the surplus entry we just XADDed is refused and acked by handleOne.
-      await this.db
-        .update(jobs)
-        .set({ status: 'queued', streamId, updatedAt: sql`now()` })
-        .where(and(eq(jobs.id, id), eq(jobs.attempts, attempts)));
+      // A successor queued after the lookup above retires the row instead; handleOne refuses and acks
+      // the surplus stream entry.
+      await requeueUnlessSuperseded(
+        this.db,
+        { id, type },
+        and(eq(jobs.id, id), eq(jobs.attempts, attempts)),
+        { streamId },
+      );
     }
     return stuck.length;
   }

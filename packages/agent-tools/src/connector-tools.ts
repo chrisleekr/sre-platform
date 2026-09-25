@@ -30,7 +30,10 @@ export function connectorTools(conn: IDataSourceConnector): ToolDefinition<any, 
       name: `${prefix}_${t.name}`,
       description: `Data source "${conn.name}" (${conn.type}). ${t.description}`,
       inputSchema: t.inputSchema,
-      handler: async (_ctx, input) => ({ available: true as const, data: await t.run(input) }),
+      handler: async (ctx, input) => ({
+        available: true as const,
+        data: await t.run(input, { signal: ctx.signal }),
+      }),
     };
   });
 }

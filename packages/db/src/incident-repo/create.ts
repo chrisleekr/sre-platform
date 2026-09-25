@@ -1,3 +1,4 @@
+import type { ResolutionPolicy } from '@sre/contracts';
 import { sql } from 'drizzle-orm';
 import { withTenant, type Executor } from '../rls';
 import {
@@ -84,6 +85,7 @@ const severityRatchet = () =>
     else incidents.severity end`);
 
 export interface NewIncident {
+  resolutionPolicy?: ResolutionPolicy;
   fingerprint: string;
   alertSource: string;
   service: string;

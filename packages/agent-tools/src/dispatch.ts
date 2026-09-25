@@ -12,6 +12,8 @@ import type {
  * Executes one investigator tool through validation, redaction, and durable audit.
  *
  * @remarks Provider errors become secret-free unavailable results, while audit failures propagate.
+ * Once `ctx.signal` has aborted, the call throws the signal's reason instead, so a cancelled run
+ * ends with its deadline rather than continuing on a fabricated tool error.
  * @param tool - Validated tool definition to invoke.
  * @param ctx - Tenant and incident context for execution and audit.
  * @param rawInput - Untrusted model input validated by the tool schema.
@@ -22,6 +24,7 @@ export async function runTool<I, O>(
   rawInput: unknown,
 ): Promise<ToolResult<O>> {
   const input = tool.inputSchema.parse(rawInput);
+  ctx.signal?.throwIfAborted();
   const startedAt = Date.now();
   const meta = { tool: tool.name, tenantId: ctx.tenantId, incidentId: ctx.incidentId, input };
   let result: ToolHandlerResult<O>;
@@ -30,6 +33,9 @@ export async function runTool<I, O>(
     result = await tool.handler(ctx, input);
     outcome = result.available ? 'data' : result.reason;
   } catch {
+    // An abort surfaces as whatever the provider client throws; the run's reason is what the queue
+    // and engine account for, and it needs no audit row because the run itself is ending.
+    if (ctx.signal?.aborted) throw ctx.signal.reason;
     result = { available: false, reason: 'error' };
     outcome = 'error';
   }

@@ -1,9 +1,11 @@
+import { publicSignalCoverage } from './signal-lifecycle-coverage';
 import { resolveIncidentTopologyContext as resolveIncidentEntityContext } from '@sre/topology';
 import {
   IncidentFeedbackRateLimitError,
   connectorConfigs,
   enforceIncidentFeedbackAdmissionTx,
   getIncidentDetail,
+  getIncidentOwnerContext,
   presentIncidentTitles,
   getIncidentEvidenceProgress,
   getIncidentSummary,
@@ -12,6 +14,7 @@ import {
   listIncidentRelations,
   listLatestIncidentFeedback,
   listIncidentSignals,
+  listProviderRecoveryReports,
   readIncidentLlmUsage,
   readAutomaticInvestigationBudget,
   recentGitHubEvents,
@@ -92,8 +95,9 @@ export function registerIncidentDetailRoutes(
       entityContext,
       feedback,
       findingRows,
-      directServiceContext,
+      ownerContext,
       tagContext,
+      recoveryReports,
     ] = await Promise.all([
       getIncidentEvidenceProgress(deps.db, tenantId, id),
       listIncidentSignals(deps.db, tenantId, id),
@@ -130,21 +134,9 @@ export function registerIncidentDetailRoutes(
             ),
           ),
       ),
-      withTenant(deps.db, tenantId, (tx) =>
-        tx
-          .select({ team: services.team, fingerprint: incidentTable.fingerprint })
-          .from(incidentTable)
-          .leftJoin(
-            services,
-            and(
-              eq(services.tenantId, incidentTable.tenantId),
-              eq(services.name, incidentTable.service),
-            ),
-          )
-          .where(eq(incidentTable.id, id))
-          .limit(1),
-      ),
+      getIncidentOwnerContext(deps.db, tenantId, id),
       readIncidentTagContext(deps.db, tenantId, id),
+      listProviderRecoveryReports(deps.db, tenantId, id),
     ]);
     const entityConnectors = deps.resolveConnectors ? await deps.resolveConnectors(tenantId) : [];
     const mappedServices = entityContext?.mappings.map((mapping) => mapping.serviceName) ?? [];
@@ -152,14 +144,11 @@ export function registerIncidentDetailRoutes(
       ...new Set(mappedServices.length > 0 ? mappedServices : [incident.service]),
     ].sort();
     const since = new Date(incident.createdAt.getTime() - 60 * 60_000);
-    const resolvedOwnerSources =
-      entityContext?.services.length && entityContext.services.length > 0
-        ? entityContext.services
-        : directServiceContext;
-    const owners = [
-      ...new Set(resolvedOwnerSources.flatMap((service) => (service.team ? [service.team] : []))),
-    ].sort();
-    const operatorState = incidentOperatorState(incident, owners);
+    const owners = ownerContext?.teams ?? [];
+    const operatorState = incidentOperatorState(incident, owners, {
+      signals,
+      reportedSignalIds: recoveryReports.map((report) => report.signalId),
+    });
     const currentBudget = deps.getAutomaticInvestigationBudget
       ? await readAutomaticInvestigationBudget(
           deps.db,
@@ -168,7 +157,7 @@ export function registerIncidentDetailRoutes(
           incidentInvestigationMonitorKeys(
             {
               alertSource: incident.alertSource,
-              fingerprint: directServiceContext[0]!.fingerprint,
+              fingerprint: ownerContext!.fingerprint,
             },
             signals,
           ),
@@ -236,10 +225,7 @@ export function registerIncidentDetailRoutes(
       .flatMap((source) => source.events)
       .sort((left, right) => right.occurredAt.getTime() - left.occurredAt.getTime())
       .slice(0, 25);
-    const publicSignals = signals.map((signal) => ({
-      ...signal,
-      alertName: signal.alertName ? scrubSecrets(signal.alertName) : signal.alertName,
-    }));
+    const publicSignals = await publicSignalCoverage(deps.db, tenantId, signals);
     const [presented] = await presentIncidentTitles(deps.db, tenantId, [incident]);
     return c.json({
       ...safeAssessment(presented!)!,
@@ -277,6 +263,10 @@ export function registerIncidentDetailRoutes(
       feedbackEligibleFindingRunIds: findingRows.map((row) => row.runId).sort(),
       serviceTeams: owners,
       attention: operatorState.attention,
+      providerRecoveryReports: recoveryReports.map((report) => ({
+        signalId: report.signalId,
+        reportedAt: report.reportedAt.toISOString(),
+      })),
       automation: {
         nextAction: operatorState.automation,
         currentBudget,

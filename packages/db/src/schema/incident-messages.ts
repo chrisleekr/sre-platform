@@ -1,6 +1,6 @@
 // The canonical per-incident conversation log. The triage engine reads/writes
 // only this hub; surfaces project it. Under RLS.
-import type { IncidentFindingPayload } from '@sre/contracts';
+import type { IncidentFindingPayload, RecoveryQuestion } from '@sre/contracts';
 export type { IncidentFindingPayload } from '@sre/contracts';
 import {
   pgTable,
@@ -29,6 +29,7 @@ export interface RecoveryMessagePayload {
   outcome?: 'recovered' | 'recheck' | 'needs_human';
   checks: RecoveryCheck[];
   unknowns: string[];
+  questions?: RecoveryQuestion[];
   nextStep: string | null;
   attempt?: number;
   maxChecks?: number;

@@ -18,6 +18,7 @@ const connector = (
   type: 'prometheus',
   generation: { id: 'source', lifecycleVersion: 7 },
   capabilities: {
+    alertLifecycle: 'none',
     availability: 'ready',
     configuration: 'tenant',
     instances: 'multiple',
@@ -411,9 +412,15 @@ test('production wiring dispatches and consumes discovery independently from sna
   expect(source).toMatch(
     /const topology = makeTopologyDiscoveryRuntime\(\{[^}]*dispatch: topologyQueue/,
   );
-  expect(source).toContain('void runTopologyDiscoveryConsumer(topologyQueue, topology.handler)');
+  expect(source).toContain(
+    "superviseConsumer('topology', () => runTopologyDiscoveryConsumer(topologyQueue, topology.handler))",
+  );
   const poll = source.match(/const polled = await pollQueue.process([\s\S]*?)const classified/);
   expect(poll).not.toBeNull();
   expect(poll![1]).toContain('await topologyQueue.enqueue');
   expect(poll![1]).not.toContain('topology.handler');
+  // Topology reconcile shares the poll guard window, so a stranded pass is retried on the same cadence.
+  expect(source).toMatch(
+    /runOncePerWindow\(\s*pollReconcileGuard,\s*async \(\) =>[^\n]*await topologyQueue\.reconcile\(\)/,
+  );
 });

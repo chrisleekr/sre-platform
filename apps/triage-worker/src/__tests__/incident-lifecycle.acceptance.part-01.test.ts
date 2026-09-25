@@ -8,6 +8,7 @@ import {
   clearWorkingPost,
   finishSurfaceDelivery,
   getBindingById,
+  getBindingByExternal,
   getBindingByIncident,
   getIncident,
   getSurfaceStatusPostByBinding,
@@ -31,15 +32,11 @@ import { makeClassifyHandler } from '../classify-consumer';
 import { makeFakeClassifier } from '../engine/classify';
 import type { TriageEngine, TriageInput, TriageResult } from '../engine/types';
 import { makeRedisLock } from '../lock';
-
 import { TriageWorker } from '../worker';
-
 import { createFixture } from './incident-lifecycle.acceptance.fixture';
-
 const __fixture = createFixture();
 const CONCLUSIVE_RUN = { outcome: 'conclusive' as const, turnBudget: 1 };
-
-test('Slack and dashboard preserve one audited lifecycle across edits, recovery, closure, and refire', async () => {
+test('Slack edits remain advisory while human actions preserve one audited lifecycle and status post', async () => {
   const investigate = vi.fn(async (input: TriageInput): Promise<TriageResult> => {
     const alert = input.alert as
       { eventType?: string; materialDeltas?: Array<{ eventType?: string }> } | undefined;
@@ -160,7 +157,6 @@ test('Slack and dashboard preserve one audited lifecycle across edits, recovery,
     await handleSlackEvent(inboundDeps, __fixture.surfaceConfigId, slackConfig, firingEnvelope),
   ).toBe('classify_enqueued');
   await __fixture.finishDirectJob(await __fixture.newestQueued('classify'), classifier);
-
   const opened = await listIncidents(__fixture.app.db, __fixture.tenantId);
   expect(opened).toHaveLength(1);
   const incidentId = opened[0]!.id;
@@ -173,7 +169,6 @@ test('Slack and dashboard preserve one audited lifecycle across edits, recovery,
     lifecycleVersion: 0,
     rcaSummary: 'Initial RCA: checkout errors correlate with pool saturation.',
   });
-
   const editedEnvelope = __fixture.messageEnvelope({
     subtype: 'message_changed',
     event_ts: '1787400001.000001',
@@ -190,13 +185,10 @@ test('Slack and dashboard preserve one audited lifecycle across edits, recovery,
     await handleSlackEvent(inboundDeps, __fixture.surfaceConfigId, slackConfig, editedEnvelope),
   ).toBe('edit_enqueued');
   await __fixture.finishDirectJob(await __fixture.newestQueued('classify'), classifier);
-  await __fixture.finishDirectJob(await __fixture.newestQueued('signal.reassess'), (job) =>
-    worker.handle(job, { signal: new AbortController().signal }),
-  );
   expect(await getIncident(__fixture.app.db, __fixture.tenantId, incidentId)).toMatchObject({
     status: 'open',
     investigationStatus: 'assessed',
-    rcaSummary: 'Terminal RCA: the checkout pool saturated after a deploy.',
+    rcaSummary: 'Initial RCA: checkout errors correlate with pool saturation.',
   });
 
   const mitigate = __fixture.messageEnvelope({
@@ -235,7 +227,7 @@ test('Slack and dashboard preserve one audited lifecycle across edits, recovery,
   await __fixture.finishDirectJob(await __fixture.newestQueued('classify'), classifier);
   expect(await listIncidents(__fixture.app.db, __fixture.tenantId)).toHaveLength(1);
   expect(await listIncidentSignals(__fixture.app.db, __fixture.tenantId, incidentId)).toMatchObject(
-    [{ state: 'resolved', lastEventType: 'resolved' }],
+    [{ state: 'unknown', lastEventType: 'opened' }],
   );
   expect(
     await __fixture.admin.db
@@ -249,14 +241,20 @@ test('Slack and dashboard preserve one audited lifecycle across edits, recovery,
       .from(jobs)
       .where(and(eq(jobs.tenantId, __fixture.tenantId), eq(jobs.type, 'resume'))),
   ).toHaveLength(resumeJobsBeforeResolution.length);
-  await __fixture.finishDirectJob(await __fixture.newestQueued('recovery.verify'), (job) =>
-    worker.handle(job, { signal: new AbortController().signal }),
-  );
+  await __fixture.hub.transitionIncident(__fixture.tenantId, incidentId, {
+    to: 'resolved',
+    reason: 'Responder verified current service health independently.',
+    transitionKey: `manual-recovery:${incidentId}`,
+    author: 'human',
+    authorUserId: __fixture.actorUserId,
+    originSurface: 'dashboard',
+    expectedVersion: 1,
+  });
   expect(await getIncident(__fixture.app.db, __fixture.tenantId, incidentId)).toMatchObject({
     status: 'resolved',
     investigationStatus: 'assessed',
     lifecycleVersion: 2,
-    rcaSummary: 'Terminal RCA: the checkout pool saturated after a deploy.',
+    rcaSummary: 'Initial RCA: checkout errors correlate with pool saturation.',
   });
 
   // Verified recovery resolves the occurrence; follow-up work does not keep it active.
@@ -287,27 +285,36 @@ test('Slack and dashboard preserve one audited lifecycle across edits, recovery,
     await handleSlackEvent(inboundDeps, __fixture.surfaceConfigId, slackConfig, refiredEnvelope),
   ).toBe('edit_enqueued');
   await __fixture.finishDirectJob(await __fixture.newestQueued('classify'), classifier);
-  const refireJob = await __fixture.newestQueued('signal.reassess');
-  await __fixture.finishDirectJob(refireJob, (job) =>
-    worker.handle(job, { signal: new AbortController().signal }),
-  );
+  expect(await getIncident(__fixture.app.db, __fixture.tenantId, incidentId)).toMatchObject({
+    status: 'closed',
+    lifecycleVersion: 3,
+  });
+  await __fixture.hub.transitionIncident(__fixture.tenantId, incidentId, {
+    to: 'open',
+    reason: 'Responder observed a new outage.',
+    transitionKey: `manual-refire:${incidentId}`,
+    author: 'human',
+    authorUserId: __fixture.actorUserId,
+    originSurface: 'dashboard',
+    expectedVersion: 3,
+  });
 
   expect(await getIncident(__fixture.app.db, __fixture.tenantId, incidentId)).toMatchObject({
     status: 'open',
     investigationStatus: 'assessed',
     lifecycleVersion: 4,
-    rcaSummary: 'Refired RCA: checkout errors returned after closure.',
+    rcaSummary: 'Initial RCA: checkout errors correlate with pool saturation.',
   });
   const signals = await listIncidentSignals(__fixture.app.db, __fixture.tenantId, incidentId);
   expect(signals).toHaveLength(1);
-  expect(signals[0]).toMatchObject({ state: 'firing', lastEventType: 'refired', version: 4 });
+  expect(signals[0]).toMatchObject({ state: 'unknown', lastEventType: 'opened', version: 1 });
 
   const history = await __fixture.hub.history(__fixture.tenantId, incidentId);
   expect(
     history
       .filter((message) => message.kind === 'signal')
       .map((message) => message.signalEventType),
-  ).toEqual(['opened', 'updated', 'resolved', 'refired']);
+  ).toEqual(['opened']);
   const lifecycle = history.filter((message) => message.kind === 'lifecycle');
   expect(lifecycle.map((message) => [message.lifecycleTo, message.lifecycleVersion])).toEqual([
     ['open', 0],
@@ -317,9 +324,8 @@ test('Slack and dashboard preserve one audited lifecycle across edits, recovery,
     ['open', 4],
   ]);
   const findings = history.filter((message) => message.kind === 'finding');
-  expect(findings.some((message) => message.content.includes('Terminal RCA:'))).toBe(true);
-  expect(findings.some((message) => message.content.includes('Refired RCA:'))).toBe(true);
-  expect(findings.some((message) => message.content.startsWith('RECOVERED'))).toBe(true);
+  expect(findings.some((message) => message.content.includes('Initial RCA:'))).toBe(true);
+  expect(findings.some((message) => message.content.startsWith('RECOVERED'))).toBe(false);
 
   const posts: Array<{ threadId: string; message: HubMessage }> = [];
   const updates: Array<{ messageId: string; message: HubMessage }> = [];
@@ -423,23 +429,23 @@ test('Slack and dashboard preserve one audited lifecycle across edits, recovery,
   });
 
   const sourceHash = createHash('sha256')
-    .update(__fixture.rootText('FIRING', 'Checkout errors returned after the incident was closed.'))
+    .update(__fixture.rootText('FIRING', 'Checkout 5xx errors exceed 20%.'))
     .digest('hex');
   expect(signals[0]!.contentHash).toBe(sourceHash);
 }, 30_000);
-test('a separate StatusCake went-Up root resolves its signal and completes recovery', async () => {
+test('a separate stock StatusCake went-Up root remains advisory until an exact connector binding', async () => {
   const downTs = '1787900810.813739';
   const upTs = '1787901766.830379';
   const statusCakeBot = 'B_STATUSCAKE';
   const downText = [
-    "Website | Your site '<http://luxuryescapes.com|luxuryescapes.com>' (<https://luxuryescapes.com>) went Down [HTTP 504] [Unexpected Status Code]",
-    '<http://luxuryescapes.com|luxuryescapes.com> - <https://luxuryescapes.com>',
+    "Website | Your site '<http://checkout.example|checkout.example>' (<https://checkout.example>) went Down [HTTP 504] [Unexpected Status Code]",
+    '<http://checkout.example|checkout.example> - <https://checkout.example>',
     'Your site went down!',
     '*Code:* 504 - *Reason:* Unexpected Status Code',
   ].join('\n');
   const upText = [
-    "Website | Your site '<http://luxuryescapes.com|luxuryescapes.com>' (<https://luxuryescapes.com>) went Up [HTTP 200] [Successful Connection]",
-    '<http://luxuryescapes.com|luxuryescapes.com> - <https://luxuryescapes.com>',
+    "Website | Your site '<http://checkout.example|checkout.example>' (<https://checkout.example>) went Up [HTTP 200] [Successful Connection]",
+    '<http://checkout.example|checkout.example> - <https://checkout.example>',
     'Your site went back up!',
     '*Code:* 200 - *Downtime:* 000:15:55',
   ].join('\n');
@@ -459,33 +465,8 @@ test('a separate StatusCake went-Up root resolves its signal and completes recov
     async resume() {
       throw new Error('StatusCake lifecycle acceptance must not invoke resume');
     },
-    async verifyRecovery(input, runtime) {
-      const evidenceId = await runtime.ctx.audit.record({
-        tenantId: __fixture.tenantId,
-        incidentId: input.incident.id,
-        tool: 'statuscake_get_test',
-        input: { id: '7837371' },
-        output: { status: 'up', httpCode: 200 },
-        latencyMs: 1,
-        outcome: 'data',
-      });
-      return {
-        provider: 'fake',
-        sessionId: `fake:${input.incident.id}:statuscake-recovery`,
-        ...CONCLUSIVE_RUN,
-        disposition: 'recovery',
-        summary: 'StatusCake reports the site up and the recovery check passed.',
-        confidence: 0,
-        evidenceReceipts: [{ evidenceId, tool: 'statuscake_get_test', outcome: 'complete' }],
-        recovery: {
-          outcome: 'recovered',
-          recovered: true,
-          evidence: [{ name: 'Website check', before: 'HTTP 504', now: 'HTTP 200' }],
-          evidenceIds: [evidenceId],
-          unknowns: [],
-          nextStep: null,
-        },
-      };
+    async verifyRecovery() {
+      throw new Error('Provider clearance must not require a recovery model');
     },
   };
   const worker = new TriageWorker({
@@ -511,20 +492,15 @@ test('a separate StatusCake went-Up root resolves its signal and completes recov
       dim: EMBED_DIM,
       embed: async (texts: string[]) => texts.map(() => Array.from({ length: EMBED_DIM }, () => 0)),
     },
-    classify: makeFakeClassifier((candidate, _incidents, resolutionCandidates) => {
+    classify: makeFakeClassifier((candidate) => {
       if (candidate.text.includes('went Up')) {
-        expect(resolutionCandidates).toHaveLength(1);
-        expect(resolutionCandidates[0]).toMatchObject({
-          externalMessageId: downTs,
-          channel: __fixture.channel,
-        });
-        return { decision: 'resolves_signal', signalIndex: 1 };
+        throw new Error('Normalized uptime recovery must bypass classification');
       }
       return {
         decision: 'new_incident',
         service: 'website',
         severity: 'sev1',
-        title: 'luxuryescapes.com down — HTTP 504 from uptime monitor',
+        title: 'checkout.example down — HTTP 504 from uptime monitor',
       };
     }),
   });
@@ -555,9 +531,15 @@ test('a separate StatusCake went-Up root resolves its signal and completes recov
     await handleSlackEvent(inboundDeps, __fixture.surfaceConfigId, slackConfig, downEnvelope),
   ).toBe('classify_enqueued');
   await __fixture.finishDirectJob(await __fixture.newestQueued('classify'), classifier);
-  const incident = (await listIncidents(__fixture.app.db, __fixture.tenantId)).find(
-    (row) => row.title === 'luxuryescapes.com down — HTTP 504 from uptime monitor',
+  const binding = await getBindingByExternal(
+    __fixture.app.db,
+    __fixture.tenantId,
+    'slack',
+    `${__fixture.channel}:${downTs}`,
   );
+  const incident = binding
+    ? await getIncident(__fixture.app.db, __fixture.tenantId, binding.incidentId)
+    : undefined;
   expect(incident).toBeDefined();
   await __fixture.finishDirectJob(await __fixture.newestQueued('triage'), (job) =>
     worker.handle(job, { signal: new AbortController().signal }),
@@ -583,17 +565,23 @@ test('a separate StatusCake went-Up root resolves its signal and completes recov
   ).toMatchObject([
     {
       externalMessageId: downTs,
-      state: 'resolved',
-      lastEventType: 'resolved',
-      version: 2,
+      state: 'unknown',
+      lastEventType: 'opened',
+      version: 1,
     },
   ]);
-  await __fixture.finishDirectJob(await __fixture.newestQueued('recovery.verify'), (job) =>
-    worker.handle(job, { signal: new AbortController().signal }),
-  );
   expect(await getIncident(__fixture.app.db, __fixture.tenantId, incident!.id)).toMatchObject({
-    status: 'resolved',
-    recoveryState: 'verified',
-    recoveryAttempt: 1,
+    status: 'open',
   });
+  expect(await getIncident(__fixture.app.db, __fixture.tenantId, incident!.id)).toMatchObject({
+    status: 'open',
+    resolutionPolicy: 'verified_recovery',
+    resolutionBasis: null,
+  });
+  expect(
+    await __fixture.admin.db
+      .select()
+      .from(jobs)
+      .where(and(eq(jobs.tenantId, __fixture.tenantId), eq(jobs.type, 'recovery.verify'))),
+  ).toHaveLength(0);
 }, 30_000);

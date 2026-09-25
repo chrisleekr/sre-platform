@@ -1,11 +1,12 @@
 import { createSdkMcpServer, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+import { agentSdkOutputSchema } from './agent-sdk/output-schema';
 import type { InboundCandidate } from '@sre/connectors';
 import type { IncidentSummary } from '@sre/db';
 import { randomUUID } from 'node:crypto';
 import * as z from 'zod';
 import type { AgentSdkConfig } from './agent-sdk/contracts';
 import { STRUCTURED_SYSTEM, baseOptions, linkedAbortController, runQuery } from './agent-sdk/query';
+import { parseStructuredOutput } from './structured-repair';
 import {
   degradedResult,
   makeMcpTools,
@@ -303,13 +304,14 @@ export function makeAgentSdkGenerator(config: AgentSdkConfig): StructuredGenerat
       if (generationOptions?.signal?.aborted) throw generationOptions.signal.reason;
       const options = baseOptions(config, system);
       options.maxTurns = Math.min(3, config.runtime.maxTurns);
-      options.outputFormat = { type: 'json_schema', schema: zodOutputFormat(wrapped).schema };
+      options.outputFormat = { type: 'json_schema', schema: agentSdkOutputSchema(wrapped) };
       if (generationOptions?.signal)
         options.abortController = linkedAbortController(generationOptions.signal);
       const output = await runQuery(config, prompt, options);
       if (output.result.subtype !== 'success')
         throw new Error('Claude Agent SDK returned no structured output');
-      return wrapped.parse(output.result.structured_output).result;
+      return parseStructuredOutput(wrapped, output.result.structured_output, generationOptions)
+        .result;
     },
   };
 }

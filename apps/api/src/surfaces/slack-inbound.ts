@@ -22,6 +22,7 @@ import type {
 } from './slack-inbound/contracts';
 import { dispatchSlackClassify, insertSlackClassifyTx } from './slack-inbound/classify';
 import { processSlackInteraction } from './slack-inbound/interaction';
+import { isNativeAlertOpener } from './slack-inbound/native-opener';
 import { processSlackMention } from './slack-inbound/mention';
 import { applySlackInboundSuppression } from './slack-inbound/suppression';
 import {
@@ -129,6 +130,8 @@ async function processSlackEvent(
   context: { intakeId?: string },
 ): Promise<SlackProcessorOutcome> {
   const ev = envelope.event;
+  if (await isNativeAlertOpener(deps.appDb, config, envelope))
+    return 'suppressed_native_alert_opener';
 
   // Mention suppression: Slack delivers a human @-mention as BOTH an `app_mention` event and a
   // `message` event. The app_mention branch below owns it; drop the `message` twin from the classify

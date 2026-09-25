@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { describe, expect, test } from 'vitest';
 
 import { SlackApiError, slackChatPostAlertRoot } from '../index';
@@ -9,12 +10,14 @@ const __fixture = createFixture();
 describe('slackChatPostAlertRoot', () => {
   test('creates a plain platform-owned root and returns its timestamp', async () => {
     const { fetch, calls } = __fixture.fakeFetch({ ok: true, ts: '1788000000.000001' });
-    const timestamp = await slackChatPostAlertRoot(
+    const intakeId = randomUUID();
+    const timestamp = await Reflect.apply(slackChatPostAlertRoot, undefined, [
       fetch,
       'xoxb-alert-root',
       'C07ALERTS',
       'x'.repeat(40_000),
-    );
+      intakeId,
+    ]);
 
     expect(timestamp).toBe('1788000000.000001');
     expect(calls).toHaveLength(1);
@@ -30,6 +33,24 @@ describe('slackChatPostAlertRoot', () => {
     });
     expect(calls[0]!.body).not.toHaveProperty('thread_ts');
     expect(calls[0]!.body.text).toHaveLength(39_000);
+    const blocks = calls[0]!.body.blocks as {
+      type: string;
+      block_id?: string;
+      text: { type: string; text: string };
+    }[];
+    expect(blocks).toEqual(expect.any(Array));
+    expect(blocks[0]?.block_id).toBe(`sre-alert-root:${intakeId}`);
+    expect(
+      blocks.every(
+        (block) =>
+          block.type === 'section' &&
+          block.text.type === 'plain_text' &&
+          block.text.text.length <= 3_000,
+      ),
+    ).toBe(true);
+    expect(blocks.map((block) => block.text.text).join('')).toBe(calls[0]!.body.text);
+    const ids = blocks.flatMap((block) => (block.block_id ? [block.block_id] : []));
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   test('treats Slack ok:false as a definitive rejection', async () => {

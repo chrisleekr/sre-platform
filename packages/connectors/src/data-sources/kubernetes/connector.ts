@@ -31,6 +31,7 @@ const MAX_RUNTIME_POD_PAGES = 5;
 const KUBERNETES_CONNECTOR = {
   type: 'kubernetes',
   capabilities: {
+    alertLifecycle: 'structured_snapshot',
     topology: 'inventory',
     availability: 'ready',
     configuration: 'tenant',

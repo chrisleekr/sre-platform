@@ -8,6 +8,7 @@ import type { InvestigationOperation } from '@sre/contracts';
 import { NonRetryableError, RetryableError, type Job } from '@sre/queue';
 import { persistConversationResult } from './conversation-result';
 import {
+  ProviderConfigurationError,
   ProviderRateLimitError,
   ProviderUnavailableError,
   type TriageResult,
@@ -33,6 +34,23 @@ import {
   failureCompletion,
   persistNonPromotingRun,
 } from './terminal';
+
+/** Code-owned run summary and terminal reason for an engine failure; never provider text. */
+function engineFailureText(error: unknown) {
+  if (error instanceof ProviderRateLimitError)
+    return {
+      summary: 'AI provider rate limit reached.',
+      reason: 'AI provider rate limit reached',
+    } as const;
+  if (error instanceof ProviderConfigurationError)
+    return {
+      summary: 'AI provider rejected the configured request.',
+      reason: 'AI provider rejected the configured request',
+    } as const;
+  if (error instanceof ProviderUnavailableError)
+    return { summary: 'Engine execution failed.', reason: 'provider unavailable' } as const;
+  return { summary: 'Engine execution failed.', reason: 'engine error' } as const;
+}
 
 export class WorkerDisposition {
   constructor(private readonly runtime: WorkerRuntime) {}
@@ -111,26 +129,15 @@ export class WorkerDisposition {
     preserveProgress?: IncidentRow['investigationStatus'],
     restoreRecovery = false,
   ): Promise<boolean> {
+    const failure = engineFailureText(error);
     return persistTerminalEngineFailure({
       runtime: this.runtime,
       tenantId,
       incidentId: incident.id,
       service: incident.service,
       toolRuntime,
-      completion: failureCompletion(
-        this.runtime,
-        runId,
-        toolRuntime,
-        error instanceof ProviderRateLimitError
-          ? 'AI provider rate limit reached.'
-          : 'Engine execution failed.',
-      ),
-      reason:
-        error instanceof ProviderRateLimitError
-          ? 'AI provider rate limit reached'
-          : error instanceof ProviderUnavailableError
-            ? 'provider unavailable'
-            : 'engine error',
+      completion: failureCompletion(this.runtime, runId, toolRuntime, failure.summary),
+      reason: failure.reason,
       originBase,
       preserveProgress,
       restoreRecovery,
@@ -142,6 +149,8 @@ export class WorkerDisposition {
       throw new NonRetryableError('AI provider rate limit reached');
     if (error instanceof ProviderUnavailableError)
       throw new RetryableError('triage provider unavailable; redelivering');
+    // Redelivering the same rejected model or credential burns every attempt for the same 4xx.
+    if (error instanceof ProviderConfigurationError) throw new NonRetryableError(error.message);
     throw error instanceof Error ? error : new Error(String(error));
   }
 
@@ -178,7 +187,9 @@ export class WorkerDisposition {
     const { deps } = this.runtime;
     const recovery = result.recovery;
     let outcome: RecoveryOutcome =
-      recovery?.outcome ?? (recovery?.recovered ? 'recovered' : 'needs_human');
+      result.outcome !== 'conclusive'
+        ? 'needs_human'
+        : (recovery?.outcome ?? (recovery?.recovered ? 'recovered' : 'needs_human'));
     const delay = recovery?.recheckAfterMinutes;
     const scheduleReason = recovery?.scheduleReason
       ? publicModelText(recovery.scheduleReason)
@@ -205,17 +216,19 @@ export class WorkerDisposition {
         )) ?? new Date();
       nextCheckAt = new Date(scheduleBase.getTime() + scheduleDelayMinutes * 60_000);
     }
-    const nextStep =
-      outcome === 'needs_human' && context.attempt >= context.maxChecks && !recovery?.nextStep
+    const requiredAction =
+      recovery?.questions?.find((question) => question.resolutionRelevance === 'blocking')
+        ?.nextAction ?? recovery?.nextStep;
+    const nextStep = requiredAction
+      ? publicModelText(requiredAction)
+      : outcome === 'needs_human' && context.attempt >= context.maxChecks
         ? 'Automated recovery monitoring is exhausted; a responder must review the remaining condition.'
-        : recovery?.nextStep
-          ? publicModelText(recovery.nextStep)
-          : null;
+        : null;
     const finalized = await deps.hub.finalizeRecovery(tenantId, context.responseRootIncidentId, {
       conversationIncidentId: incidentId,
       recoveryRunId: context.verificationRunId,
       ...(investigationRunId
-        ? { runCompletion: investigationRunCompletion(investigationRunId, result) }
+        ? { runCompletion: investigationRunCompletion(investigationRunId, { ...result, nextStep }) }
         : {}),
       recoveryJobId: context.recoveryJobId,
       expectedLifecycleVersion: context.expectedLifecycleVersion,
@@ -232,6 +245,15 @@ export class WorkerDisposition {
       maxChecks: context.maxChecks,
       recoveryEvidenceIds: recovery?.evidenceIds ?? [],
       recoveryUnknowns: (recovery?.unknowns ?? []).map(publicModelText),
+      ...(recovery?.questions !== undefined
+        ? {
+            recoveryQuestions: recovery.questions.map((question) => ({
+              ...question,
+              question: publicModelText(question.question),
+              nextAction: publicModelText(question.nextAction),
+            })),
+          }
+        : {}),
       recoveryNextStep: nextStep,
       recoveryChecks: (recovery?.evidence ?? []).map((check) => ({
         name: publicModelText(check.name),
@@ -245,8 +267,8 @@ export class WorkerDisposition {
           nextStep,
         },
         investigationRunId,
-        'conversation_only',
-        'terminal_incident',
+        result.outcome === 'inconclusive' ? 'not_promoted' : 'conversation_only',
+        result.outcome === 'inconclusive' ? 'investigation_inconclusive' : 'terminal_incident',
       ),
       assessedMaterials: context.signals.flatMap((signal) =>
         signal.materialHash
@@ -338,6 +360,16 @@ export class WorkerDisposition {
         priorInvestigationStatus,
         humanMessageFence,
       });
+    }
+    if (
+      result.disposition === 'recovery' &&
+      recovery &&
+      result.outcome === 'inconclusive' &&
+      result.recovery?.outcome === 'needs_human' &&
+      result.recovery.recovered === false
+    ) {
+      const finalized = await this.persistRecovery(tenantId, incidentId, result, recovery, runId);
+      return finalized.runCompleted;
     }
     if (result.outcome !== 'conclusive') {
       return persistNonPromotingRun({

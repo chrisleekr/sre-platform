@@ -9,7 +9,6 @@ import { ClassifyAttachments } from './classify-consumer/attachments';
 import type { ClassifyHandlerDeps } from './classify-consumer/contracts';
 import { ClassifyCore } from './classify-consumer/core';
 import { MentionHandler } from './classify-consumer/mention';
-import { ObservationHandler } from './classify-consumer/observations';
 import { PushHandler } from './classify-consumer/push';
 
 export type {
@@ -29,9 +28,8 @@ export function makeClassifyHandler(
 ): (job: Job, ctx?: JobContext) => Promise<void> {
   const core = new ClassifyCore(deps);
   const attachments = new ClassifyAttachments(core);
-  const observations = new ObservationHandler(core);
   const mentions = new MentionHandler(core, attachments);
-  const push = new PushHandler(core, attachments, observations);
+  const push = new PushHandler(core, attachments);
   return async (
     job: Job,
     ctx: JobContext = { signal: new AbortController().signal },

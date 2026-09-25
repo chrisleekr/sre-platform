@@ -5,10 +5,15 @@ import {
   makeDb,
   acknowledgeSignalPrompt,
   claimDueSignalPrompts,
+  applySignalObservation,
   createIncident,
+  incidentSignals,
   incidents,
   isActionableSignalTicket,
+  listProviderRecoveryReports,
   listSignalDispositions,
+  PROVIDER_RECOVERY_REPORT_DECISION,
+  PROVIDER_RECOVERY_REPORT_ROOT_DECISION,
   listSignalDispositionPage,
   markSignalEffectiveDisposition,
   recordSignalDisposition,
@@ -70,6 +75,7 @@ afterAll(async () => {
       await admin.db.delete(signalDispositions).where(sql`tenant_id in (${tenantA}, ${tenantB})`);
     if (tenantSignalPolicies)
       await admin.db.delete(tenantSignalPolicies).where(sql`tenant_id in (${tenantA}, ${tenantB})`);
+    await admin.db.delete(incidentSignals).where(sql`tenant_id in (${tenantA}, ${tenantB})`);
     await admin.db.delete(incidents).where(sql`tenant_id in (${tenantA}, ${tenantB})`);
     await admin.db.delete(tenants).where(sql`id in (${tenantA}, ${tenantB})`);
     await admin.close();
@@ -186,6 +192,189 @@ describe('signal disposition repository', () => {
     });
     expect(isActionableSignalTicket(correlated)).toBe(false);
     await expect(startSignalReview(app.db, tenantA, correlated.id)).resolves.toBeNull();
+  });
+
+  test('lists only current recovery reports linked to the incident, under tenant RLS', async () => {
+    const incident = await createIncident(app.db, tenantA, {
+      fingerprint: `recovery-report-${randomUUID()}`,
+      alertSource: 'slack',
+      service: 'checkout',
+      severity: 'sev3',
+    });
+    const observed = await applySignalObservation(app.db, tenantA, {
+      incidentId: incident.id,
+      surface: 'slack',
+      channel: 'C-SIGNALS',
+      externalMessageId: `root-${randomUUID()}`,
+      state: 'unknown',
+      summary: 'Checkout error rate is high.',
+      contentHash: 'recovery-report-content',
+      eventKey: `slack:C-SIGNALS:${randomUUID()}:producer:bot:B1`,
+      eventAt: new Date('2026-09-20T00:00:00.000Z'),
+    });
+    const signalKey = `slack:monitor-${randomUUID()}`;
+    const reportedAt = new Date('2026-09-20T00:05:00.000Z');
+    const linked = (eventKey: string, sourceEventAt: Date, correlationDecision: string) => ({
+      ...input(eventKey, 'log'),
+      signalKey,
+      sourceEventAt,
+      correlationDecision,
+      correlatedIncidentId: incident.id,
+      correlatedSignalId: observed.signal.id,
+    });
+    await recordSignalDisposition(
+      app.db,
+      tenantA,
+      linked(`slack:C-SIGNALS:${randomUUID()}`, reportedAt, 'recovery_reported'),
+    );
+    await recordSignalDisposition(app.db, tenantA, {
+      ...linked(`slack:C-SIGNALS:${randomUUID()}`, reportedAt, 'belongs_to'),
+      signalKey: `slack:other-${randomUUID()}`,
+    });
+
+    await expect(listProviderRecoveryReports(app.db, tenantA, incident.id)).resolves.toEqual([
+      { signalId: observed.signal.id, reportedAt },
+    ]);
+    await expect(listProviderRecoveryReports(app.db, tenantB, incident.id)).resolves.toEqual([]);
+
+    // A later event for the same monitor supersedes the report, so it no longer reads as recovered.
+    await recordSignalDisposition(
+      app.db,
+      tenantA,
+      linked(`slack:C-SIGNALS:${randomUUID()}`, new Date('2026-09-20T00:10:00.000Z'), 'belongs_to'),
+    );
+    await expect(listProviderRecoveryReports(app.db, tenantA, incident.id)).resolves.toEqual([]);
+  });
+
+  const groupedIncident = async () => {
+    const incident = await createIncident(app.db, tenantA, {
+      fingerprint: `recovery-group-${randomUUID()}`,
+      alertSource: 'slack',
+      service: 'checkout',
+      severity: 'sev3',
+    });
+    const observe = (
+      externalMessageId: string,
+      channel = 'C-SIGNALS',
+      eventAt = new Date('2026-09-20T00:00:00.000Z'),
+    ) =>
+      applySignalObservation(app.db, tenantA, {
+        incidentId: incident.id,
+        surface: 'slack',
+        channel,
+        externalMessageId,
+        state: 'unknown',
+        summary: 'Checkout error rate is high.',
+        contentHash: `content-${externalMessageId}`,
+        eventKey: `slack:${channel}:${externalMessageId}:producer:bot:B1`,
+        eventAt,
+      });
+    const reportedAt = new Date('2026-09-20T00:05:00.000Z');
+    const report = (correlatedSignalId: string, correlationDecision: string) =>
+      recordSignalDisposition(app.db, tenantA, {
+        ...input(`slack:C-SIGNALS:${randomUUID()}`, 'log'),
+        signalKey: `slack:monitor-${randomUUID()}`,
+        sourceEventAt: reportedAt,
+        correlationDecision,
+        correlatedIncidentId: incident.id,
+        correlatedSignalId,
+      });
+    const covered = async () =>
+      (await listProviderRecoveryReports(app.db, tenantA, incident.id)).map((row) => row.signalId);
+    return { incident, observe, reportedAt, report, covered };
+  };
+
+  test('an edit-scoped report covers the active signals of its Slack message, not those of another message', async () => {
+    const { incident, observe, reportedAt, report } = await groupedIncident();
+    const root = `grouped-${randomUUID()}`;
+    const first = await observe(`${root}#alert-a`);
+    const second = await observe(`${root}#alert-b`);
+    const otherMessage = await observe(`other-${randomUUID()}#alert-a`);
+    const otherChannel = await observe(`${root}#alert-c`, 'C-ELSEWHERE');
+    await report(first.signal.id, PROVIDER_RECOVERY_REPORT_ROOT_DECISION);
+
+    const covered = await listProviderRecoveryReports(app.db, tenantA, incident.id);
+
+    expect(covered.map((row) => row.signalId).sort()).toEqual(
+      [first.signal.id, second.signal.id].sort(),
+    );
+    expect(covered.every((row) => row.reportedAt.getTime() === reportedAt.getTime())).toBe(true);
+    expect(covered.map((row) => row.signalId)).not.toContain(otherMessage.signal.id);
+    expect(covered.map((row) => row.signalId)).not.toContain(otherChannel.signal.id);
+  });
+
+  test('a report from a new message covers only its linked signal, not a sibling of the original message', async () => {
+    const { observe, report, covered } = await groupedIncident();
+    const root = `grouped-${randomUUID()}`;
+    const first = await observe(`${root}#alert-a`);
+    await observe(`${root}#alert-b`);
+    await report(first.signal.id, PROVIDER_RECOVERY_REPORT_DECISION);
+
+    await expect(covered()).resolves.toEqual([first.signal.id]);
+  });
+
+  test('an edit-scoped report does not cover a sibling that re-fired after it or is already resolved', async () => {
+    const { observe, report, covered } = await groupedIncident();
+    const root = `grouped-${randomUUID()}`;
+    const first = await observe(`${root}#alert-a`);
+    const refired = await observe(
+      `${root}#alert-b`,
+      'C-SIGNALS',
+      new Date('2026-09-20T00:10:00.000Z'),
+    );
+    const resolved = await observe(`${root}#alert-c`);
+    await admin.db
+      .update(incidentSignals)
+      .set({ state: 'resolved' })
+      .where(eq(incidentSignals.id, resolved.signal.id));
+    await report(first.signal.id, PROVIDER_RECOVERY_REPORT_ROOT_DECISION);
+
+    const ids = await covered();
+
+    expect(ids).toContain(first.signal.id);
+    expect(ids).not.toContain(refired.signal.id);
+    expect(ids).not.toContain(resolved.signal.id);
+  });
+
+  test('a later event on the same Slack message retires an edit-scoped report, one on another message does not', async () => {
+    const { incident, observe, reportedAt, covered } = await groupedIncident();
+    const root = `grouped-${randomUUID()}`;
+    const first = await observe(`${root}#alert-a`);
+    const second = await observe(`${root}#alert-b`);
+    // Slack versions are microsecond timestamps, so they order the edits exactly as their times do.
+    const onMessage = (
+      threadId: string,
+      signalKey: string,
+      sourceEventAt: Date,
+      extra: Partial<Parameters<typeof recordSignalDisposition>[2]> = {},
+    ) =>
+      recordSignalDisposition(app.db, tenantA, {
+        ...input(`slack:C-SIGNALS:${randomUUID()}`, 'log'),
+        threadId,
+        signalKey,
+        sourceEventAt,
+        sourceEventVersion: String(sourceEventAt.getTime() * 1000),
+        ...extra,
+      });
+    await onMessage(root, `slack:monitor-a-${randomUUID()}`, reportedAt, {
+      correlationDecision: PROVIDER_RECOVERY_REPORT_ROOT_DECISION,
+      correlatedIncidentId: incident.id,
+      correlatedSignalId: first.signal.id,
+    });
+    await onMessage(
+      `other-${randomUUID()}`,
+      `slack:monitor-x-${randomUUID()}`,
+      new Date('2026-09-20T00:07:00.000Z'),
+    );
+
+    expect((await covered()).sort()).toEqual([first.signal.id, second.signal.id].sort());
+
+    // The message was edited back to firing and its first alert is now a different monitor, so
+    // supersession by monitor does not reach the report.
+    await onMessage(root, `slack:monitor-b-${randomUUID()}`, new Date('2026-09-20T00:08:00.000Z'));
+
+    await expect(covered()).resolves.toEqual([]);
+    await expect(listProviderRecoveryReports(app.db, tenantB, incident.id)).resolves.toEqual([]);
   });
 
   test('retries failed ticket reminders and acknowledges only delivered claims', async () => {

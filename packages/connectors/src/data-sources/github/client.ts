@@ -2,6 +2,7 @@ import { str } from '../../values';
 import { SourceRateLimitError } from '../../source-file-error';
 import { TopologyReadError } from '../../topology-transport';
 import { rateLimitEvidence, type GitHubRateLimitEvidence } from './auth';
+import { boundedSignal } from '../../request-signal';
 
 /**
  * SaaS-only, pinned host. The origin is fully determined by our own code, so — as
@@ -151,13 +152,14 @@ export async function boundedPage(
   url: string,
   headers: Record<string, string>,
   method = 'GET',
+  signal?: AbortSignal,
 ): Promise<{ body: unknown; next: string | null; rateLimit: GitHubRateLimitEvidence }> {
   let response: Response;
   try {
     response = await fetchImpl(url, {
       method,
       headers,
-      signal: AbortSignal.timeout(API_TIMEOUT_MS),
+      signal: boundedSignal(API_TIMEOUT_MS, signal),
       redirect: 'error',
     });
   } catch (error) {

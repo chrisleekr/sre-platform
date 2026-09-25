@@ -7,6 +7,7 @@ import {
   scopedFetch,
   toolNamed,
 } from './test-helpers';
+import { abortableFetch, expectCancelledInFlight } from '../../../__tests__/request-signal.fixture';
 
 describe('list_applications', () => {
   const appsResp = {
@@ -334,5 +335,13 @@ describe('get_application_logs', () => {
       toolNamed(apiConn(fetchImpl), 'get_application_logs').run({ name: 'api' }),
     ).rejects.toThrow(/byte limit/);
     expect(cancelled).toBe(true);
+  });
+});
+
+describe('tool cancellation', () => {
+  test('aborts an in-flight Argo CD request when the calling investigation is cancelled', async () => {
+    const { impl, signals } = abortableFetch();
+    const tool = toolNamed(conn(impl), 'list_applications');
+    await expectCancelledInFlight((signal) => tool.run({}, { signal }), signals);
   });
 });

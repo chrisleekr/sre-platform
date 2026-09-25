@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { cfg, eventsResp, makeKubernetesConnector, type ConnectorConfig } from './test-helpers';
+import { abortableFetch, expectCancelledInFlight } from '../../../__tests__/request-signal.fixture';
 
 const REDACTED = '[REDACTED]';
 
@@ -258,5 +259,15 @@ describe('makeKubernetesConnector tools()', () => {
     await expect(
       t.run({ apiVersion: 'v1', resource: 'pods', name: 'p', namespace: 'x' }),
     ).rejects.toThrow(/private apiUrl requires caCert/);
+  });
+});
+
+describe('tool cancellation', () => {
+  test('aborts an in-flight Kubernetes request when the calling investigation is cancelled', async () => {
+    const { impl, signals } = abortableFetch();
+    const tool = makeKubernetesConnector(cfg(), impl)
+      .tools()
+      .find((t) => t.name === 'list_events')!;
+    await expectCancelledInFlight((signal) => tool.run({}, { signal }), signals);
   });
 });

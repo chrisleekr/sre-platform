@@ -8,9 +8,11 @@
     "@sre/contracts": "workspace:*",
     "@sre/db": "workspace:*",
     "@sre/queue": "workspace:*",
-    "ioredis": "^6.0.0"
-  },
-  "devDependencies": {
+    "ioredis": "^6.0.0",
+    "@sre/agent-tools": "workspace:*",
+    "@sre/connectors": "workspace:*",
+    "@sre/hub": "workspace:*",
+    "@sre/surfaces": "workspace:*",
     "drizzle-orm": "^0.45.2"
   },
   "scripts": {

@@ -8,7 +8,6 @@ import {
   sanitizeHardError,
   type AnthropicLike,
 } from '../claude';
-
 import { ProviderRateLimitError, ProviderUnavailableError } from '../types';
 import type { ResumeInput } from '../types';
 
@@ -45,6 +44,7 @@ describe('makeClaudeEngine multi-turn tool loop', () => {
         evidence: [{ name: 'Error rate', before: 'Above threshold', now: 'Below 1%' }],
         evidenceIds: ['11111111-1111-4111-8111-111111111111'],
         unknowns: [],
+        questions: [],
         nextStep: null,
       }),
     );
@@ -80,6 +80,7 @@ describe('makeClaudeEngine multi-turn tool loop', () => {
         evidence: [{ name: 'Error rate', before: 'Above threshold', now: 'Below 1%' }],
         evidenceIds: ['11111111-1111-4111-8111-111111111111'],
         unknowns: [],
+        questions: [],
         nextStep: null,
       }),
     );

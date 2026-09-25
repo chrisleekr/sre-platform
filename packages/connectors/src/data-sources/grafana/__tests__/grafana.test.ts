@@ -3,6 +3,7 @@ import type { ConnectorConfig } from '../../../registry';
 import type { HostLookup } from '../../../ssrf';
 import type { ConnectorTool } from '../../../types';
 import { buildGetUrl, makeGrafanaConnector } from '../index';
+import { abortableFetch, expectCancelledInFlight } from '../../../__tests__/request-signal.fixture';
 
 interface Call {
   url: string;
@@ -555,5 +556,13 @@ describe('probe', () => {
     expect(r.status).toBe('unhealthy');
     expect(r.reachable).toBe(false);
     expect(r.warnings.some((w) => /service-account token.*required/.test(w))).toBe(true);
+  });
+});
+
+describe('tool cancellation', () => {
+  it('aborts an in-flight Grafana request when the calling investigation is cancelled', async () => {
+    const { impl, signals } = abortableFetch();
+    const tool = toolNamed(conn(impl), 'list_datasources');
+    await expectCancelledInFlight((signal) => tool.run({}, { signal }), signals);
   });
 });

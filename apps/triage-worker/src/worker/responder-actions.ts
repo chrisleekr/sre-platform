@@ -1,4 +1,5 @@
 import { scrubSecrets } from '@sre/agent-tools';
+import { INVESTIGATION_RETRY_ORIGIN_PREFIX } from '@sre/contracts';
 import type { HumanMessage } from '@sre/db';
 import type { Job } from '@sre/queue';
 import { NonRetryableError, RetryableError } from '@sre/queue';
@@ -109,6 +110,16 @@ export async function processResponderActions(
       continue;
     }
     await invalidateKnowledgeCapture(runtime, job.tenantId, incidentId, message);
+    // The Retry investigation control is an explicit request to investigate. It is keyed on the
+    // server-set origin id, not the text, so typing the same words in chat is still classified.
+    if (
+      message.originSurface === 'dashboard' &&
+      message.originMessageId?.startsWith(INVESTIGATION_RETRY_ORIGIN_PREFIX)
+    ) {
+      pendingQuestions = [message];
+      await checkpoint(message.id);
+      continue;
+    }
     try {
       intent = await runtime.executeSemantic(job, 'responder-intent', signal, (generator) =>
         classifyLifecycleIntent(generator, message.content, signal, newer),

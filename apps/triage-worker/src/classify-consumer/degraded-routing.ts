@@ -10,53 +10,14 @@ import {
   type ClassifyOutcome,
 } from './contracts';
 import { ClassifyCore, providerAlertTitle, serviceForChannel } from './core';
-import type { ObservationHandler } from './observations';
-import { persistDeterministicDisposition, persistEffectiveDisposition } from './semantic-routing';
+import { persistEffectiveDisposition } from './semantic-routing';
 
 /** Owns safety-first incident creation when ordinary classification cannot be trusted. */
 export class DegradedSignalRouter {
   constructor(
     private readonly core: ClassifyCore,
     private readonly attachments: ClassifyAttachments,
-    private readonly observations: ObservationHandler,
   ) {}
-
-  /** Opens an investigation when an edited provider signal has no tracked predecessor. */
-  async openUntrackedEdit(
-    candidate: InboundCandidate,
-    scrubbedCandidate: InboundCandidate,
-    job: Job,
-    fingerprint: string,
-    scrubbedText: string,
-  ): Promise<void> {
-    const opened = await this.fenced(candidate, job, () =>
-      this.core.openNewIncident(
-        job.tenantId,
-        fingerprint,
-        { channel: candidate.channel, threadId: candidate.externalId },
-        {
-          service: serviceForChannel(candidate.channel),
-          severity: DEGRADED_SEVERITY,
-          title: providerAlertTitle(scrubbedText, scrubbedCandidate.observations),
-        },
-        scrubbedCandidate.raw,
-        scrubbedText,
-        this.core.openerFor(candidate, scrubbedText),
-        this.attachments.foldIntoOwner(job.tenantId, scrubbedCandidate, scrubbedText),
-        { signals: this.core.signalsFor(scrubbedCandidate) },
-      ),
-    );
-    if (!opened) return;
-    await persistDeterministicDisposition({
-      core: this.core,
-      candidate,
-      scrubbedCandidate,
-      job,
-      scrubbedText,
-      disposition: 'investigate',
-      reason: 'An untracked provider edit failed open to an investigation.',
-    });
-  }
 
   /** Preserves a material signal as an investigation after bounded classifier failure. */
   async failOpen(
@@ -105,12 +66,8 @@ export class DegradedSignalRouter {
       reason:
         error instanceof ProviderUnavailableError ? 'provider_unavailable' : 'classifier_error',
     };
-    if (scrubbedCandidate.isEdit) {
-      await this.observations.handleEditedSignal(scrubbedCandidate, job);
-      await this.core.emitOutcome(outcome);
-      return;
-    }
     try {
+      const signals = this.core.signalsFor(scrubbedCandidate);
       const routed = await this.core.routeOrRetry(
         {
           tenantId,
@@ -128,7 +85,7 @@ export class DegradedSignalRouter {
             threadId: candidate.externalId,
           },
           dedupTtlSec: INBOUND_DEDUP_TTL_SEC,
-          signals: this.core.signalsFor(scrubbedCandidate),
+          signals,
         },
         signal,
       );
@@ -148,24 +105,5 @@ export class DegradedSignalRouter {
       )(routeError.incidentId);
     }
     await this.core.emitOutcome(outcome);
-  }
-
-  private async fenced(
-    candidate: InboundCandidate,
-    job: Job,
-    fn: () => Promise<unknown>,
-  ): Promise<boolean> {
-    const result = await this.core.withRoutingFence(job.tenantId, candidate, fn);
-    if (result.status === 'executed') return true;
-    await this.core.emitOutcome({
-      intakeId: candidate.intakeId,
-      tenantId: job.tenantId,
-      channel: candidate.channel,
-      messageId: candidate.externalId,
-      author: candidate.author,
-      outcome: 'superseded',
-      attempts: job.attempts,
-    });
-    return false;
   }
 }

@@ -40,16 +40,18 @@ export function buildGetUrl(
   return u.toString();
 }
 
-/** GET a GitHub REST endpoint. The token rides the Authorization header, never the URL. */
+/** GET a GitHub REST endpoint. The token rides the Authorization header, never the URL. `signal` is the tool caller's cancellation. */
 export async function ghGet(
   fetchImpl: FetchLike,
   token: string,
   path: string,
   query?: Record<string, string | number>,
   accept = 'application/vnd.github+json',
+  signal?: AbortSignal,
 ): Promise<unknown> {
   const url = buildGetUrl(GITHUB_API, path, query);
-  return (await boundedPage(fetchImpl, url, { ...ghHeaders(token), Accept: accept })).body;
+  return (await boundedPage(fetchImpl, url, { ...ghHeaders(token), Accept: accept }, 'GET', signal))
+    .body;
 }
 
 function immutableGitRevision(value: string): string {

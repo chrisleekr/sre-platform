@@ -1,3 +1,4 @@
+import { investigationFailureSummary } from '@sre/contracts';
 import type { IncidentDetail } from '@sre/db';
 
 export interface NextAutomation {
@@ -7,6 +8,7 @@ export interface NextAutomation {
 
 type OperatorIncidentState = Pick<
   IncidentDetail,
+  | 'operatorDecision'
   | 'attentionReason'
   | 'latestInvestigationRun'
   | 'nextStep'
@@ -58,13 +60,34 @@ function nextAutomation(incident: OperatorIncidentState): NextAutomation | null 
   return null;
 }
 
-function requiredDecision(incident: OperatorIncidentState): string {
+/** Active incident signals beside the advisory Slack recovery reports linked to them. */
+export interface ProviderRecoveryContext {
+  signals: Array<{ id: string; state: string }>;
+  reportedSignalIds: string[];
+}
+
+function providerReportedRecovery(recovery: ProviderRecoveryContext | undefined): boolean {
+  const active = recovery?.signals.filter((signal) => signal.state !== 'resolved') ?? [];
+  const reported = new Set(recovery?.reportedSignalIds);
+  return active.length > 0 && active.every((signal) => reported.has(signal.id));
+}
+
+function requiredDecision(
+  incident: OperatorIncidentState,
+  recovery: ProviderRecoveryContext | undefined,
+): string {
+  if (incident.attentionReason === 'approval_pending')
+    return 'Approve or deny the pending proposed action.';
+  // Slack text cannot clear a signal, so a reported recovery still needs an operator decision.
+  if (providerReportedRecovery(recovery))
+    return 'Provider reported recovery in Slack. Confirm resolution.';
   switch (incident.attentionReason) {
-    case 'approval_pending':
-      return 'Approve or deny the pending proposed action.';
     case 'investigation_degraded':
     case 'investigation_failed':
-      return 'Investigate manually or retry after the investigation blocker is cleared.';
+      return investigationFailureSummary(incident.latestInvestigationRun?.summary) ===
+        'AI provider rate limit reached.'
+        ? 'AI provider rate limit reached. Check the provider account limit, then retry when ready or investigate manually.'
+        : 'Investigate manually or retry after the investigation blocker is cleared.';
     case 'investigation_inconclusive':
       return (
         incident.latestInvestigationRun?.nextStep ??
@@ -87,6 +110,12 @@ function requiredDecision(incident: OperatorIncidentState): string {
       return 'Restore provider signal tracking or correct the recorded signal state.';
     case 'mitigation_active':
       return 'Confirm mitigation effectiveness, then resolve or reopen the incident.';
+    case 'operator_decision':
+      return (
+        incident.operatorDecision ?? 'Review the incident and decide the next response action.'
+      );
+    case 'automation_missing':
+      return 'No automation is recorded. Continue the investigation or choose the next response action.';
     case 'severity_requires_human':
       return 'Review the high-severity incident and decide the next response action.';
     default:
@@ -94,13 +123,22 @@ function requiredDecision(incident: OperatorIncidentState): string {
   }
 }
 
-/** Derives the responder decision and automation handoff from canonical incident state. */
-export function incidentOperatorState(incident: OperatorIncidentState, owners: string[]) {
+/**
+ * Derives the responder decision and automation handoff from canonical incident state.
+ * @param incident - Canonical incident attention and automation state.
+ * @param owners - Owning service teams.
+ * @param recovery - Incident signals and the advisory Slack recovery reports linked to them.
+ */
+export function incidentOperatorState(
+  incident: OperatorIncidentState,
+  owners: string[],
+  recovery?: ProviderRecoveryContext,
+) {
   const automation = nextAutomation(incident);
   return {
     attention: incident.requiresHumanAttention
       ? {
-          decision: requiredDecision(incident),
+          decision: requiredDecision(incident, recovery),
           owner: owners.length > 0 ? owners.join(', ') : null,
           nextAutomation: automation,
         }

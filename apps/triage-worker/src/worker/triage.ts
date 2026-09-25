@@ -162,7 +162,7 @@ export class TriageHandler {
                   {
                     incident: this.runtime.incidentInput(job.tenantId, incident),
                     alert,
-                    context,
+                    context: [context, runtime.platformIdentity].filter(Boolean).join('\n\n'),
                     evidence: firstPassEvidence,
                   },
                   runtime,

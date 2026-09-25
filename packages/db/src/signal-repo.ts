@@ -18,3 +18,4 @@ export {
   type SignalObservation,
 } from './signal-repo/recovery';
 export { clearRecoveryTx, recoveryRestoreStatus } from './signal-repo/recovery-state';
+export { bindSignalToEpisodeTx, type SignalEpisodeBinding } from './signal-repo/episode-binding';

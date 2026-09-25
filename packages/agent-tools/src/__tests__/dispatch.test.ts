@@ -373,4 +373,65 @@ describe('dispatch redacts tool output at a single point', () => {
     expect(audit.entries[0]!.outcome).toBe('error');
     expect(audit.entries[0]!.output).toBeUndefined();
   });
+
+  describe('cancellation', () => {
+    const reason = new Error('deadline exceeded');
+    const cancellable = (
+      handler: ToolDefinition<Record<string, never>, string>['handler'],
+    ): ToolDefinition<Record<string, never>, string> => ({
+      name: 'cancellable',
+      description: 'observes the run signal',
+      inputSchema: z.object({}),
+      handler,
+    });
+
+    it('throws the signal reason without calling the handler or auditing when already aborted', async () => {
+      const handler = vi.fn(async () => ({ available: true as const, data: 'ran' }));
+      const audit = makeInMemoryAuditSink();
+      const controller = new AbortController();
+      controller.abort(reason);
+      const ctx = {
+        ...makeContext({ resolve: tenantConnectors({}), audit }),
+        signal: controller.signal,
+      };
+
+      await expect(runTool(cancellable(handler), ctx, {})).rejects.toBe(reason);
+      expect(handler).not.toHaveBeenCalled();
+      expect(audit.records).toHaveLength(0);
+    });
+
+    it('rethrows the signal reason when the handler fails after the run is aborted', async () => {
+      const audit = makeInMemoryAuditSink();
+      const controller = new AbortController();
+      const ctx = {
+        ...makeContext({ resolve: tenantConnectors({}), audit }),
+        signal: controller.signal,
+      };
+      const tool = cancellable(async (handlerCtx) => {
+        controller.abort(reason);
+        // A provider client reports the abort as its own error, not as the run's reason.
+        handlerCtx.signal?.throwIfAborted();
+        throw new Error('fetch aborted');
+      });
+
+      await expect(runTool(tool, ctx, {})).rejects.toBe(reason);
+      expect(audit.records).toHaveLength(0);
+    });
+
+    it('still degrades a handler error to an error result while the signal is live', async () => {
+      const audit = makeInMemoryAuditSink();
+      const ctx = {
+        ...makeContext({ resolve: tenantConnectors({}), audit }),
+        signal: new AbortController().signal,
+      };
+      const tool = cancellable(async () => {
+        throw new Error('provider 500');
+      });
+
+      const result = await runTool(tool, ctx, {});
+
+      expect(result).toEqual({ available: false, reason: 'error', evidenceId: expect.any(String) });
+      expect(audit.records.map((record) => record.outcome)).toEqual(['error']);
+    });
+  });
 });

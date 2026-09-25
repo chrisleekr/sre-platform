@@ -219,6 +219,7 @@ describe('GitLab connector lifecycle acceptance', () => {
           investigation: 'tools',
           polling: 'snapshots',
           events: 'authenticated',
+          alertLifecycle: 'none',
           topology: 'inventory',
         },
         settings: {
@@ -228,6 +229,13 @@ describe('GitLab connector lifecycle acceptance', () => {
         },
         enabled: false,
         credentialConfigured: true,
+        lifecycle: {
+          pendingEpisodes: 0,
+          mode: 'none',
+          lastReconciledAt: null,
+          failureCategory: null,
+          boundEpisodes: 0,
+        },
         verification: {
           lastAttemptAt: null,
           lastSuccessAt: null,

@@ -1,19 +1,18 @@
 import type { InboundCandidate } from '@sre/connectors';
-import { linkSignalDispositionIncident, listSignalsByExternalRoot } from '@sre/db';
+import {
+  linkSignalDispositionIncident,
+  PROVIDER_RECOVERY_REPORT_DECISION,
+  PROVIDER_RECOVERY_REPORT_ROOT_DECISION,
+} from '@sre/db';
 import { RetryableError, type Job } from '@sre/queue';
 import { resolutionIntentSupported, type CorrelationVerdict } from '../engine/correlation';
-import {
-  correlateGroupedEdit,
-  correlateGroupedResolution,
-  correlateResolution,
-} from '../engine/signal-correlation';
 import type { ClassifyAttachments } from './attachments';
 import { CLASSIFY_FAIL_OPEN_ATTEMPTS, DEGRADED_SEVERITY, type ClassifyOutcome } from './contracts';
 import { ClassifyCore, fingerprintFor, providerAlertTitle, serviceForChannel } from './core';
 import { DegradedSignalRouter } from './degraded-routing';
-import type { ObservationHandler } from './observations';
+import { RecoveryReports } from './recovery-report';
+import { RepeatNotifications } from './repeats';
 import { scrubInboundCandidate } from './scrub-candidate';
-import { StructuredFiringRouter } from './structured-routing';
 import { SupersessionGuard } from './supersession';
 import { VerdictRouter } from './verdict-routing';
 import {
@@ -25,21 +24,21 @@ import {
   shadowSafeCorrelationVerdict,
 } from './semantic-routing';
 export class PushHandler {
-  private readonly structuredFiring: StructuredFiringRouter;
   private readonly degraded: DegradedSignalRouter;
   private readonly verdicts: VerdictRouter;
   private readonly supersession: SupersessionGuard;
+  private readonly reports: RecoveryReports;
+  private readonly repeats: RepeatNotifications;
   constructor(
     private readonly core: ClassifyCore,
     private readonly attachments: ClassifyAttachments,
-    private readonly observations: ObservationHandler,
   ) {
-    this.structuredFiring = new StructuredFiringRouter(core, attachments);
-    this.degraded = new DegradedSignalRouter(core, attachments, observations);
-    this.verdicts = new VerdictRouter(core, attachments, observations);
+    this.degraded = new DegradedSignalRouter(core, attachments);
+    this.verdicts = new VerdictRouter(core, attachments);
     this.supersession = new SupersessionGuard(core);
+    this.reports = new RecoveryReports(core);
+    this.repeats = new RepeatNotifications(core);
   }
-
   async handle(candidate: InboundCandidate, job: Job, signal: AbortSignal): Promise<void> {
     const { deps } = this.core;
     const tenantId = job.tenantId;
@@ -47,15 +46,18 @@ export class PushHandler {
     if (await this.supersession.stop(candidate, job)) return;
     const fingerprint = fingerprintFor(candidate);
     const { scrubbedText, scrubbedCandidate } = scrubInboundCandidate(candidate);
-    if (
-      scrubbedCandidate.isEdit &&
-      scrubbedCandidate.signalState === 'resolved' &&
-      !scrubbedCandidate.observations?.length
-    ) {
-      const applied = await this.supersession.fenced(candidate, job, () =>
-        this.observations.handleEditedSignal(scrubbedCandidate, job),
-      );
-      if (!applied.executed) return;
+    // Slack presentation is advisory. Native or connector-read evidence uses the provider intake.
+    // A recovery notice is linked and shown on its incident, never applied to lifecycle.
+    if (scrubbedCandidate.signalState === 'resolved' || scrubbedCandidate.isEdit) {
+      let reported: { incidentId: string; signalId: string; scope: 'root' | 'signal' } | null =
+        null;
+      if (scrubbedCandidate.signalState === 'resolved') {
+        const linked = await this.supersession.fenced(candidate, job, () =>
+          this.reports.link(tenantId, scrubbedCandidate),
+        );
+        if (!linked.executed) return;
+        reported = linked.value;
+      }
       await persistDeterministicDisposition({
         core: this.core,
         candidate,
@@ -63,206 +65,61 @@ export class PushHandler {
         job,
         scrubbedText,
         disposition: 'log',
-        reason: 'A provider edit deterministically cleared an existing signal.',
+        reason: reported
+          ? 'Provider reported recovery in Slack; an operator confirms resolution.'
+          : 'Connector verification is required before this notification can change provider lifecycle.',
+        ...(reported
+          ? {
+              correlated: {
+                // The scope decides which signals the report covers when the workspace reads it.
+                decision:
+                  reported.scope === 'root'
+                    ? PROVIDER_RECOVERY_REPORT_ROOT_DECISION
+                    : PROVIDER_RECOVERY_REPORT_DECISION,
+                incidentId: reported.incidentId,
+                signalId: reported.signalId,
+              },
+            }
+          : {}),
       });
+      await this.outcome(candidate, job, reported ? 'resolution_reported' : 'resolution_unmatched');
       return;
     }
-    if (scrubbedCandidate.isEdit && scrubbedCandidate.observations?.length) {
-      const members = await listSignalsByExternalRoot(
-        deps.appDb,
-        tenantId,
-        'slack',
-        scrubbedCandidate.channel,
-        scrubbedCandidate.externalId,
-      );
-      if (members.length === 0) {
-        if (scrubbedCandidate.observations.length === 1) {
-          const legacyCandidate = { ...scrubbedCandidate };
-          delete legacyCandidate.observations;
-          const applied = await this.supersession.fenced(candidate, job, () =>
-            this.observations.handleEditedSignal(legacyCandidate, job),
-          );
-          if (!applied.executed) return;
-          if (!applied.value && scrubbedCandidate.signalState !== 'resolved') {
-            await this.degraded.openUntrackedEdit(
-              candidate,
-              scrubbedCandidate,
-              job,
-              fingerprint,
-              scrubbedText,
-            );
-            return;
-          }
-          await persistDeterministicDisposition({
-            core: this.core,
-            candidate,
+    // A repeat of a tracked monitor is an occurrence of that incident, not a new one. It is
+    // attached without a reassessment so it spends no engine run; ambiguity falls through.
+    const repeat = await this.repeats.match(tenantId, scrubbedCandidate);
+    const attached = repeat
+      ? await this.supersession.fenced(candidate, job, () =>
+          this.attachments.attachBot(
+            tenantId,
+            repeat.incidentId,
             scrubbedCandidate,
-            job,
             scrubbedText,
-            disposition: scrubbedCandidate.signalState === 'resolved' ? 'log' : 'investigate',
-            reason: 'A provider edit deterministically updated an existing signal.',
-          });
-          return;
-        }
-        if (await this.core.hasPendingPredecessor(tenantId, scrubbedCandidate))
-          throw new RetryableError('edited signal group is not tracked yet');
-        await this.outcome(candidate, job, 'edited_untracked');
-        if (scrubbedCandidate.signalState !== 'resolved') {
-          await this.degraded.openUntrackedEdit(
-            candidate,
-            scrubbedCandidate,
-            job,
-            fingerprint,
-            scrubbedText,
-          );
-          return;
-        }
-        await persistDeterministicDisposition({
-          core: this.core,
-          candidate,
-          scrubbedCandidate,
-          job,
-          scrubbedText,
-          disposition: scrubbedCandidate.signalState === 'resolved' ? 'log' : 'investigate',
-          reason: 'An untracked provider edit was retained for operator review.',
-        });
-        return;
-      }
-      const matched = correlateGroupedEdit(scrubbedCandidate.observations, members);
-      if (!matched) {
-        await this.outcome(
-          candidate,
-          job,
-          scrubbedCandidate.signalState === 'resolved'
-            ? 'resolution_unmatched'
-            : 'edited_untracked',
-        );
-        if (scrubbedCandidate.signalState !== 'resolved') {
-          await this.degraded.openUntrackedEdit(
-            candidate,
-            scrubbedCandidate,
-            job,
-            fingerprint,
-            scrubbedText,
-          );
-          return;
-        }
-        await persistDeterministicDisposition({
-          core: this.core,
-          candidate,
-          scrubbedCandidate,
-          job,
-          scrubbedText,
-          disposition: scrubbedCandidate.signalState === 'resolved' ? 'log' : 'investigate',
-          reason: 'An unmatched provider edit was retained for operator review.',
-        });
-        return;
-      }
-      const applied = await this.supersession.fenced(candidate, job, () =>
-        this.observations.applyObservationGroup(
-          scrubbedCandidate,
-          job,
-          matched.map((index) => members[index]!),
-          scrubbedCandidate.observations!,
-          'edit',
-        ),
-      );
-      if (!applied.executed) return;
+            false,
+            { requireActive: true },
+          ),
+        )
+      : null;
+    if (attached && !attached.executed) return;
+    // An incident that closed after the match attached nothing, so the repeat is classified afresh.
+    if (repeat && attached?.value?.attached) {
       await persistDeterministicDisposition({
         core: this.core,
         candidate,
         scrubbedCandidate,
         job,
         scrubbedText,
-        disposition: scrubbedCandidate.signalState === 'resolved' ? 'log' : 'investigate',
-        reason: 'A grouped provider edit deterministically updated existing signals.',
+        disposition: 'log',
+        reason: 'Repeat notification of a monitor already tracked by an open incident.',
+        correlated: { decision: 'belongs_to', ...repeat },
       });
+      await this.outcome(candidate, job, 'belongs_to');
       return;
     }
     const resolutionCandidates = await this.core.buildResolutionCandidates(
       tenantId,
       scrubbedCandidate,
-      job.attempts,
     );
-    if (scrubbedCandidate.signalState === 'resolved') {
-      if (scrubbedCandidate.observations?.length) {
-        const grouped = correlateGroupedResolution(
-          scrubbedCandidate.observations,
-          resolutionCandidates.all,
-        );
-        if (grouped) {
-          const applied = await this.supersession.fenced(candidate, job, () =>
-            this.observations.applyObservationGroup(
-              scrubbedCandidate,
-              job,
-              grouped.map((index) => resolutionCandidates.all[index]!),
-              scrubbedCandidate.observations!,
-              'resolution',
-            ),
-          );
-          if (!applied.executed) return;
-          await persistDeterministicDisposition({
-            core: this.core,
-            candidate,
-            scrubbedCandidate,
-            job,
-            scrubbedText,
-            disposition: 'log',
-            reason: 'A grouped provider recovery deterministically cleared matched signals.',
-          });
-          return;
-        }
-        if (scrubbedCandidate.observations.length > 1) {
-          await persistDeterministicDisposition({
-            core: this.core,
-            candidate,
-            scrubbedCandidate,
-            job,
-            scrubbedText,
-            disposition: 'log',
-            reason: 'An unmatched grouped recovery was retained without mutating a signal.',
-          });
-          await this.outcome(candidate, job, 'resolution_unmatched');
-          return;
-        }
-      }
-      const exactIndex = correlateResolution(scrubbedText, resolutionCandidates.all);
-      const exactTarget = exactIndex === null ? null : resolutionCandidates.all[exactIndex];
-      if (exactTarget) {
-        const applied = await this.supersession.fenced(candidate, job, () =>
-          this.observations.applyResolvedSignal(
-            scrubbedCandidate,
-            job,
-            exactTarget,
-            scrubbedCandidate.observations?.[0],
-          ),
-        );
-        if (!applied.executed) return;
-        await persistDeterministicDisposition({
-          core: this.core,
-          candidate,
-          scrubbedCandidate,
-          job,
-          scrubbedText,
-          disposition: 'log',
-          reason: 'A provider recovery deterministically cleared its matched signal.',
-        });
-        return;
-      }
-      if (resolutionCandidates.forModel.length === 0) {
-        await persistDeterministicDisposition({
-          core: this.core,
-          candidate,
-          scrubbedCandidate,
-          job,
-          scrubbedText,
-          disposition: 'log',
-          reason: 'An unmatched recovery was retained without mutating a signal.',
-        });
-        await this.outcome(candidate, job, 'resolution_unmatched');
-        return;
-      }
-    }
     const candidates = await this.core.buildCandidates(tenantId, scrubbedText);
     const semanticResult = await proposeSemanticDisposition({
       core: this.core,
@@ -314,28 +171,6 @@ export class PushHandler {
       severity: DEGRADED_SEVERITY,
       title: providerAlertTitle(scrubbedText, scrubbedCandidate.observations),
     } as const;
-    if (mode === 'shadow') {
-      const handled = await this.structuredFiring.handle(
-        candidate,
-        scrubbedCandidate,
-        job,
-        fingerprint,
-        scrubbedText,
-      );
-      if (handled) {
-        await persistEffectiveDisposition({
-          core: this.core,
-          candidate,
-          scrubbedCandidate,
-          job,
-          scrubbedText,
-          disposition: 'investigate',
-          mode,
-          reason: 'Legacy-safe structured provider routing opened an investigation.',
-        });
-        return;
-      }
-    }
     let verdict: CorrelationVerdict;
     try {
       verdict = await selectSingleCorrelationVerdict(semantic, fallback, () =>
@@ -369,33 +204,22 @@ export class PushHandler {
     if (mode === 'shadow' && semantic) {
       verdict = shadowSafeCorrelationVerdict(semantic, verdict, fallback);
     }
-    if (
-      verdict.decision === 'resolves_signal' &&
-      !this.verdicts.recoverySupported(
-        verdict,
+    if (verdict.decision === 'resolves_signal') {
+      await persistDeterministicDisposition({
+        core: this.core,
+        candidate,
+        scrubbedCandidate,
+        job,
         scrubbedText,
-        resolutionCandidates.forModel,
-        resolutionCandidates.all,
-      )
-    ) {
-      await this.supersession.fenced(candidate, job, () =>
-        this.degraded.failOpen(
-          new Error('classifier selected an unsupported recovery target'),
-          candidate,
-          scrubbedCandidate,
-          job,
-          signal,
-          fingerprint,
-          scrubbedText,
-          mode,
-        ),
-      );
+        disposition: 'log',
+        reason: 'A model recovery suggestion requires connector verification.',
+      });
+      await this.outcome(candidate, job, 'resolution_unmatched');
       return;
     }
     if (
       mode === 'enforce' &&
       semantic &&
-      verdict.decision !== 'resolves_signal' &&
       verdict.decision !== 'belongs_to' &&
       (semantic.disposition === 'ticket' || semantic.disposition === 'log')
     ) {
@@ -423,10 +247,10 @@ export class PushHandler {
     if (
       resolutionCandidates.lookupFailed &&
       job.attempts < CLASSIFY_FAIL_OPEN_ATTEMPTS &&
-      (verdict.decision === 'not_worthy' || verdict.decision === 'resolves_signal')
+      verdict.decision === 'not_worthy'
     )
       throw new RetryableError('resolution candidates unavailable');
-    if (mode === 'shadow') {
+    if (mode === 'shadow')
       await persistLegacyEffectiveDisposition({
         core: this.core,
         candidate,
@@ -437,7 +261,6 @@ export class PushHandler {
         decision: verdict.decision,
         hasResolutionIntent: resolutionIntentSupported(scrubbedText),
       });
-    }
     const applied = await this.supersession.fenced(candidate, job, () =>
       this.verdicts.apply({
         candidate,
@@ -480,7 +303,6 @@ export class PushHandler {
       });
     }
   }
-
   private async outcome(
     candidate: InboundCandidate,
     job: Job,

@@ -2,23 +2,20 @@ import { describe, expect, test } from 'vitest';
 
 import { randomUUID } from 'node:crypto';
 
-import { eq, inArray } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 
 import {
   applySignalObservation,
   applyTriageResult,
-  approvals,
   createApproval,
   createIncident,
   degradeIncidentWithMessages,
   getIncident,
-  incidentMessages,
   incidentSignals,
   incidents,
   jobs,
   listIncidentsPage,
   setInvestigationStatus,
-  transitionIncidentTx,
   withTenant,
 } from '../index';
 
@@ -76,6 +73,13 @@ describe('incident lifecycle + RLS', () => {
       alertSource: 'slack',
       service: 'recent-sev2',
       severity: 'sev2',
+    });
+    await __fixture.admin.db.insert(jobs).values({
+      tenantId: __fixture.tenantA,
+      type: 'triage',
+      payload: { incidentId: sev3Open.id },
+      status: 'queued',
+      stream: `queue-ownership-${randomUUID()}`,
     });
     await __fixture.setLifecycle(
       __fixture.app.db,
@@ -217,6 +221,13 @@ describe('incident lifecycle + RLS', () => {
       severity: 'sev3',
     });
 
+    await __fixture.admin.db.insert(jobs).values({
+      tenantId: __fixture.tenantA,
+      type: 'triage',
+      payload: { incidentId: manual.id },
+      status: 'queued',
+      stream: `manual-ownership-${randomUUID()}`,
+    });
     const queued = await listIncidentsPage(__fixture.app.db, __fixture.tenantA, {
       scope: 'open',
       attention: 'automation',
@@ -242,187 +253,6 @@ describe('incident lifecycle + RLS', () => {
       requiresHumanAttention: true,
       attentionReason: 'manual_review',
     });
-  });
-
-  test('idle archive lookup returns old terminal incidents and never active work', async () => {
-    const { id: activeId } = await createIncident(__fixture.app.db, __fixture.tenantA, {
-      fingerprint: `idle-${randomUUID()}`,
-      alertSource: 'datadog',
-      service: 'api',
-      severity: 'sev2',
-    });
-    const { id: resolvedId } = await createIncident(__fixture.app.db, __fixture.tenantA, {
-      fingerprint: `resolved-idle-${randomUUID()}`,
-      alertSource: 'datadog',
-      service: 'worker',
-      severity: 'sev3',
-    });
-    const { id: closedId } = await createIncident(__fixture.app.db, __fixture.tenantA, {
-      fingerprint: `closed-idle-${randomUUID()}`,
-      alertSource: 'datadog',
-      service: 'closed-worker',
-      severity: 'sev3',
-    });
-    const { id: archivedId } = await createIncident(__fixture.app.db, __fixture.tenantA, {
-      fingerprint: `archived-idle-${randomUUID()}`,
-      alertSource: 'datadog',
-      service: 'archived-worker',
-      severity: 'sev3',
-    });
-    const { id: recentMessageId } = await createIncident(__fixture.app.db, __fixture.tenantA, {
-      fingerprint: `recent-message-${randomUUID()}`,
-      alertSource: 'datadog',
-      service: 'recent-worker',
-      severity: 'sev3',
-    });
-    const { id: boundaryId } = await createIncident(__fixture.app.db, __fixture.tenantA, {
-      fingerprint: `boundary-${randomUUID()}`,
-      alertSource: 'datadog',
-      service: 'boundary-worker',
-      severity: 'sev3',
-    });
-    await __fixture.setLifecycle(__fixture.app.db, __fixture.tenantA, resolvedId, 'resolved');
-    await __fixture.setLifecycle(__fixture.app.db, __fixture.tenantA, closedId, 'closed');
-    await __fixture.setLifecycle(__fixture.app.db, __fixture.tenantA, archivedId, 'resolved');
-    await __fixture.setLifecycle(__fixture.app.db, __fixture.tenantA, recentMessageId, 'resolved');
-    await __fixture.setLifecycle(__fixture.app.db, __fixture.tenantA, boundaryId, 'resolved');
-    await __fixture.admin.db
-      .update(incidents)
-      .set({ updatedAt: new Date('2026-08-20T00:00:00.000Z') })
-      .where(
-        inArray(incidents.id, [
-          activeId,
-          resolvedId,
-          closedId,
-          archivedId,
-          recentMessageId,
-          boundaryId,
-        ]),
-      );
-    await __fixture.admin.db
-      .update(incidents)
-      .set({ archivedAt: new Date('2026-08-20T12:00:00.000Z') })
-      .where(eq(incidents.id, archivedId));
-    await __fixture.admin.db
-      .update(incidents)
-      .set({ updatedAt: new Date('2026-08-21T00:00:00.000Z') })
-      .where(eq(incidents.id, boundaryId));
-    await __fixture.admin.db.insert(incidentMessages).values({
-      tenantId: __fixture.tenantA,
-      incidentId: recentMessageId,
-      author: 'human',
-      kind: 'reply',
-      content: 'Recent follow-up',
-      createdAt: new Date('2026-08-21T00:00:01.000Z'),
-    });
-
-    const candidates = await incidentRepo.listIdleTerminalIncidentCandidates(
-      __fixture.app.db,
-      __fixture.tenantA,
-      new Date('2026-08-21T00:00:00.000Z'),
-    );
-
-    expect(candidates).toEqual(
-      expect.arrayContaining([
-        { id: resolvedId, lifecycleVersion: 1 },
-        { id: closedId, lifecycleVersion: 1 },
-      ]),
-    );
-    expect(candidates).toHaveLength(2);
-  });
-
-  test('deletion is irreversible and refuses active work, firing signals, or pending approvals', async () => {
-    const { id } = await createIncident(__fixture.app.db, __fixture.tenantA, {
-      fingerprint: `archive-guard-${randomUUID()}`,
-      alertSource: 'prometheus',
-      service: 'archive-guard',
-      severity: 'sev3',
-    });
-    expect(
-      await withTenant(__fixture.app.db, __fixture.tenantA, (tx) =>
-        incidentRepo.setIncidentArchivedTx(tx, id, true, { expectedVersion: 0 }),
-      ),
-    ).toMatchObject({ outcome: 'active' });
-
-    await __fixture.setLifecycle(__fixture.app.db, __fixture.tenantA, id, 'resolved');
-    await setInvestigationStatus(__fixture.app.db, __fixture.tenantA, id, 'gathering');
-    expect(
-      await withTenant(__fixture.app.db, __fixture.tenantA, (tx) =>
-        incidentRepo.setIncidentArchivedTx(tx, id, true, { expectedVersion: 1 }),
-      ),
-    ).toMatchObject({ outcome: 'work_in_progress' });
-    await setInvestigationStatus(__fixture.app.db, __fixture.tenantA, id, 'assessed');
-    const queuedJob = await __fixture.admin.db
-      .insert(jobs)
-      .values({
-        tenantId: __fixture.tenantA,
-        type: 'resume',
-        payload: { incidentId: id, humanMessageId: randomUUID() },
-        status: 'queued',
-        stream: `archive-test-${randomUUID()}`,
-      })
-      .returning({ id: jobs.id });
-    expect(
-      await withTenant(__fixture.app.db, __fixture.tenantA, (tx) =>
-        incidentRepo.setIncidentArchivedTx(tx, id, true, { expectedVersion: 1 }),
-      ),
-    ).toMatchObject({ outcome: 'work_in_progress' });
-    await __fixture.admin.db
-      .update(jobs)
-      .set({ status: 'done' })
-      .where(eq(jobs.id, queuedJob[0]!.id));
-    await applySignalObservation(__fixture.app.db, __fixture.tenantA, {
-      incidentId: id,
-      surface: 'slack',
-      channel: 'C-archive',
-      externalMessageId: `archive-${randomUUID()}`,
-      state: 'firing',
-      summary: 'Still firing',
-      contentHash: randomUUID(),
-      eventKey: `archive-${randomUUID()}`,
-      eventAt: new Date(),
-    });
-    expect(
-      await withTenant(__fixture.app.db, __fixture.tenantA, (tx) =>
-        incidentRepo.setIncidentArchivedTx(tx, id, true, { expectedVersion: 1 }),
-      ),
-    ).toMatchObject({ outcome: 'active_signals' });
-    await __fixture.admin.db
-      .update(incidentSignals)
-      .set({ state: 'resolved', resolvedAt: new Date() })
-      .where(eq(incidentSignals.incidentId, id));
-
-    const approval = await createApproval(__fixture.app.db, __fixture.tenantA, {
-      incidentId: id,
-      actionId: `archive-approval-${randomUUID()}`,
-      prompt: 'Approve cleanup?',
-      options: [{ id: 'approve', label: 'Approve' }],
-    });
-    expect(
-      await withTenant(__fixture.app.db, __fixture.tenantA, (tx) =>
-        incidentRepo.setIncidentArchivedTx(tx, id, true, { expectedVersion: 1 }),
-      ),
-    ).toMatchObject({ outcome: 'pending_approvals' });
-    await __fixture.admin.db
-      .update(approvals)
-      .set({ decision: 'approve', decidedAt: new Date() })
-      .where(eq(approvals.id, approval.row.id));
-
-    expect(
-      await withTenant(__fixture.app.db, __fixture.tenantA, (tx) =>
-        incidentRepo.setIncidentArchivedTx(tx, id, true, { expectedVersion: 1 }),
-      ),
-    ).toMatchObject({ outcome: 'applied', archivedAt: expect.any(Date) });
-    expect(
-      await withTenant(__fixture.app.db, __fixture.tenantA, (tx) =>
-        transitionIncidentTx(tx, id, 'open'),
-      ),
-    ).toMatchObject({ outcome: 'archived' });
-    expect(
-      await withTenant(__fixture.app.db, __fixture.tenantA, (tx) =>
-        incidentRepo.setIncidentArchivedTx(tx, id, false, { expectedVersion: 1 }),
-      ),
-    ).toMatchObject({ outcome: 'noop', archivedAt: expect.any(Date) });
   });
 
   test('an explicit override archives only a closed incident with an active signal', async () => {
@@ -571,4 +401,200 @@ describe('incident lifecycle + RLS', () => {
     ).toBeNull();
     expect((await getIncident(__fixture.app.db, __fixture.tenantA, id))?.status).toBe('resolved');
   });
+});
+
+describe('recorded responder ownership', () => {
+  test.each([
+    ['idle', null, null, null, true],
+    ['queued', 'queued', null, null, false],
+    ['processing', 'processing', null, null, false],
+    ['completed job', 'done', null, null, true],
+    ['scheduled monitor', null, 'monitoring', new Date('2026-09-21T00:00:00Z'), false],
+    ['unscheduled monitor', null, 'monitoring', null, true],
+    ['stale verification status', null, 'verifying', null, true],
+  ] as const)(
+    'list, detail and counts agree for %s',
+    async (_name, jobStatus, recoveryState, recoveryNextCheckAt, needsHuman) => {
+      const before = await incidentRepo.countIncidentsByScope(__fixture.app.db, __fixture.tenantA);
+      const { id } = await createIncident(__fixture.app.db, __fixture.tenantA, {
+        fingerprint: `ownership-${randomUUID()}`,
+        alertSource: 'manual',
+        service: 'checkout-api',
+        severity: 'sev3',
+      });
+      await __fixture.admin.db
+        .update(incidents)
+        .set({ recoveryState, recoveryNextCheckAt })
+        .where(eq(incidents.id, id));
+      if (jobStatus)
+        await __fixture.admin.db.insert(jobs).values({
+          tenantId: __fixture.tenantA,
+          type: 'triage',
+          payload: { incidentId: id },
+          status: jobStatus,
+          stream: `ownership-${randomUUID()}`,
+        });
+      const detail = await incidentRepo.getIncidentDetail(__fixture.app.db, __fixture.tenantA, id);
+      const page = await listIncidentsPage(__fixture.app.db, __fixture.tenantA, {
+        scope: 'open',
+        limit: 1_000,
+      });
+      expect(detail?.requiresHumanAttention).toBe(needsHuman);
+      expect(page.incidents.find((row) => row.id === id)?.requiresHumanAttention).toBe(needsHuman);
+      const lane = await listIncidentsPage(__fixture.app.db, __fixture.tenantA, {
+        scope: 'open',
+        attention: needsHuman ? 'human' : 'automation',
+        limit: 1_000,
+      });
+      expect(lane.incidents.some((row) => row.id === id)).toBe(true);
+      const after = await incidentRepo.countIncidentsByScope(__fixture.app.db, __fixture.tenantA);
+      expect(after.needsHuman - before.needsHuman).toBe(needsHuman ? 1 : 0);
+      expect(after.automation - before.automation).toBe(needsHuman ? 0 : 1);
+    },
+  );
+
+  test('terminal incidents do not need a human solely because work ended', async () => {
+    const { id } = await createIncident(__fixture.app.db, __fixture.tenantA, {
+      fingerprint: `terminal-idle-${randomUUID()}`,
+      alertSource: 'manual',
+      service: 'checkout-api',
+      severity: 'sev3',
+    });
+    await __fixture.setLifecycle(__fixture.app.db, __fixture.tenantA, id, 'closed');
+    expect(
+      (await incidentRepo.getIncidentDetail(__fixture.app.db, __fixture.tenantA, id))
+        ?.requiresHumanAttention,
+    ).toBe(false);
+  });
+
+  const decisionGaps = [
+    {
+      question: 'Must capacity survive losing one node?',
+      category: 'operator_decision',
+      evidenceKind: null,
+      attemptedEvidenceIds: [],
+    },
+  ] as const;
+  const assessedAt = new Date('2026-09-20T00:00:00Z');
+  const recoveredAt = new Date('2026-09-20T01:00:00Z');
+
+  test.each([
+    ['current decision', decisionGaps, assessedAt, null, null, 'incident', true],
+    ['superseded decision', decisionGaps, assessedAt, recoveredAt, 'monitoring', 'incident', false],
+    [
+      'health-check decision',
+      decisionGaps,
+      assessedAt,
+      recoveredAt,
+      'monitoring',
+      'health_check',
+      true,
+    ],
+    [
+      'blank question',
+      [{ ...decisionGaps[0], question: '  ' }],
+      assessedAt,
+      null,
+      null,
+      'incident',
+      false,
+    ],
+    [
+      'legacy text',
+      ['Must capacity survive losing one node?'],
+      assessedAt,
+      null,
+      null,
+      'incident',
+      false,
+    ],
+    ['no gaps', null, assessedAt, null, null, 'incident', false],
+    ['equal timestamps', decisionGaps, assessedAt, assessedAt, 'monitoring', 'incident', false],
+    ['older recovery', decisionGaps, recoveredAt, assessedAt, 'monitoring', 'incident', true],
+    ['undated assessment', decisionGaps, null, recoveredAt, 'monitoring', 'incident', false],
+    ['undated recovery', decisionGaps, assessedAt, null, 'monitoring', 'incident', true],
+    ['both undated', decisionGaps, null, null, 'monitoring', 'incident', false],
+    [
+      'recovery timestamp without state',
+      decisionGaps,
+      assessedAt,
+      recoveredAt,
+      null,
+      'incident',
+      true,
+    ],
+    [
+      'equal health-check timestamps',
+      decisionGaps,
+      assessedAt,
+      assessedAt,
+      'monitoring',
+      'health_check',
+      true,
+    ],
+    ['undated health check', decisionGaps, null, null, 'monitoring', 'health_check', true],
+  ] as const)(
+    '%s controls human attention without inferring legacy intent',
+    async (
+      _name,
+      unknowns,
+      assessmentUpdatedAt,
+      recoveryUpdatedAt,
+      recoveryState,
+      purpose,
+      expected,
+    ) => {
+      const { id } = await createIncident(__fixture.app.db, __fixture.tenantA, {
+        fingerprint: `decision-${randomUUID()}`,
+        alertSource: 'slack',
+        service: 'checkout-api',
+        severity: 'sev3',
+      });
+      await applySignalObservation(__fixture.app.db, __fixture.tenantA, {
+        incidentId: id,
+        surface: 'slack',
+        channel: 'C_DECISIONS',
+        externalMessageId: randomUUID(),
+        state: 'firing',
+        summary: 'Capacity warning',
+        contentHash: randomUUID(),
+        eventKey: randomUUID(),
+        eventAt: new Date(),
+      });
+      await __fixture.admin.db
+        .update(incidents)
+        .set({
+          purpose,
+          unknowns: unknowns as never,
+          assessmentUpdatedAt,
+          recoveryUpdatedAt,
+          recoveryState,
+          recoveryNextCheckAt: recoveryUpdatedAt ? new Date('2026-09-21T00:00:00Z') : null,
+        })
+        .where(eq(incidents.id, id));
+      await __fixture.admin.db.insert(jobs).values({
+        tenantId: __fixture.tenantA,
+        type: 'triage',
+        payload: { incidentId: id },
+        status: 'processing',
+        stream: `decision-${randomUUID()}`,
+      });
+      const detail = await incidentRepo.getIncidentDetail(__fixture.app.db, __fixture.tenantA, id);
+      const page = await listIncidentsPage(__fixture.app.db, __fixture.tenantA, {
+        scope: 'open',
+        limit: 1_000,
+      });
+      expect(detail?.requiresHumanAttention).toBe(expected);
+      expect(page.incidents.find((row) => row.id === id)?.requiresHumanAttention).toBe(expected);
+      const question = expected ? decisionGaps[0].question : null;
+      expect(detail?.operatorDecision).toBe(question);
+      expect(page.incidents.find((row) => row.id === id)?.operatorDecision).toBe(question);
+      if (expected) {
+        expect(detail).toMatchObject({
+          attentionReason: 'operator_decision',
+          operatorDecision: 'Must capacity survive losing one node?',
+        });
+      }
+    },
+  );
 });

@@ -6,6 +6,7 @@ export * from './topology-source-reader';
 export * from './topology-endpoint';
 export * from './code-intelligence';
 export * from './connector-provider';
+export * from './statuscake-setup';
 export * from './connector-tools';
 export * from './db-audit-sink';
 export * from './dispatch';
@@ -18,3 +19,5 @@ export * from './search-runbooks';
 export * from './slo-status';
 export * from './types';
 export * from './issue-actions';
+
+export { reconcileConnectorLifecycle, type ConnectorSignalBinding } from './connector-lifecycle';

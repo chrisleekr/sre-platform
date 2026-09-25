@@ -2,6 +2,7 @@ import type { ConnectorConfig } from '../../registry';
 import { assertSafeHttpOrHttpsUrl, type HostLookup } from '../../ssrf';
 import { resolveTimeMs } from '../../time';
 import { obj, str } from '../../values';
+import { boundedSignal } from '../../request-signal';
 import { resolveAuth, type PromAuth, type PromFetchInit } from './auth';
 
 /** Injectable so the REST calls are unit-testable without the network. */
@@ -144,6 +145,8 @@ export interface PromClient {
   base: string;
   auth: PromAuth;
   serverTls: PromFetchInit['tls'];
+  /** Caller cancellation for tool reads; absent on probe, SLI and first-pass paths. */
+  signal?: AbortSignal;
 }
 
 export async function connect(
@@ -167,7 +170,7 @@ export async function pget(
 ): Promise<unknown> {
   const url = buildGetUrl(client.base, path, query);
   const init = await client.auth.apply({
-    signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    signal: boundedSignal(API_TIMEOUT_MS, client.signal),
     redirect: 'error',
     tls: client.serverTls,
   });
@@ -193,7 +196,7 @@ export async function ppost(
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body,
-    signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    signal: boundedSignal(API_TIMEOUT_MS, client.signal),
     redirect: 'error',
     tls: client.serverTls,
   });

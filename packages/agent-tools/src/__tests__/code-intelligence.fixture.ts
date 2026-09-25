@@ -72,6 +72,8 @@ export function createFixture() {
       status: 'open',
       investigationStatus: 'gathering',
       lifecycleVersion: 1,
+      resolutionPolicy: 'verified_recovery',
+      resolutionBasis: null,
       alertSource: 'slack',
       title: 'checkout failed',
       rcaSummary: null,

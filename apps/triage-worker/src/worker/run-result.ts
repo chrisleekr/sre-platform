@@ -63,6 +63,14 @@ export function restrictEvidenceToReceipts(result: TriageResult): TriageResult {
       ? {
           recovery: {
             ...result.recovery,
+            ...(result.recovery.questions !== undefined
+              ? {
+                  questions: result.recovery.questions.map((question) => ({
+                    ...question,
+                    attemptedEvidenceIds: keepAttempted(question.attemptedEvidenceIds),
+                  })),
+                }
+              : {}),
             ...(recoveryEvidenceIds !== undefined ? { evidenceIds: recoveryEvidenceIds } : {}),
           },
         }
@@ -108,6 +116,7 @@ export function incidentFindingPayload(
     currentState: result.currentState ? publicModelText(result.currentState) : null,
     impact: result.impact ? publicModelText(result.impact) : null,
     nextStep: result.nextStep ? publicModelText(result.nextStep) : null,
+    ...(result.reviewGaps?.length ? { gaps: result.reviewGaps.map(publicModelText) } : {}),
   };
 }
 
@@ -149,6 +158,7 @@ export function investigationRunResult(result: TriageResult): Record<string, unk
     ...(result.nextStep !== undefined
       ? { nextStep: result.nextStep ? publicModelText(result.nextStep) : null }
       : {}),
+    ...(result.reviewGaps?.length ? { gaps: result.reviewGaps.map(publicModelText) } : {}),
     ...(result.causalFindings !== undefined
       ? {
           causalFindings: result.causalFindings.map((finding) => ({
@@ -181,7 +191,19 @@ export function investigationRunResult(result: TriageResult): Record<string, unk
               before: check.before ? publicModelText(check.before) : null,
               now: publicModelText(check.now),
             })),
-            unknowns: result.recovery.unknowns.map(publicModelText),
+            unknowns: (
+              result.recovery.questions?.map((question) => question.question) ??
+              result.recovery.unknowns
+            ).map(publicModelText),
+            ...(result.recovery.questions !== undefined
+              ? {
+                  questions: result.recovery.questions.map((question) => ({
+                    ...question,
+                    question: publicModelText(question.question),
+                    nextAction: publicModelText(question.nextAction),
+                  })),
+                }
+              : {}),
             nextStep: result.recovery.nextStep ? publicModelText(result.recovery.nextStep) : null,
             recheckAfterMinutes: result.recovery.recheckAfterMinutes ?? null,
             scheduleReason: result.recovery.scheduleReason

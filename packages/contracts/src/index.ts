@@ -9,7 +9,16 @@ export * from './redact';
 export * from './incident-title';
 export * from './slo';
 export * from './postmortem';
+export * from './queue-health';
 export * from './gitlab-management';
 export * from './argocd';
 export * from './topology';
 export * from './topology-impact';
+
+export {
+  investigationFailureSummary,
+  investigationResultSummary,
+  type IncidentAttentionReason,
+} from './investigation-display';
+
+export * from './incident-resolution';

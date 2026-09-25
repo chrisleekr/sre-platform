@@ -43,6 +43,7 @@ import { pollGitLabGroup } from './polling';
 const GITLAB_CONNECTOR = {
   type: 'gitlab',
   capabilities: {
+    alertLifecycle: 'none',
     topology: 'inventory',
     availability: 'ready',
     configuration: 'tenant',

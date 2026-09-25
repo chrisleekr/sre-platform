@@ -194,6 +194,7 @@ describe('terminal investigation outcomes', () => {
       finalInput: {
         outcome: 'recovered',
         summary: 'Current checks confirm recovery.',
+        questions: [],
         evidence: [{ name: 'Error rate', before: 'high', now: 'normal' }],
         evidenceIds: ['11111111-1111-4111-8111-111111111111'],
         unknowns: [],
@@ -216,6 +217,7 @@ describe('terminal investigation outcomes', () => {
       finalInput: {
         outcome: 'recovered',
         summary: 'Current checks confirm recovery.',
+        questions: [],
         evidence: [{ name: 'Error rate', before: 'high', now: 'normal' }],
         evidenceIds: ['11111111-1111-4111-8111-111111111111'],
         unknowns: [],

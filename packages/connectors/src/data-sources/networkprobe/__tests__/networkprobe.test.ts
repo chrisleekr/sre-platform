@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import type { ConnectorConfig } from '../../../registry';
 import type { HostLookup } from '../../../ssrf';
 import type { ConnectorTool } from '../../../types';
@@ -494,5 +494,40 @@ describe('makeNetworkProbeConnector', () => {
     });
     expect(r.source).toBe('networkprobe');
     expect((r.data as { note: string }).note).toMatch(/on-demand/);
+  });
+});
+
+describe('tool cancellation', () => {
+  test('refuses to start a probe once the investigation is cancelled', async () => {
+    const { deps, tcp } = fakeDeps();
+    const reason = new Error('investigation cancelled');
+    const caller = new AbortController();
+    caller.abort(reason);
+
+    await expect(
+      toolNamed(deps, 'check_reachable').run({ host: 'example.com' }, { signal: caller.signal }),
+    ).rejects.toBe(reason);
+    expect(tcp).toHaveLength(0);
+  });
+
+  test('releases the caller when the investigation is cancelled mid-probe', async () => {
+    let started = false;
+    const { deps } = fakeDeps({
+      tcpConnect: () => {
+        started = true;
+        return new Promise<number>(() => undefined);
+      },
+    });
+    const reason = new Error('investigation cancelled');
+    const caller = new AbortController();
+
+    const call = toolNamed(deps, 'check_reachable').run(
+      { host: 'example.com' },
+      { signal: caller.signal },
+    );
+    await vi.waitFor(() => expect(started).toBe(true));
+    caller.abort(reason);
+
+    await expect(call).rejects.toBe(reason);
   });
 });

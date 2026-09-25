@@ -1,3 +1,5 @@
+import { registerInvestigationRetryRoute } from './investigation-retry';
+import { registerResolutionPolicyRoute } from './resolution-policy';
 import { scrubSecrets } from '@sre/agent-tools';
 import { getIncident, getIncidentSummary } from '@sre/db';
 import { Hono } from 'hono';
@@ -9,6 +11,8 @@ export function registerIncidentLifecycleRoutes(
   app: Hono<{ Variables: TenantAuthVariables }>,
   deps: IncidentRouteDeps,
 ): void {
+  registerResolutionPolicyRoute(app, deps);
+  registerInvestigationRetryRoute(app, deps);
   app.post('/:id/lifecycle', async (c) => {
     if (!deps.hub) return c.json({ error: 'incident lifecycle not configured' }, 503);
     const id = c.req.param('id');

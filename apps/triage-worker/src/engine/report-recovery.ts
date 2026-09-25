@@ -1,5 +1,6 @@
 import * as z from 'zod';
 import type { ToolDefinition } from '@sre/agent-tools';
+import { investigationGapSchema } from './report-findings';
 
 export const REPORT_RECOVERY_NAME = 'report_recovery';
 
@@ -28,7 +29,7 @@ const recoveryCheckSchema = z.object({
   now: singleLine(CHECK_VALUE_MAX_CHARACTERS),
 });
 
-export const reportRecoverySchema = z
+const legacyReportRecoverySchema = z
   .object({
     outcome: z.enum(['recovered', 'recheck', 'needs_human']).optional(),
     // Accepted for existing deterministic engines while providers migrate to the tri-state outcome.
@@ -88,21 +89,61 @@ export const reportRecoverySchema = z
     }
   });
 
+export const recoveryQuestionSchema = investigationGapSchema.extend({
+  question: singleLine(UNKNOWN_MAX_CHARACTERS),
+  attemptedEvidenceIds: z.array(z.uuid()).max(20),
+  resolutionRelevance: z.enum(['blocking', 'follow_up']),
+  nextAction: singleLine(NEXT_STEP_MAX_CHARACTERS),
+});
+
+export const reportRecoverySchema = legacyReportRecoverySchema
+  .safeExtend({
+    questions: z.array(recoveryQuestionSchema).max(UNKNOWN_MAX_ITEMS),
+  })
+  .superRefine((report, ctx) => {
+    const outcome = report.outcome ?? (report.recovered === true ? 'recovered' : 'needs_human');
+    const hasBlocker = report.questions.some(
+      (question) => question.resolutionRelevance === 'blocking',
+    );
+    if ((outcome === 'needs_human' && !hasBlocker) || (outcome === 'recovered' && hasBlocker)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['questions'],
+        message:
+          outcome === 'recovered'
+            ? 'recovered cannot retain resolution blockers'
+            : 'needs_human requires an actionable resolution blocker',
+      });
+    }
+  });
+
 type ReportRecoveryInput = z.infer<typeof reportRecoverySchema>;
-export type ReportRecovery = Omit<ReportRecoveryInput, 'outcome' | 'recovered'> & {
+type LegacyReportRecoveryInput = z.infer<typeof legacyReportRecoverySchema>;
+export type ReportRecovery = Omit<LegacyReportRecoveryInput, 'outcome' | 'recovered'> & {
+  questions?: ReportRecoveryInput['questions'];
+} & {
   outcome: 'recovered' | 'recheck' | 'needs_human';
   recovered: boolean;
 };
 
-function normalizeReportRecovery(report: ReportRecoveryInput): ReportRecovery {
+function normalizeReportRecovery(
+  report: LegacyReportRecoveryInput & { questions?: ReportRecoveryInput['questions'] },
+): ReportRecovery {
   const outcome = report.outcome ?? (report.recovered === true ? 'recovered' : 'needs_human');
-  return { ...report, outcome, recovered: outcome === 'recovered' };
+  return {
+    ...report,
+    ...(report.questions !== undefined
+      ? { unknowns: report.questions.map((question) => question.question) }
+      : {}),
+    outcome,
+    recovered: outcome === 'recovered',
+  };
 }
 
 export const reportRecoveryTool: ToolDefinition<ReportRecoveryInput, ReportRecovery> = {
   name: REPORT_RECOVERY_NAME,
   description:
-    'Conclude recovery verification with outcome recovered, recheck, or needs_human. Choose recheck and a 1-60 minute delay when current evidence shows a bounded transient condition worth monitoring automatically. Choose needs_human when waiting is unsafe or evidence is unavailable. Recovered and recheck require current cited evidence. Keep the summary and scheduling reason direct.',
+    'Conclude recovery verification with outcome recovered, recheck, or needs_human. Choose recheck and a 1-60 minute delay when current evidence shows a bounded transient condition worth monitoring automatically. Choose needs_human when waiting is unsafe or evidence is unavailable. Recovered and recheck require current cited evidence. Name the affected resource and the configured recovery criterion or observation window when known; never invent them. Classify questions as blocking current resolution or follow_up prevention work, with an explicit nextAction and actual attemptedEvidenceIds. needs_human requires a blocker; recovered forbids blockers. Empty attempts mean no check was possible, never health proof. Unknown cause or recurrence risk alone is follow-up work. Keep the summary and scheduling reason direct.',
   inputSchema: reportRecoverySchema,
   async handler(_ctx, input) {
     return { available: true, data: normalizeReportRecovery(input) };
@@ -110,7 +151,11 @@ export const reportRecoveryTool: ToolDefinition<ReportRecoveryInput, ReportRecov
 };
 
 export function parseReportRecovery(input: unknown): ReportRecovery {
-  const parsed = reportRecoverySchema.safeParse(input);
+  const schema =
+    input && typeof input === 'object' && Object.hasOwn(input, 'questions')
+      ? reportRecoverySchema
+      : legacyReportRecoverySchema;
+  const parsed = schema.safeParse(input);
   if (parsed.success) return normalizeReportRecovery(parsed.data);
   return {
     outcome: 'needs_human',

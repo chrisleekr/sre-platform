@@ -39,7 +39,8 @@ export function isSensitiveKey(key: string): boolean {
 }
 
 const SECRET_PATTERNS: RegExp[] = [
-  /-----BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-----[\s\S]*?-----END(?: [A-Z0-9]+)? PRIVATE KEY-----/g,
+  // A key cut before its END line (a truncated field) is redacted to the end of the text.
+  /-----BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-----[\s\S]*?(?:-----END(?: [A-Z0-9]+)? PRIVATE KEY-----|$)/g,
   /A(?:KIA|SIA)[0-9A-Z]{16}/g,
   /Bearer\s+[A-Za-z0-9._~+/-]+=*/gi,
   /\bsk-[A-Za-z0-9]{20,}/g,

@@ -1,9 +1,6 @@
 import { randomUUID } from 'node:crypto';
-
 import { expect, test } from 'vitest';
-
 import { eq } from 'drizzle-orm';
-
 import {
   alertCohorts,
   alertEpisodeIntakes,
@@ -16,9 +13,7 @@ import {
   surfaceBindings,
   withTenant,
 } from '@sre/db';
-
 import { createFixture } from './alertmanager-webhook.fixture';
-
 const __fixture = createFixture();
 
 test('splits grouped alerts into independent episodes, suppresses transport repeats, reassesses changes, and links recurrence', async () => {
@@ -28,42 +23,25 @@ test('splits grouped alerts into independent episodes, suppresses transport repe
       alertName: 'InventoryHighErrors',
     }).alerts[0]!,
   );
-  expect((await __fixture.deliver(grouped)).status).toBe(200);
-  expect(
-    (await __fixture.deliver(__fixture.payload('fingerprint-a', '2026-08-26T00:00:00Z'))).status,
-  ).toBe(200);
-  expect(
-    (
-      await __fixture.deliver(
-        __fixture.payload('fingerprint-a', '2026-08-26T00:00:00Z', {
-          description: 'Ten percent of requests are now failing.',
-        }),
-      )
-    ).status,
-  ).toBe(200);
-  expect(
-    (
-      await __fixture.deliver(
-        __fixture.payload('fingerprint-a', '2026-08-26T00:00:00Z', {
-          status: 'resolved',
-          description: 'Ten percent of requests are now failing.',
-          endsAt: '2026-08-26T00:04:00Z',
-        }),
-      )
-    ).status,
-  ).toBe(200);
-  expect(
-    (
-      await __fixture.deliver(
-        __fixture.payload('fingerprint-a', '2026-08-26T00:00:00Z', {
-          description: 'A delayed firing delivery arrived after this episode resolved.',
-        }),
-      )
-    ).status,
-  ).toBe(200);
-  expect(
-    (await __fixture.deliver(__fixture.payload('fingerprint-a', '2026-08-26T00:05:00Z'))).status,
-  ).toBe(200);
+  const failing = 'Ten percent of requests are now failing.';
+  const at = '2026-08-26T00:00:00Z';
+  // In order: grouped first delivery, transport repeat, material change, resolve, late firing
+  // after resolve, and a new episode from the same rule.
+  for (const delivery of [
+    grouped,
+    __fixture.payload('fingerprint-a', at),
+    __fixture.payload('fingerprint-a', at, { description: failing }),
+    __fixture.payload('fingerprint-a', at, {
+      status: 'resolved',
+      description: failing,
+      endsAt: '2026-08-26T00:04:00Z',
+    }),
+    __fixture.payload('fingerprint-a', at, {
+      description: 'A delayed firing delivery arrived after this episode resolved.',
+    }),
+    __fixture.payload('fingerprint-a', '2026-08-26T00:05:00Z'),
+  ])
+    expect((await __fixture.deliver(delivery)).status).toBe(200);
 
   const evidence = await withTenant(__fixture.app.db, __fixture.tenantId, async (tx) => ({
     incidents: await tx.select().from(incidents).orderBy(incidents.createdAt),
@@ -80,6 +58,9 @@ test('splits grouped alerts into independent episodes, suppresses transport repe
 
   expect(__fixture.postRoot).toHaveBeenCalledTimes(3);
   expect(evidence.incidents).toHaveLength(3);
+  expect(
+    evidence.incidents.every((incident) => incident.resolutionPolicy === 'provider_clear'),
+  ).toBe(true);
   expect(evidence.intakes.every((intake) => intake.state === 'accepted')).toBe(true);
   expect(evidence.signals).toHaveLength(3);
   const first = evidence.signals.find(
@@ -88,11 +69,12 @@ test('splits grouped alerts into independent episodes, suppresses transport repe
       signal.state === 'resolved',
   );
   expect(first).toMatchObject({ version: 3, lastEventType: 'resolved' });
+  expect(first?.clearProvenance).toBe('provider');
   expect(
     evidence.intakes.find(
       (intake) =>
         intake.providerFingerprint === __fixture.providerFingerprint('fingerprint-a') &&
-        intake.startsAt.getTime() === Date.parse('2026-08-26T00:00:00Z'),
+        intake.startsAt?.getTime() === Date.parse('2026-08-26T00:00:00Z'),
     )?.observation,
   ).toMatchObject({ status: 'resolved' });
   expect(queuedJobs.filter((job) => job.type === 'triage')).toHaveLength(3);
@@ -100,13 +82,28 @@ test('splits grouped alerts into independent episodes, suppresses transport repe
   expect(queuedJobs.filter((job) => job.type === 'recovery.verify')).toHaveLength(1);
   expect(queuedJobs.filter((job) => job.type === 'cohort.analyze')).toHaveLength(1);
   expect(evidence.cohorts).toHaveLength(1);
-  expect(evidence.relations.filter((relation) => relation.type === 'recurrence_of')).toHaveLength(
-    1,
-  );
+  const recurrence = evidence.signals.at(-1)!;
+  const priorId = first!.incidentId;
+  expect(recurrence.startsAt).toEqual(new Date('2026-08-26T00:05:00Z'));
+  expect(evidence.relations.map((r) => [r.type, r.sourceIncidentId, r.targetIncidentId])).toEqual([
+    ['recurrence_of', recurrence.incidentId, priorId],
+  ]);
+  // The fixture sets no dashboard origin, so each link is the bare incident id.
+  const relationshipMessages = evidence.messages.filter((m) => m.kind === 'relationship');
   expect(
-    evidence.relations.filter((relation) => relation.type === 'possible_related'),
-  ).toHaveLength(0);
-  expect(evidence.messages.filter((message) => message.kind === 'relationship')).toHaveLength(2);
+    relationshipMessages.map((m) => [m.originMessageId, m.incidentId, m.content]).sort(),
+  ).toEqual([
+    [
+      `alertmanager:relationship-backlink:${recurrence.id}:${priorId}`,
+      priorId,
+      `A new firing from this monitor rule opened a separate incident: ${recurrence.incidentId}.`,
+    ],
+    [
+      `alertmanager:relationships:${recurrence.id}`,
+      recurrence.incidentId,
+      `Recurring monitor rule. Prior incident: ${priorId}. This firing remains a separate investigation.`,
+    ],
+  ]);
   expect(
     queuedJobs
       .filter((job) => job.type === 'triage')

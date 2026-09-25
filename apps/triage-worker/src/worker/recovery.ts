@@ -3,7 +3,8 @@ import {
   restoreRecoveryVerification,
   type IncidentEvidence,
 } from '@sre/db';
-import { RetryableError, type Job, type JobContext } from '@sre/queue';
+import { ProviderClearLockContendedError } from '@sre/hub';
+import { LockContentionError, RetryableError, type Job, type JobContext } from '@sre/queue';
 import { reloadIncidentEvidence } from './evidence';
 import type { TriageResult } from '../engine/types';
 import type { WorkerDisposition } from './disposition';
@@ -42,11 +43,29 @@ export class RecoveryHandler {
         deps.hub.appendedByOrigin(job.tenantId, payload.incidentId!, eventKey),
         deps.hub.appendedByTransition(job.tenantId, payload.incidentId!, transitionKey),
       ]);
-      if (committed) {
-        await deps.hub.publishAppended(committed);
+      if (committed || committedLifecycle) {
+        if (committed) await deps.hub.publishAppended(committed);
         if (committedLifecycle) await deps.hub.publishAppended(committedLifecycle);
         return;
       }
+      let providerHandled: boolean;
+      try {
+        providerHandled = await deps.hub.resolveProviderClear(
+          job.tenantId,
+          payload.incidentId!,
+          {
+            lifecycleVersion: payload.lifecycleVersion!,
+            signalFence: payload.signalFence!,
+          },
+          transitionKey,
+        );
+      } catch (error) {
+        // A connector write held the generation rows. Nothing was written; redeliver.
+        if (error instanceof ProviderClearLockContendedError)
+          throw new LockContentionError('provider clear evaluation contended; redelivering');
+        throw error;
+      }
+      if (providerHandled) return;
       const maxChecks = await this.disposition.recoveryMaxChecks(payload.maxChecks);
       const attempt = Math.max(1, Math.min(maxChecks, payload.attempt ?? 1));
       const limits = await automaticInvestigationBudgetLimits(this.runtime);
@@ -129,6 +148,7 @@ export class RecoveryHandler {
                   attempt,
                   maxChecks,
                   ...(payload.scheduleReason ? { scheduledReason: payload.scheduleReason } : {}),
+                  ...(runtime.platformIdentity ? { context: runtime.platformIdentity } : {}),
                 },
                 runtime,
               ),
@@ -155,7 +175,15 @@ export class RecoveryHandler {
           return this.disposition.throwEngineError(error);
         }
         result = restrictEvidenceToReceipts(result);
-        if (result.outcome !== 'conclusive') {
+        if (
+          result.outcome !== 'conclusive' &&
+          !(
+            result.outcome === 'inconclusive' &&
+            result.disposition === 'recovery' &&
+            result.recovery?.outcome === 'needs_human' &&
+            result.recovery.recovered === false
+          )
+        ) {
           runCompleted = await persistNonPromotingRun({
             runtime: this.runtime,
             tenantId: job.tenantId,

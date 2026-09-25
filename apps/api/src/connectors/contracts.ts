@@ -15,6 +15,7 @@ import type { GitLabSmeeManager } from '../gitlab-smee';
 import type { Logger } from '../logger';
 
 export interface ConnectorRoutesDeps {
+  lifecycle?: import('../alertmanager-webhook').AlertmanagerWebhookDeps;
   auth: AuthDeps;
   db: Db;
   secrets: SecretStore;
@@ -42,6 +43,8 @@ export interface ConnectorRoutesDeps {
     credential: string,
   ) => Promise<GitHubRepositorySummary[]>;
   convertGitHubAppManifest?: (code: string) => Promise<GitHubManifestConversion>;
+  /** StatusCake API transport for contact-group setup; tests inject a fake. */
+  statusCakeFetch?: typeof fetch;
 }
 
 export interface GitLabSettings {

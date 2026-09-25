@@ -4,6 +4,7 @@ import type { IDataSourceConnector } from '../../types';
 const AWS_CONNECTOR = {
   type: 'aws',
   capabilities: {
+    alertLifecycle: 'none',
     availability: 'incomplete',
     configuration: 'tenant',
     instances: 'multiple',

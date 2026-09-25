@@ -11,6 +11,7 @@ import {
 import type { EvidenceReceipt } from '../engine/evidence-closure';
 import { publicModelText } from '../public-output';
 import type { IncidentRow, TriageWorkerDeps } from './contracts';
+import { platformIdentityContext } from './platform-identity';
 
 export interface EngineToolRuntime {
   readEvidence: NonNullable<import('../engine/types').TriageRuntime['readEvidence']>;
@@ -22,6 +23,8 @@ export interface EngineToolRuntime {
   evidenceReceipts: EvidenceReceipt[];
   onExecutionMetadata: (metadata: InvestigationExecutionMetadata) => void;
   onEvidenceReceipt: (receipt: EvidenceReceipt) => void;
+  /** Logins of this platform's own connections, for the investigation context; empty when none. */
+  platformIdentity?: string;
 }
 
 export class WorkerRuntime {
@@ -48,9 +51,11 @@ export class WorkerRuntime {
       service: incident.service,
       resolveConnectors: this.deps.connectorProvider(tenantId),
       audit: this.deps.auditSink,
+      signal: options.signal,
     };
     const connectors = await ctx.resolveConnectors();
     const tools = [...this.deps.tools, ...connectors.flatMap(connectorTools)];
+    const platformIdentity = await platformIdentityContext(connectors, { signal: options.signal });
     let executionMetadata: InvestigationExecutionMetadata | null = null;
     const evidenceReceipts: EvidenceReceipt[] = [];
     const onStep = async (kind: TranscriptKind, content: string): Promise<void> => {
@@ -76,6 +81,7 @@ export class WorkerRuntime {
       },
       ctx,
       tools,
+      platformIdentity,
       signal: options.signal,
       onStep,
       get executionMetadata() {

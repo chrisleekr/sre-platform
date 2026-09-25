@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Tx } from '../rls';
 import {
   INVESTIGATION_STATUSES,
@@ -27,8 +27,19 @@ export function recoveryRestoreStatus(payload: unknown): InvestigationStatus | n
  * @param tx - Existing transaction carrying tenant scope and the incident row lock.
  * @param tenantId - Tenant that owns the incident and recovery jobs.
  * @param incidentId - Incident whose recovery projection is invalidated.
+ * @param responseGroupIds - Locked group whose joint resolution basis is invalidated.
  */
-export async function clearRecoveryTx(tx: Tx, tenantId: string, incidentId: string): Promise<void> {
+export async function clearRecoveryTx(
+  tx: Tx,
+  tenantId: string,
+  incidentId: string,
+  responseGroupIds: string[] = [incidentId],
+): Promise<void> {
+  if (responseGroupIds.length > 1)
+    await tx
+      .update(incidents)
+      .set({ resolutionBasis: null })
+      .where(inArray(incidents.id, responseGroupIds));
   const [active] = await tx
     .select({
       investigationStatus: incidents.investigationStatus,
@@ -61,10 +72,13 @@ export async function clearRecoveryTx(tx: Tx, tenantId: string, incidentId: stri
     .update(incidents)
     .set({
       ...(restoreStatus ? { investigationStatus: restoreStatus } : {}),
+      resolutionBasis: null,
       recoveryState: null,
       recoverySummary: null,
       recoveryEvidenceIds: null,
       recoveryUnknowns: null,
+      recoveryQuestions: null,
+      recoveryQuestionsUpdatedAt: null,
       recoveryNextStep: null,
       recoveryUpdatedAt: null,
       recoveryRunId:

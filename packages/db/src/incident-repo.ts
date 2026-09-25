@@ -5,3 +5,4 @@ export * from './incident-repo/incident-free';
 export * from './incident-repo/lifecycle';
 export * from './incident-repo/list';
 export * from './incident-repo/title-context';
+export { getIncidentOwnerContext } from './incident-repo/owner';

@@ -610,6 +610,48 @@
       "when": 1789509912493,
       "tag": "0086_mixed_raza",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1789876747220,
+      "tag": "0087_unique_speed_demon",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1789902715352,
+      "tag": "0088_optimal_starjammers",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1789982608402,
+      "tag": "0089_tan_champions",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1789988970165,
+      "tag": "0090_tiny_expediter",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1790066922398,
+      "tag": "0091_loud_union_jack",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1790211623255,
+      "tag": "0092_real_quasimodo",
+      "breakpoints": true
     }
   ]
 }

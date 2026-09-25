@@ -162,6 +162,18 @@ export async function promoteCausalFindingsTx(
       allowedEvidenceIds.filter((id) => runEvidence.has(id)),
     ),
   );
+  // A promotion merges response groups and recordIncidentRelationTx then locks every merged member.
+  // Signal writers take group work locks before incident rows, so take all of them now, sorted,
+  // before the pair's row lock below. The graph lock keeps membership stable meanwhile.
+  const endpointIds = [
+    incidentId,
+    ...findings.flatMap((finding) => candidateByRef.get(finding.candidateRef)?.incidentId ?? []),
+  ];
+  const groupIds = new Set<string>();
+  for (const endpointId of new Set(endpointIds))
+    for (const memberId of await listResponseGroupIncidentIdsTx(tx, tenantId, endpointId))
+      groupIds.add(memberId);
+  await lockIncidentWorkTx(tx, tenantId, [...groupIds]);
   const promoted: Array<typeof incidentRelations.$inferSelect> = [];
   for (const finding of [...findings].sort((left, right) => right.confidence - left.confidence)) {
     if (finding.confidence < MIN_CAUSAL_CONFIDENCE) continue;
@@ -173,7 +185,6 @@ export async function promoteCausalFindingsTx(
       finding.direction === 'candidate_caused_this' ? incidentId : candidate.incidentId;
     const targetIncidentId =
       finding.direction === 'candidate_caused_this' ? candidate.incidentId : incidentId;
-    await lockIncidentWorkTx(tx, tenantId, [sourceIncidentId, targetIncidentId]);
     const visiblePair = await tx
       .select({ id: incidents.id })
       .from(incidents)

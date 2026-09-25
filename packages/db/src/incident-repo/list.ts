@@ -9,7 +9,6 @@ import {
   inArray,
   isNotNull,
   isNull,
-  lt,
   or,
   sql,
 } from 'drizzle-orm';
@@ -40,6 +39,13 @@ import {
   type IncidentAttentionReason,
   type IncidentSummary,
 } from './detail';
+import {
+  incidentOrder,
+  incidentSeverityRank,
+  keysetCondition,
+  type IncidentPageCursor,
+  type IncidentSort,
+} from './list-order';
 import { responsibleOwnerSql } from './owner';
 
 /**
@@ -65,6 +71,7 @@ export interface IncidentListItem extends IncidentSummary {
   occurrenceCount: number;
   signalCount: number;
   activeSignalCount: number;
+  operatorDecision: string | null;
   pendingApprovalCount: number;
   requiresHumanAttention: boolean;
   attentionReason: IncidentAttentionReason | null;
@@ -160,11 +167,8 @@ export async function listIncidents(
   );
 }
 
-/** A (created_at, id) keyset cursor for the closed-archive page reader. */
-export interface IncidentPageCursor {
-  createdAt: Date;
-  id: string;
-}
+export type { IncidentPageCursor, IncidentSort } from './list-order';
+export { INCIDENT_SEVERITY_RANKS } from './list-order';
 
 function escapeLike(value: string): string {
   return value.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_');
@@ -197,11 +201,14 @@ export async function listIncidentsPage(
     attention?: 'human' | 'automation';
     query?: string;
     severity?: string;
+    /** Defaults to `priority` for the open scope and `newest` otherwise. `priority` never pages. */
+    sort?: IncidentSort;
     limit?: number;
     before?: IncidentPageCursor;
   },
 ): Promise<{ incidents: IncidentListItem[]; nextCursor: IncidentPageCursor | null }> {
   const limit = opts.limit ?? 50;
+  const sort = opts.sort ?? (opts.scope === 'open' ? 'priority' : 'newest');
   const where: SQL[] = [isNull(incidents.archivedAt)];
   if (opts.scope !== 'all') {
     const statuses = opts.scope === 'open' ? ACTIVE_STATUSES : CLOSED_STATUSES;
@@ -217,25 +224,10 @@ export async function listIncidentsPage(
   if (opts.query) where.push(incidentSearchCondition(opts.query));
   if (opts.severity) where.push(eq(incidents.severity, opts.severity));
   if (opts.before) {
-    const beforeAt = opts.before.createdAt;
-    where.push(
-      or(
-        lt(incidents.createdAt, beforeAt),
-        and(eq(incidents.createdAt, beforeAt), lt(incidents.id, opts.before.id)),
-      )!,
-    );
+    // Priority keys on mutable attention state, so a createdAt keyset would skip eligible rows.
+    if (sort === 'priority') throw new Error('priority ordering does not support cursors');
+    where.push(keysetCondition(sort, opts.before));
   }
-  const order =
-    opts.scope === 'open'
-      ? [
-          sql`case when ${humanAttentionCondition()} then 0 else 1 end`,
-          sql`case ${incidents.severity} when 'sev1' then 1 when 'sev2' then 2 when 'sev3' then 3 else 99 end`,
-          sql`case ${incidents.status} when 'open' then 1 when 'mitigated' then 2 else 99 end`,
-          desc(incidents.updatedAt),
-          desc(incidents.createdAt),
-          desc(incidents.id),
-        ]
-      : [desc(incidents.createdAt), desc(incidents.id)];
   const rows = await withTenant(db, tenantId, (tx) =>
     tx
       .select({
@@ -266,13 +258,20 @@ export async function listIncidentsPage(
         and(eq(services.tenantId, incidents.tenantId), eq(services.name, incidents.service)),
       )
       .where(and(...where))
-      .orderBy(...order)
+      .orderBy(...incidentOrder(sort))
       .limit(limit + 1),
   );
   const hasMore = rows.length > limit;
   const page = hasMore ? rows.slice(0, limit) : rows;
   const last = page[page.length - 1];
-  const nextCursor = hasMore && last ? { createdAt: last.createdAt, id: last.id } : null;
+  const nextCursor =
+    hasMore && last && sort !== 'priority'
+      ? {
+          createdAt: last.createdAt,
+          id: last.id,
+          ...(sort === 'severity' ? { severityRank: incidentSeverityRank(last.severity) } : {}),
+        }
+      : null;
   return { incidents: page, nextCursor };
 }
 

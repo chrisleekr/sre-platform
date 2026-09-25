@@ -58,6 +58,11 @@ export interface ToolContext {
    */
   resolveConnectors(): Promise<IDataSourceConnector[]>;
   audit: ToolAuditSink;
+  /**
+   * The run's cancellation, for example its job deadline. Handlers pass it to provider requests,
+   * and `runTool` rethrows its reason rather than recording an aborted call as a tool error.
+   */
+  signal?: AbortSignal;
 }
 
 export interface ToolDefinition<I, O> {

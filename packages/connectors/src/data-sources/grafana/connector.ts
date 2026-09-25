@@ -1,3 +1,4 @@
+import { structuredAlertEvents } from '../../alert-lifecycle-events';
 import { createDataSourceConnector, defineConnector, type ConnectorConfig } from '../../registry';
 import { dataSourceEntityCoverage } from '../../entity-coverage';
 import { dnsLookup, type HostLookup } from '../../ssrf';
@@ -20,13 +21,14 @@ import { grafanaTopology } from './topology';
 const GRAFANA_CONNECTOR = {
   type: 'grafana',
   capabilities: {
+    alertLifecycle: 'events',
     topology: 'inventory',
     availability: 'ready',
     configuration: 'tenant',
     instances: 'multiple',
     investigation: 'tools',
     polling: 'none',
-    events: 'none',
+    events: 'authenticated',
   },
 } as const;
 
@@ -46,7 +48,16 @@ export function makeGrafanaConnector(
   options: GrafanaConnectorOptions = {},
 ): IDataSourceConnector {
   return createDataSourceConnector(config, GRAFANA_CONNECTOR, {
+    alertLifecycle: structuredAlertEvents('grafana'),
     topology: grafanaTopology(config, fetchImpl, lookup, options),
+    // Grafana answers /api/user for service-account tokens too, with the login its request log prints,
+    // so an investigation can recognise this platform's own requests there. Only service-account
+    // logins (Grafana prefixes them "sa-") are reported, so a person's login never enters the context.
+    async identity() {
+      const user = await gget(fetchImpl, await connect(config, lookup, options), '/api/user');
+      const login = (user as { login?: unknown } | null)?.login;
+      return typeof login === 'string' && login.startsWith('sa-') ? login : null;
+    },
     entityCoverage: dataSourceEntityCoverage(
       config.id,
       ['alert_context'],

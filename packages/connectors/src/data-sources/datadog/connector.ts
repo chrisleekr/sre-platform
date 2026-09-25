@@ -1,8 +1,16 @@
+import { datadogLifecycle } from './lifecycle';
 import * as z from 'zod';
 import { createDataSourceConnector, defineConnector, type ConnectorConfig } from '../../registry';
 import { dataSourceEntityCoverage } from '../../entity-coverage';
 import { resolveTimeMs } from '../../time';
-import type { ConnectorTool, IDataSourceConnector, ProbeResult, TriageContext } from '../../types';
+import type {
+  ConnectorTool,
+  IDataSourceConnector,
+  ProbeResult,
+  ToolRunOptions,
+  TriageContext,
+} from '../../types';
+import { boundedSignal } from '../../request-signal';
 import { obj, str } from '../../values';
 import { datadogTopology } from './topology';
 import { topologyFetch } from '../../topology-transport';
@@ -47,13 +55,14 @@ const DEFAULT_TO = 'now';
 const DATADOG_CONNECTOR = {
   type: 'datadog',
   capabilities: {
+    alertLifecycle: 'events_and_read',
     topology: 'inventory',
     availability: 'ready',
     configuration: 'tenant',
     instances: 'multiple',
     investigation: 'tools',
     polling: 'none',
-    events: 'none',
+    events: 'authenticated',
   },
 } as const;
 
@@ -118,6 +127,7 @@ async function ddGet(
   headers: Record<string, string>,
   path: string,
   query?: Record<string, string | number>,
+  signal?: AbortSignal,
 ): Promise<unknown> {
   const url = buildGetUrl(base, path, query);
   // The keys ride DD-API-KEY/DD-APPLICATION-KEY headers, never the URL. fetch has no default
@@ -125,7 +135,7 @@ async function ddGet(
   // must not bounce the keys to another host, so redirect:'error'.
   const res = await fetchImpl(url, {
     headers,
-    signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    signal: boundedSignal(API_TIMEOUT_MS, signal),
     redirect: 'error',
   });
   if (!res.ok) throw datadogHttpError(res);
@@ -142,12 +152,13 @@ async function ddPost(
   headers: Record<string, string>,
   path: string,
   body: unknown,
+  signal?: AbortSignal,
 ): Promise<unknown> {
   const res = await fetchImpl(`${base}${path}`, {
     method: 'POST',
     headers: { ...headers, 'content-type': 'application/json' },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    signal: boundedSignal(API_TIMEOUT_MS, signal),
     redirect: 'error',
   });
   if (!res.ok) throw datadogHttpError(res);
@@ -244,7 +255,7 @@ function dtool<S extends z.ZodType>(def: {
   name: string;
   description: string;
   inputSchema: S;
-  run: (input: z.infer<S>) => Promise<unknown>;
+  run: (input: z.infer<S>, options?: ToolRunOptions) => Promise<unknown>;
 }): ConnectorTool {
   return def as ConnectorTool;
 }
@@ -282,9 +293,9 @@ function makeDatadogTools(config: ConnectorConfig, fetchImpl: FetchLike): Connec
         path: z.string(),
         query: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
       }),
-      run: async ({ path, query }) => {
+      run: async ({ path, query }, call) => {
         const { base, headers } = await conn();
-        return ddGet(fetchImpl, base, headers, path, query);
+        return ddGet(fetchImpl, base, headers, path, query, call?.signal);
       },
     }),
     dtool({
@@ -302,7 +313,7 @@ function makeDatadogTools(config: ConnectorConfig, fetchImpl: FetchLike): Connec
         to: z.string().optional(),
         limit: z.number().optional(),
       }),
-      run: async ({ domain, query, from, to, limit }) => {
+      run: async ({ domain, query, from, to, limit }, call) => {
         const { base, headers } = await conn();
         const { path, body } = buildSearch(
           domain,
@@ -312,7 +323,7 @@ function makeDatadogTools(config: ConnectorConfig, fetchImpl: FetchLike): Connec
           clampLimit(limit),
           Date.now(),
         );
-        return ddPost(fetchImpl, base, headers, path, body);
+        return ddPost(fetchImpl, base, headers, path, body, call?.signal);
       },
     }),
     dtool({
@@ -326,14 +337,21 @@ function makeDatadogTools(config: ConnectorConfig, fetchImpl: FetchLike): Connec
         from: z.string().optional(),
         to: z.string().optional(),
       }),
-      run: async ({ query, from, to }) => {
+      run: async ({ query, from, to }, call) => {
         const { base, headers } = await conn();
         const nowMs = Date.now();
-        return ddGet(fetchImpl, base, headers, '/api/v1/query', {
-          from: Math.floor(resolveMs(from ?? 'now-1h', nowMs) / 1000),
-          to: Math.floor(resolveMs(to ?? DEFAULT_TO, nowMs) / 1000),
-          query,
-        });
+        return ddGet(
+          fetchImpl,
+          base,
+          headers,
+          '/api/v1/query',
+          {
+            from: Math.floor(resolveMs(from ?? 'now-1h', nowMs) / 1000),
+            to: Math.floor(resolveMs(to ?? DEFAULT_TO, nowMs) / 1000),
+            query,
+          },
+          call?.signal,
+        );
       },
     }),
   ];
@@ -352,6 +370,9 @@ export function makeDatadogConnector(
   fetchImpl: FetchLike = fetch,
 ): IDataSourceConnector {
   return createDataSourceConnector(config, DATADOG_CONNECTOR, {
+    alertLifecycle: datadogLifecycle(async (path, query) =>
+      ddGet(fetchImpl, resolveBase(config.settings), await resolveHeaders(config), path, query),
+    ),
     topology: datadogTopology(config, () => {
       const boundedFetch = topologyFetch(fetchImpl);
       return {

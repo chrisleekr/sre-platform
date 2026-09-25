@@ -1,6 +1,8 @@
 import { and, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import type { Db } from '../client';
 import { lockCausalGraphTx } from '../incident-relation-repo/core';
+import { lockResponseGroupWorkTx } from '../incident-relation-repo/causal';
+import { clearRecoveryTx } from '../signal-repo/recovery-state';
 import { withTenant, type Tx } from '../rls';
 import {
   ACTIVE_STATUSES,
@@ -95,6 +97,13 @@ export async function transitionIncidentTx(
     idleBefore?: Date;
   } = {},
 ): Promise<LifecycleTransitionResult> {
+  const [target] = await tx
+    .select({ tenantId: incidents.tenantId })
+    .from(incidents)
+    .where(eq(incidents.id, id))
+    .limit(1);
+  if (!target) return { outcome: 'not_found', from: null, to, version: null };
+  const group = await lockResponseGroupWorkTx(tx, target.tenantId, id);
   const rows = await tx
     .select({
       id: incidents.id,
@@ -194,6 +203,8 @@ export async function transitionIncidentTx(
     .update(incidents)
     .set({
       status: to,
+      resolutionBasis:
+        to === 'open' || to === 'mitigated' ? null : to === 'resolved' ? 'operator' : undefined,
       lifecycleVersion: nextVersion,
       mitigatedAt: to === 'mitigated' ? sql`now()` : to === 'open' ? null : undefined,
       resolvedAt: to === 'resolved' ? sql`now()` : to === 'open' ? null : undefined,
@@ -202,6 +213,16 @@ export async function transitionIncidentTx(
     })
     .where(eq(incidents.id, id))
     .returning({ version: incidents.lifecycleVersion });
+  if (CLOSED_STATUSES.includes(from as (typeof CLOSED_STATUSES)[number]) && to === 'open') {
+    await clearRecoveryTx(tx, row.tenantId, group.rootIncidentId, group.incidentIds);
+    if (group.rootIncidentId !== id) {
+      await clearRecoveryTx(tx, row.tenantId, id);
+      await tx
+        .update(incidents)
+        .set({ lifecycleVersion: sql`${incidents.lifecycleVersion} + 1` })
+        .where(eq(incidents.id, group.rootIncidentId));
+    }
+  }
   return { outcome: 'applied', from, to, version: updated[0]!.version };
 }
 

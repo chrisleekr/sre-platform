@@ -9,6 +9,7 @@ import {
   createIncident,
   incidentSignals,
   incidents,
+  jobs,
   tenants,
 } from '../index';
 
@@ -87,6 +88,74 @@ describe('listIncidents closed-archive keyset pagination', () => {
     expect(new Set(ids).size).toBe(5); // no duplicate across pages
   });
 
+  // Priority keys on mutable attention state, which a (created_at, id) keyset cannot follow.
+  test('priority ordering neither returns nor accepts a cursor', async () => {
+    const page = await incidentRepo.listIncidentsPage(__fixture.app.db, tenantK, {
+      scope: 'closed',
+      sort: 'priority',
+      limit: 2,
+    });
+    expect(page.incidents).toHaveLength(2);
+    expect(page.nextCursor).toBeNull();
+    await expect(
+      incidentRepo.listIncidentsPage(__fixture.app.db, tenantK, {
+        scope: 'closed',
+        sort: 'priority',
+        limit: 2,
+        before: { createdAt: new Date('2026-01-01T00:00:02.000Z'), id: uuidN(4) },
+      }),
+    ).rejects.toThrow('priority ordering does not support cursors');
+  });
+
+  // Every paginated ordering must walk the whole scope exactly once with its own keyset.
+  test('pages oldest-first and severity orderings with no dup/skip', async () => {
+    const cursors: incidentRepo.IncidentPageCursor[] = [];
+    const readAll = async (sort: 'oldest' | 'severity', limit: number): Promise<string[]> => {
+      const ids: string[] = [];
+      let before: incidentRepo.IncidentPageCursor | undefined;
+      for (let guard = 0; guard < 10; guard += 1) {
+        const page = await incidentRepo.listIncidentsPage(__fixture.app.db, tenantK, {
+          scope: 'closed',
+          sort,
+          limit,
+          before,
+        });
+        ids.push(...page.incidents.map((row) => row.id));
+        if (!page.nextCursor) return ids;
+        cursors.push(page.nextCursor);
+        before = page.nextCursor;
+      }
+      throw new Error('pagination did not terminate');
+    };
+
+    expect(await readAll('oldest', 2)).toEqual([...expectedOrder].reverse());
+
+    // Severity leads, then newest within a severity: E and B are sev1, C stays sev2, and D and A
+    // carry a severity outside the known set, so they share the unknown rank and sort last.
+    await __fixture.admin.db
+      .update(incidents)
+      .set({ severity: 'sev1' })
+      .where(sql`id in (${uuidN(5)}, ${uuidN(2)})`);
+    await __fixture.admin.db
+      .update(incidents)
+      .set({ severity: 'critical' })
+      .where(sql`id in (${uuidN(4)}, ${uuidN(1)})`);
+    try {
+      const severityOrder = [uuidN(5), uuidN(2), uuidN(3), uuidN(4), uuidN(1)];
+      expect(await readAll('severity', 2)).toEqual(severityOrder);
+      // Limit 1 breaks pages inside a severity level (E to B, D to A), so the same-rank keyset
+      // branch runs, and the cursor after D carries the unknown rank back into the query.
+      cursors.length = 0;
+      expect(await readAll('severity', 1)).toEqual(severityOrder);
+      expect(cursors.map((cursor) => cursor.severityRank)).toEqual([1, 1, 2, 99]);
+    } finally {
+      await __fixture.admin.db
+        .update(incidents)
+        .set({ severity: 'sev2' })
+        .where(sql`tenant_id = ${tenantK}`);
+    }
+  });
+
   // countIncidentsByScope backs the dashboard tab badges: it must return lifecycle and attention totals
   // under RLS. Fresh tenants keep the assertions exact regardless of other tests in this file.
   test('countIncidentsByScope returns tenant-scoped lifecycle and attention totals', async () => {
@@ -115,6 +184,13 @@ describe('listIncidents closed-archive keyset pagination', () => {
       };
       // tCntA: one automation-owned sev3, one active mitigation, and three terminal rows.
       const automated = await seedStatus(tCntA, 'open', 'sev3');
+      await __fixture.admin.db.insert(jobs).values({
+        tenantId: tCntA,
+        type: 'triage',
+        payload: { incidentId: automated },
+        status: 'queued',
+        stream: `count-automation-${randomUUID()}`,
+      });
       await applySignalObservation(__fixture.app.db, tCntA, {
         incidentId: automated,
         surface: 'slack',
@@ -158,6 +234,9 @@ describe('listIncidents closed-archive keyset pagination', () => {
         closed: 0,
       });
     } finally {
+      await __fixture.admin.db
+        .delete(jobs)
+        .where(sql`tenant_id in (${tCntA}, ${tCntB}, ${tCntEmpty})`);
       await __fixture.admin.db
         .delete(incidentSignals)
         .where(sql`tenant_id in (${tCntA}, ${tCntB}, ${tCntEmpty})`);

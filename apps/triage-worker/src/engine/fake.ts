@@ -1,4 +1,5 @@
 import type { ZodType } from 'zod';
+import { parseStructuredOutput } from './structured-repair';
 import type {
   RecoveryInput,
   ResumeInput,
@@ -115,9 +116,9 @@ export function makeFakeGenerator(script?: (prompt: string) => unknown): Structu
     async generate<T>(
       prompt: string,
       schema: ZodType<T>,
-      _options?: StructuredGenerationOptions,
+      options?: StructuredGenerationOptions,
     ): Promise<T> {
-      return schema.parse(script ? script(prompt) : {});
+      return parseStructuredOutput(schema, script ? script(prompt) : {}, options);
     },
   };
 }

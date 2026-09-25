@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'vitest';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { baseOptions, runQuery } from '../agent-sdk/query';
-import { ProviderRateLimitError } from '../types';
+import {
+  ProviderConfigurationError,
+  ProviderRateLimitError,
+  ProviderUnavailableError,
+} from '../types';
 import { createFixture } from './agent-sdk.fixture';
 
 const fixture = createFixture();
@@ -86,7 +90,26 @@ describe('Claude rate-limit failures', () => {
       fixture.result({ is_error: true, api_error_status: 401 }),
     ]).catch((error) => error);
     expect(error).not.toBeInstanceOf(ProviderRateLimitError);
-    expect(error.message).toBe('Claude Agent SDK execution failed');
+    expect(error).toBeInstanceOf(ProviderConfigurationError);
+    expect(error.message).toBe('AI provider rejected the configured request (status 401)');
+  });
+
+  test('classifies a rejected request by status, keeping 5xx retryable', async () => {
+    // An unknown model id comes back as a 400 success-subtype result with zero tokens.
+    const rejected = await run([
+      fixture.result({ is_error: true, api_error_status: 400, result: 'model secret' }),
+    ]).catch((error) => error);
+    expect(rejected).toBeInstanceOf(ProviderConfigurationError);
+    expect(rejected.status).toBe(400);
+    expect(rejected.message).not.toContain('secret');
+    await expect(
+      run([fixture.result({ is_error: true, api_error_status: 503 })]),
+    ).rejects.toBeInstanceOf(ProviderUnavailableError);
+    const other = await run([fixture.result({ is_error: true, api_error_status: 422 })]).catch(
+      (error) => error,
+    );
+    expect(other).not.toBeInstanceOf(ProviderConfigurationError);
+    expect(other.message).toBe('Claude Agent SDK execution failed (status 422)');
   });
 
   test('recognizes thrown rate limits and keeps unrelated errors generic', async () => {

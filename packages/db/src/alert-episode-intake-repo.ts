@@ -10,7 +10,8 @@ import {
 export interface AlertEpisodeIntakeInput {
   dataSourceId: string;
   providerFingerprint: string;
-  startsAt: Date;
+  startsAt: Date | null;
+  opaqueEpisodeKey?: string;
   materialHash: string;
   observation: StoredAlertmanagerObservation;
   channel: string;
@@ -39,13 +40,20 @@ export async function upsertAlertEpisodeIntake(
         lastSeenAt: input.observedAt,
       })
       .onConflictDoUpdate({
-        target: [
-          alertEpisodeIntakes.tenantId,
-          alertEpisodeIntakes.dataSourceId,
-          alertEpisodeIntakes.providerFingerprint,
-          alertEpisodeIntakes.startsAt,
-        ],
+        target: input.opaqueEpisodeKey
+          ? [
+              alertEpisodeIntakes.tenantId,
+              alertEpisodeIntakes.dataSourceId,
+              alertEpisodeIntakes.opaqueEpisodeKey,
+            ]
+          : [
+              alertEpisodeIntakes.tenantId,
+              alertEpisodeIntakes.dataSourceId,
+              alertEpisodeIntakes.providerFingerprint,
+              alertEpisodeIntakes.startsAt,
+            ],
         set: {
+          startsAt: sql`coalesce(${alertEpisodeIntakes.startsAt}, excluded.starts_at)`,
           channel: sql`case
             when ${alertEpisodeIntakes.state} in ('pending', 'rejected')
             then excluded.channel
@@ -67,7 +75,22 @@ export async function upsertAlertEpisodeIntake(
         },
       })
       .returning();
-    return rows[0]!;
+    const retained = rows[0]!;
+    const conflict = Boolean(
+      retained.startsAt &&
+      retained.observation.status === 'resolved' &&
+      retained.observation.endsAt &&
+      new Date(retained.observation.endsAt) < retained.startsAt,
+    );
+    if (conflict || retained.failureCategory === 'conflicting_episode_times') {
+      const [updated] = await tx
+        .update(alertEpisodeIntakes)
+        .set({ failureCategory: conflict ? 'conflicting_episode_times' : null })
+        .where(eq(alertEpisodeIntakes.id, retained.id))
+        .returning();
+      return updated!;
+    }
+    return retained;
   });
 }
 

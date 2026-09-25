@@ -157,6 +157,7 @@ export async function splitMergedIncident(
         resolvedAt: correction.sourceLifecycle.resolvedAt
           ? new Date(correction.sourceLifecycle.resolvedAt)
           : null,
+        resolutionBasis: null,
         lifecycleVersion: sql`${incidents.lifecycleVersion} + 1`,
         updatedAt: sql`now()`,
       })

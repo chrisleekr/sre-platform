@@ -51,8 +51,10 @@ export function createFixture() {
       .where(
         sql`type in ('signal.reassess', 'recovery.verify', 'cohort.analyze', 'relation.reassess') and tenant_id = ${tenant}`,
       );
-    // poll tests insert type='poll' rows for this tenant.
-    await db.db.delete(jobs).where(sql`type = 'poll' and tenant_id = ${tenant}`);
+    // poll and topology tests insert real-typed rows for this tenant.
+    await db.db
+      .delete(jobs)
+      .where(sql`type in ('poll', 'topology.discover') and tenant_id = ${tenant}`);
     await db.db.delete(incidents).where(eq(incidents.tenantId, tenant));
     await db.db.delete(tenants).where(eq(tenants.id, tenant));
     redis.disconnect();
