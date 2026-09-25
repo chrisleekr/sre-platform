@@ -90,8 +90,9 @@ export async function reviewInvestigation(
   let reviewNextStep: string | undefined;
   let contradictory = false;
   let reviewed = false;
+  let coverageGaps: NonNullable<TriageResult['unknowns']> = [];
   try {
-    const review = await boundedEvidenceReview(
+    const { review, unreviewedIds } = await boundedEvidenceReview(
       generator,
       evidenceReviewSchema,
       EVIDENCE_REVIEW_INSTRUCTION,
@@ -101,6 +102,16 @@ export async function reviewInvestigation(
       task,
     );
     contradictory = !review.supported && review.rejection === 'contradictory_evidence';
+    // A cited-only review must not read as a full one: uncited records may contradict the answer.
+    if (unreviewedIds.length > 0)
+      coverageGaps = [
+        {
+          question: `Evidence review covered only the records this conclusion cites; ${unreviewedIds.length} uncited records were not reviewed and may contradict it.`,
+          category: 'partial_evidence',
+          evidenceKind: null,
+          attemptedEvidenceIds: unreviewedIds.slice(0, 20),
+        },
+      ];
     if (candidate.disposition === 'recovery' && review.correctedRecovery) {
       const corrected = review.correctedRecovery;
       const factual = new Set(
@@ -157,10 +168,15 @@ export async function reviewInvestigation(
       );
     }
 
-    if (review.supported && (candidate.disposition === 'reply' || review.evidenceIds.length > 0))
-      return candidate.summary.length <= 360
-        ? candidate
-        : { ...candidate, summary: scrubSecrets(review.summary) };
+    if (review.supported && (candidate.disposition === 'reply' || review.evidenceIds.length > 0)) {
+      const accepted =
+        candidate.summary.length <= 360
+          ? candidate
+          : { ...candidate, summary: scrubSecrets(review.summary) };
+      return coverageGaps.length === 0
+        ? accepted
+        : { ...accepted, unknowns: [...(accepted.unknowns ?? []), ...coverageGaps] };
+    }
     summary = scrubSecrets(review.summary);
     reason = summary;
     cited = review.evidenceIds;
@@ -255,7 +271,7 @@ export async function reviewInvestigation(
     currentState: null,
     impact: null,
     nextStep: reviewNextStep ?? 'Review the preserved evidence before relying on this conclusion.',
-    unknowns: [...(candidate.unknowns ?? []), ...reviewUnknowns],
+    unknowns: [...(candidate.unknowns ?? []), ...coverageGaps, ...reviewUnknowns],
     // Every gap stays an unknown; responder surfaces show only the first five.
     ...(gaps.length > 0 ? { reviewGaps: gaps.slice(0, 5) } : {}),
   };

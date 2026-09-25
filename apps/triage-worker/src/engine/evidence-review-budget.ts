@@ -37,7 +37,9 @@ interface Slice {
   content: string;
 }
 
-/** Cover each serialized record exactly once before allowing synthesis.
+/** Cover each serialized record exactly once before allowing synthesis. `unreviewedIds` names the
+ * admitted records left out when a budget failure fell back to the cited subset, so the caller can
+ * record that the review was partial.
  * @param generator - Existing structured provider boundary.
  * @param schema - Review response contract.
  * @param instruction - Evidence and temporal safety instructions.
@@ -54,7 +56,7 @@ export async function boundedEvidenceReview(
   evidence: InvestigationEvidence[],
   signal: AbortSignal,
   task?: TriageInput,
-): Promise<Review> {
+): Promise<{ review: Review; unreviewedIds: string[] }> {
   if (evidence.some((record) => !record.id))
     throw new EvidenceReviewFailure(
       'Evidence review record is missing an id; coverage is incomplete.',
@@ -62,7 +64,7 @@ export async function boundedEvidenceReview(
   const review = (records: InvestigationEvidence[], scope: string) =>
     reviewRecords(generator, schema, instruction, candidate, records, signal, task, scope);
   try {
-    return await review(evidence, '');
+    return { review: await review(evidence, ''), unreviewedIds: [] };
   } catch (error) {
     if (!(error instanceof EvidenceReviewFailure) || error.kind !== 'budget') throw error;
     // Partial coverage must never authorize resolution, so recovery verification fails closed.
@@ -72,7 +74,10 @@ export async function boundedEvidenceReview(
     const cited = citedEvidenceIds(candidate);
     const subset = evidence.filter((record) => cited.has(record.id!));
     if (subset.length === 0 || subset.length === evidence.length) throw error;
-    return review(subset, `${CITED_COVERAGE} `);
+    return {
+      review: await review(subset, `${CITED_COVERAGE} `),
+      unreviewedIds: evidence.flatMap((record) => (cited.has(record.id!) ? [] : [record.id!])),
+    };
   }
 }
 

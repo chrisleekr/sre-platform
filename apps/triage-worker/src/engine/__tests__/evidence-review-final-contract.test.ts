@@ -262,6 +262,36 @@ test.each(['recovered', 'recheck', 'needs_human'] as const)(
   },
 );
 
+test.each(['recheck', 'needs_human'] as const)(
+  'a promoted corrected %s report is scrubbed of secrets in every reviewer field',
+  async (outcome) => {
+    const secret = 'AKIAIOSFODNN7EXAMPLE';
+    const report = correction(outcome);
+    const result = await reviewInvestigation(
+      sdkGenerator({
+        ...response,
+        correctedRecovery: {
+          ...report,
+          summary: `${report.summary} key ${secret}`,
+          evidence: [{ name: `Latency ${secret}`, before: `key ${secret}`, now: `key ${secret}` }],
+          questions: report.questions.map((question) => ({
+            ...question,
+            question: `${question.question} key ${secret}`,
+            nextAction: `${question.nextAction} key ${secret}`,
+          })),
+          nextStep: `Recheck latency. key ${secret}`,
+          scheduleReason: report.scheduleReason && `${report.scheduleReason} key ${secret}`,
+        },
+      }),
+      candidate,
+      [evidence],
+      new AbortController().signal,
+    );
+    expect(result.outcome).toBe('conclusive');
+    expect(JSON.stringify(result)).not.toContain(secret);
+  },
+);
+
 test('supported review and complete corrected reply do not depend on a redundant rationale', async () => {
   const reply = { ...candidate, disposition: 'reply' as const, detail: 'An unchecked claim.' };
   expect(

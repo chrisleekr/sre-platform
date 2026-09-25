@@ -44,6 +44,21 @@ function recording(answer: (input: Record<string, unknown>) => unknown) {
 const supported = { supported: true, summary: 'Checked', evidenceIds: [citedId] };
 const signal = () => new AbortController().signal;
 
+/** The accepted candidate plus the one gap naming the records the cited-only review skipped. */
+function partiallyReviewed(unreviewed: InvestigationEvidence[]): TriageResult {
+  return {
+    ...candidate,
+    unknowns: [
+      {
+        question: `Evidence review covered only the records this conclusion cites; ${unreviewed.length} uncited records were not reviewed and may contradict it.`,
+        category: 'partial_evidence',
+        evidenceKind: null,
+        attemptedEvidenceIds: unreviewed.map((record) => record.id!),
+      },
+    ],
+  };
+}
+
 test('an over-length reviewer field is trimmed instead of failing the review', async () => {
   const { generator } = recording(() => ({ ...supported, summary: 's'.repeat(2_000) }));
   const result = await reviewInvestigation(generator, candidate, [cited], signal());
@@ -54,7 +69,7 @@ test('an input budget failure is retried with only the cited records', async () 
   const { generator, prompts } = recording(() => supported);
   const evidence = [cited, uncited(200_000), uncited(200_000), uncited(200_000)];
   const result = await reviewInvestigation(generator, candidate, evidence, signal());
-  expect(result).toBe(candidate);
+  expect(result).toEqual(partiallyReviewed(evidence.slice(1)));
   expect(prompts).toHaveLength(1);
   const [input] = prompts;
   expect((input!.evidence as InvestigationEvidence[]).map((record) => record.id)).toEqual([
@@ -69,13 +84,9 @@ test('an incomplete slice is a budget limit and falls back to the cited records'
   const { generator, prompts } = recording((input) =>
     input.evidenceSlices ? { complete: false, notes: [] } : supported,
   );
-  const result = await reviewInvestigation(
-    generator,
-    candidate,
-    [cited, uncited(200_000)],
-    signal(),
-  );
-  expect(result).toBe(candidate);
+  const skipped = uncited(200_000);
+  const result = await reviewInvestigation(generator, candidate, [cited, skipped], signal());
+  expect(result).toEqual(partiallyReviewed([skipped]));
   expect(prompts[0]!.evidenceSlices).toBeDefined();
   expect(prompts.at(-1)!.coverage).toMatch(/^Only the records this conclusion cites\./);
 });
