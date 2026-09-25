@@ -75,7 +75,11 @@ test('a slow provider is abandoned at the run deadline without caching the miss'
   controller.abort();
   expect(await pending).toBe('');
   expect(console.warn).not.toHaveBeenCalled();
-  await platformIdentityContext([connector(identity)], { now: 1 });
+  // Aborting the retry too keeps the test off the real lookup budget timer.
+  const retry = new AbortController();
+  const again = platformIdentityContext([connector(identity)], { signal: retry.signal, now: 1 });
+  retry.abort();
+  expect(await again).toBe('');
   expect(identity).toHaveBeenCalledTimes(2);
 });
 

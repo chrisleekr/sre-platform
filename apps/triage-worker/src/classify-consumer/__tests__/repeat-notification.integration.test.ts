@@ -271,6 +271,7 @@ describe('repeat provider notifications', () => {
 
       try {
         await handle(job(candidate));
+        expect(match).toHaveBeenCalledTimes(1);
       } finally {
         match.mockRestore();
       }

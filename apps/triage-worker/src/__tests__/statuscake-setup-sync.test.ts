@@ -49,5 +49,9 @@ test('a failed pass never throws into the poll job', async () => {
   const error = vi.spyOn(console, 'error').mockImplementation(() => {});
   await expect(sync('tenant', 'a')).resolves.toBeUndefined();
   expect(error).toHaveBeenCalledOnce();
+  // A StatusCake failure message can carry a credential-bearing URL, so only the name is logged.
+  const line = String(error.mock.calls[0]?.[0]);
+  expect(JSON.parse(line)).toMatchObject({ errorType: 'Error' });
+  expect(line).not.toContain('database gone');
   error.mockRestore();
 });

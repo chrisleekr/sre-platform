@@ -25,18 +25,21 @@ function lifecycleHandler() {
   };
   const reconcileLifecycle = vi.fn(async () => undefined);
   const ingestLifecycle = vi.fn(async () => undefined);
+  const syncStatusCakeSetup = vi.fn(async () => undefined);
   const handler = makePollHandler({
     connectorProvider: () => async () => [connector],
     cache: __fixture.fakeCache().cache,
     ttlSec: 90,
     reconcileLifecycle,
     ingestLifecycle,
+    syncStatusCakeSetup,
   });
-  return { connector, handler, reconcileLifecycle, ingestLifecycle };
+  return { connector, handler, reconcileLifecycle, ingestLifecycle, syncStatusCakeSetup };
 }
 
 test('a scheduled poll reconciles the whole lifecycle connector', async () => {
-  const { connector, handler, reconcileLifecycle, ingestLifecycle } = lifecycleHandler();
+  const { connector, handler, reconcileLifecycle, ingestLifecycle, syncStatusCakeSetup } =
+    lifecycleHandler();
   await handler({
     id: 'scheduled',
     tenantId: 't1',
@@ -46,10 +49,12 @@ test('a scheduled poll reconciles the whole lifecycle connector', async () => {
   });
   expect(reconcileLifecycle).toHaveBeenCalledTimes(1);
   expect(ingestLifecycle).not.toHaveBeenCalled();
+  expect(syncStatusCakeSetup).toHaveBeenCalledExactlyOnceWith('t1', connector.id);
 });
 
 test('a provider wakeup ingests its monitor without a whole-connector reconcile', async () => {
-  const { connector, handler, reconcileLifecycle, ingestLifecycle } = lifecycleHandler();
+  const { connector, handler, reconcileLifecycle, ingestLifecycle, syncStatusCakeSetup } =
+    lifecycleHandler();
   const wakeup = { monitorId: '73', observedAt: '2026-09-22T00:00:00.000Z', lifecycleVersion: 0 };
   await handler({
     id: 'wakeup',
@@ -60,4 +65,6 @@ test('a provider wakeup ingests its monitor without a whole-connector reconcile'
   });
   expect(reconcileLifecycle).not.toHaveBeenCalled();
   expect(ingestLifecycle).toHaveBeenCalledExactlyOnceWith('t1', connector, wakeup);
+  // Each setup pass lists every test and contact group, so a wakeup flood must not trigger one.
+  expect(syncStatusCakeSetup).not.toHaveBeenCalled();
 });
