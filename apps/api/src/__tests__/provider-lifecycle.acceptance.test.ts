@@ -356,11 +356,11 @@ test('bound StatusCake code-zero outage uses documented alert history and recove
       clearProvenance: 'provider',
     });
     await resolveWithoutAi(signal!.incidentId);
-    expect(
-      requests
-        .filter((url) => url.includes('/periods'))
-        .every((url) => url.includes('limit=100') && !url.includes('per_page=')),
-    ).toBe(true);
+    const periods = requests.filter((url) => url.includes('/periods'));
+    expect(periods.length).toBeGreaterThan(0);
+    expect(periods.every((url) => url.includes('limit=100') && !url.includes('per_page='))).toBe(
+      true,
+    );
   } finally {
     delete fixture.webhookDeps.enqueueLifecycle;
   }

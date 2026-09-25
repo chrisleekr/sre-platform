@@ -131,6 +131,7 @@ test.each([
     attention: { decision: string } | null;
   };
   const reported = body.providerRecoveryReports.map((report) => report.signalId);
+  expect(reported).toContain(first.signal.id);
   expect(reported.includes(second.signal.id)).toBe(confirm);
   expect(
     body.attention?.decision === 'Provider reported recovery in Slack. Confirm resolution.',

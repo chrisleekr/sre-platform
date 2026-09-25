@@ -29,6 +29,7 @@ import {
   makeSnapshotCache,
   makeClassifyQueue,
   makeRunbookQueue,
+  makePollQueue,
   makeFoundingQueue,
 } from '@sre/queue';
 import { ConversationHub } from '@sre/hub';
@@ -128,11 +129,7 @@ const alertmanagerSmee =
     ? undefined
     : makeAlertmanagerSmeeManager({ port: config.port, log });
 const queue = new Queue(adminDb.db, redis, { dispatchRedis: settingsRedis });
-const lifecyclePollQueue = new Queue(adminDb.db, redis, {
-  stream: 'sre:jobs:poll',
-  group: 'poll',
-  dispatchRedis: settingsRedis,
-});
+const lifecyclePollQueue = makePollQueue(adminDb.db, redis, { dispatchRedis: settingsRedis });
 // Classification and runbook jobs use dedicated streams.
 const classifyQueue = makeClassifyQueue(adminDb.db, redis, { dispatchRedis: settingsRedis });
 const runbookQueue = makeRunbookQueue(adminDb.db, redis, { dispatchRedis: settingsRedis });

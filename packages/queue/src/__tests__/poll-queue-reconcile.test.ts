@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { Redis } from 'ioredis';
 import { eq } from 'drizzle-orm';
 import { makeDb, jobs, type DbHandle } from '@sre/db';
+import { POLL_GROUP, POLL_STREAM } from '../poll-queue';
 import { Queue } from '../queue';
 
 // A StatusCake wakeup is a one-shot poll job that carries the only copy of its notification. When
@@ -11,8 +12,7 @@ import { Queue } from '../queue';
 const ADMIN_URL = process.env.DATABASE_URL ?? 'postgres://sre:sre@localhost:5432/sre_platform';
 const VALKEY_URL = process.env.VALKEY_URL ?? 'redis://localhost:6379';
 
-// The production binding from both apps' entrypoints. No other test touches this stream.
-const POLL_STREAM = 'sre:jobs:poll';
+// The production stream both apps' entrypoints bind. No other test touches it.
 const TYPE = `poll-wakeup-test-${randomUUID().slice(0, 8)}`;
 
 let db: DbHandle;
@@ -36,7 +36,7 @@ describe('poll queue reconcile', () => {
     (failing as unknown as { xadd: () => Promise<never> }).xadd = () =>
       Promise.reject(new Error('valkey unavailable'));
     try {
-      const writer = new Queue(db.db, failing, { stream: POLL_STREAM, group: 'poll' });
+      const writer = new Queue(db.db, failing, { stream: POLL_STREAM, group: POLL_GROUP });
       const jobId = await writer.enqueue({
         tenantId: randomUUID(),
         type: TYPE,
@@ -50,7 +50,7 @@ describe('poll queue reconcile', () => {
       const before = await redis.xrange(POLL_STREAM, '-', '+');
       expect(before.some(([, fields]) => fields.includes(jobId))).toBe(false);
 
-      const pollQueue = new Queue(db.db, redis, { stream: POLL_STREAM, group: 'poll' });
+      const pollQueue = new Queue(db.db, redis, { stream: POLL_STREAM, group: POLL_GROUP });
       expect(await pollQueue.reconcile()).toBeGreaterThanOrEqual(1);
 
       const [recovered] = await db.db.select().from(jobs).where(eq(jobs.id, jobId));

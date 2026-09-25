@@ -156,6 +156,8 @@ test.each(['posting', 'uncertain'] as const)(
         : { ...message, channel };
     const eventId = `Ev_${randomUUID()}`;
     const ack = vi.fn(async () => undefined);
+    // The earlier case's acknowledged entry stays in the stream, and publish is not awaited.
+    const baseline = await redis.xlen(streams[0]!);
     await Promise.all([
       client.receive(envelope(eventId, event, ack)),
       client.receive(envelope(eventId, event, ack)),
@@ -168,7 +170,7 @@ test.each(['posting', 'uncertain'] as const)(
     expect(receipts).toHaveLength(1);
     const [job] = await admin.db.select().from(jobs).where(eq(jobs.id, receipts[0]!.jobId!));
     expect(job?.payload).toMatchObject({ body: { event } });
-    await vi.waitFor(async () => expect(await redis.xlen(streams[0]!)).toBeGreaterThan(0));
+    await vi.waitFor(async () => expect(await redis.xlen(streams[0]!)).toBeGreaterThan(baseline));
     await expect(inbound.process(`native-${suffix}`, handler)).resolves.toBe(1);
     const [receipt] = await admin.db
       .select()
