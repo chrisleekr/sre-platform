@@ -21,8 +21,7 @@ flowchart LR
     Graf -.->|"refused"| Source["The data sources<br/>behind Grafana"]
 ```
 
-One path, and it stops at Grafana. Nothing is polled and nothing is pushed, so between incidents the
-platform sends Grafana no traffic. The dotted edge is deliberate and explained in
+Investigation tools stop at Grafana. Optional native webhook delivery provides a separate verified lifecycle path. The dotted edge is deliberate and explained in
 [Why it stops at Grafana](#why-it-stops-at-grafana).
 
 ## Before you start
@@ -81,6 +80,19 @@ is character-validated first, and an encoded character in a path is refused outr
 The platform uses Grafana's long-standing dashboard API rather than the newer one, deliberately: it
 needs no namespace resolution and works identically across every Grafana version and edition.
 
+### Recognising the platform's own requests
+
+The platform's reads show up in Grafana's own logs under the connection's service account. Before an
+investigation, the platform asks Grafana which login the connection uses and tells the investigation
+that requests under that login include the platform's own, from its investigation tools and background
+discovery. The investigation treats this as a lead, not a conclusion: any other client using the same
+service account logs under the same login, so it confirms by request pattern before attributing load
+to the platform. Give the platform a dedicated service account to make the attribution unambiguous.
+
+Only service-account logins are reported; a connection that authenticates as a person is never named.
+The lookup waits at most two seconds, is cached for an hour per connection version, and is retried
+after five minutes when Grafana cannot answer, so it never holds an investigation up.
+
 ### What it looks at first
 
 Before any model call, the platform pulls the alerts Grafana is currently firing and matches them to
@@ -104,3 +116,22 @@ responses, returning only which secret fields are set, and refusing the proxy pa
 way an unredacted secret from a downstream system could arrive.
 
 The one residual, an internal data source address, is topology rather than a credential.
+
+## Native alert lifecycle
+
+Enable **Receive authenticated alert lifecycle events**, choose a subscribed Slack channel, and
+configure a separate webhook bearer token. Set the Grafana webhook contact point to the displayed
+public API endpoint and configure the same bearer token in its authorization settings.
+
+The adapter accepts the standard webhook envelope with version `1`, and validates each alert's
+status, fingerprint, start time, and recovery end time. Group status never clears all members by
+itself. Keep resolved notifications enabled. See the [Grafana webhook reference](https://grafana.com/docs/grafana/latest/alerting/configure-notifications/manage-contact-points/integrations/webhook-notifier/).
+
+Active-alert inventory absence is not recovery evidence. Grafana episodes whose recovery event is
+unavailable remain open for replay or operator review; current inventory cannot reconstruct a
+missing historical clear.
+
+A delivery whose configured Slack channel is not subscribed is reported as
+`alert_channel_not_subscribed` and posts nothing. The webhook answers HTTP 503, so Grafana does not
+record the notification as delivered. Subscribe the channel, then resend the authenticated delivery
+if the incident has not appeared after Grafana's next notification cycle.

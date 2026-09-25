@@ -87,6 +87,7 @@ const EXAMPLE_CONNECTOR = {
     investigation: 'tools',
     polling: 'none',
     events: 'none',
+    alertLifecycle: 'none',
   },
 } as const;
 
@@ -199,3 +200,32 @@ something uses the existing snapshot cache.
 **Reach a private address, unless its provider is genuinely self-hosted.** The shared guard blocks
 loopback, link-local, and cloud metadata ranges regardless. A software-as-a-service provider should
 be host-pinned in code so a tool input can never redirect it somewhere else.
+
+## Lifecycle authority
+
+Declare `alertLifecycle` separately from polling and generic event support. An adapter may expose
+structured event normalization, exact episode reads, structured snapshots, or no alert lifecycle
+support. Presentation parsing can identify a candidate reference but cannot grant mutation authority.
+
+An adapter with exact episode reads may also resolve a presentation subject, such as the URL in a
+stock chat notice, to a monitor. That resolution only selects which monitor to ask about: it must
+return a monitor only when exactly one matches under a documented equality rule, and the binding is
+authorised solely by the exact episode read that follows. Ambiguous or missing matches leave the
+signal unbound with a visible note. Such automatic bindings do not use the operator binding list, so
+they never consume its capacity, and they pass the same connector generation fence as reconciliation.
+
+Native delivery and bounded reconciliation reuse the durable episode intake, atomic incident opener,
+conversation hub and guarded recovery path. Connector generation is rechecked in the transaction
+that consumes verified evidence. Slack edits, model suggestions and admission suppression do not
+retire durable provider signals.
+
+Some providers use opaque episode keys rather than a start timestamp in every event. A pending
+recovery can retain that scoped key without a start; it creates no incident or signal until a real
+trigger supplies the timestamp. Existing timestamp-based provider episodes remain compatible.
+
+Verified lifecycle evidence records the connector configuration generation. Credential rotation,
+disabling a connector, or a configuration change invalidates that evidence for future automatic
+closure. It does not erase historical signal state. Reconciliation refreshes retained episodes,
+including resolved signals on incidents still awaiting closure, in bounded batches with a persisted
+cursor. An old recovery-before-trigger observation keeps its original generation when its trigger
+arrives; a fresh same-cycle recovery or exact connector read is required after rotation.

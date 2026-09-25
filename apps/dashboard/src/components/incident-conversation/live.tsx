@@ -20,6 +20,7 @@ import { type LifecycleStatus } from './signals';
 import { deriveIncidentState } from './state';
 import { IncidentLiveView } from './view';
 import type { IncidentLiveViewModel } from './view-model';
+import { useResolutionPolicy } from './use-resolution-policy';
 import { useEvidenceInspector } from './use-evidence-inspector';
 
 export function LiveIncidentConversation({
@@ -57,6 +58,13 @@ export function LiveIncidentConversation({
   const [zoom, setZoom] = useState<string | null>(null);
   const [fullAudit, setFullAudit] = useState(false);
   const [lifecycleReason, setLifecycleReason] = useState('');
+  const resolutionPolicy = useResolutionPolicy(
+    incident,
+    lifecycleReason,
+    () => setLifecycleReason(''),
+    getCredentials,
+    refreshWorkspace,
+  );
   const [lifecyclePending, setLifecyclePending] = useState<LifecycleStatus | null>(null);
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
   const [postmortemTrigger, setPostmortemTrigger] = useState<PostmortemTrigger | ''>('');
@@ -423,6 +431,7 @@ export function LiveIncidentConversation({
     setZoom,
     fullAudit,
     setFullAudit,
+    ...resolutionPolicy,
     lifecycleReason,
     setLifecycleReason,
     lifecyclePending,

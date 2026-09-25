@@ -40,6 +40,11 @@ Slack gets what a responder needs to act. The dashboard gets everything.
 | Recovery conclusions | Relationship and cohort decisions |
 | Lifecycle updates on every thread in a causal response group | Intermediate recovery checks |
 
+Any inconclusive finding posts as **Unverified**, followed by its next step and, when the evidence
+review named them, up to three open checks under **Still to verify**. This covers a finding the
+engine left inconclusive, one the evidence review rejected, and one whose review did not complete. It
+is not a conclusion; the dashboard shows up to five open checks.
+
 This split exists so that an incident channel stays readable. If you want the full audit trail, open
 the incident on the dashboard.
 

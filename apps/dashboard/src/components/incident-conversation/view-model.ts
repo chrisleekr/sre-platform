@@ -13,7 +13,7 @@ import type { useIncidentEvidence } from '../../lib/useIncidentEvidence';
 import type { useIncidentHistory } from '../../lib/useIncidentHistory';
 import type { useWsStream } from '../../lib/useWsStream';
 import type { AttachmentDeps } from '../MessageAttachments';
-import type { PostmortemTrigger } from '@sre/contracts';
+import type { PostmortemTrigger, ResolutionPolicy } from '@sre/contracts';
 import type { LifecycleStatus } from './signals';
 import type { deriveIncidentState } from './state';
 
@@ -36,6 +36,11 @@ export interface IncidentLiveViewModel {
   setZoom: Dispatch<SetStateAction<string | null>>;
   fullAudit: boolean;
   setFullAudit: Dispatch<SetStateAction<boolean>>;
+  resolutionPolicy: ResolutionPolicy;
+  setResolutionPolicy: Dispatch<SetStateAction<ResolutionPolicy>>;
+  resolutionPolicyPending: boolean;
+  resolutionPolicyError: string | null;
+  changeResolutionPolicy: () => Promise<void>;
   lifecycleReason: string;
   setLifecycleReason: Dispatch<SetStateAction<string>>;
   lifecyclePending: LifecycleStatus | null;

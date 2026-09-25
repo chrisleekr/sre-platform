@@ -435,3 +435,74 @@ describe('IncidentsList', () => {
     expect(screen.getByText('Downstream symptom of Database saturation')).toBeDefined();
   });
 });
+
+describe('reviewed result provenance', () => {
+  const run = (outcome: 'inconclusive' | 'failed', summary: string) => ({
+    id: 'run',
+    operation: 'investigate' as const,
+    outcome,
+    summary,
+    triggerReason: null,
+    triggerAutomatic: false,
+    triggerMonitorKey: null,
+    triggerMonitorKeys: [],
+    triggerBudget: null,
+    completedAt: '2026-09-20T00:00:00Z',
+  });
+  test('shows a completed inconclusive summary without promoting it to a trusted assessment', () => {
+    render(
+      <MemoryRouter>
+        <IncidentsList
+          incidents={[
+            {
+              ...incident,
+              latestInvestigationRun: run(
+                'inconclusive',
+                'The sampled probes disagree; regional impact remains uncertain.',
+              ),
+            },
+          ]}
+        />
+      </MemoryRouter>,
+    );
+    expect(
+      screen.getByText('The sampled probes disagree; regional impact remains uncertain.'),
+    ).toBeTruthy();
+    expect(screen.getByText('No trusted assessment yet.')).toBeTruthy();
+    expect(screen.queryByText('Last trusted assessment')).toBeNull();
+  });
+  test.each([
+    ['AI provider rate limit reached.', true],
+    ['API key secret=abc', false],
+    ['AI provider rate limit reached. secret=abc', false],
+  ] as const)('failed results expose only the safe reason: %s', (summary, rateLimited) => {
+    render(
+      <MemoryRouter>
+        <IncidentsList
+          incidents={[{ ...incident, latestInvestigationRun: run('failed', summary) }]}
+        />
+      </MemoryRouter>,
+    );
+    expect(Boolean(screen.queryByText(/AI provider rate limit reached/i))).toBe(rateLimited);
+    expect(screen.queryByText(/secret=abc/)).toBeNull();
+    expect(screen.getByText('No trusted assessment yet.')).toBeTruthy();
+  });
+  test('keeps reviewed follow-up separate from retained trusted assessment', () => {
+    render(
+      <MemoryRouter>
+        <IncidentsList
+          incidents={[
+            {
+              ...incident,
+              rcaSummary: 'Earlier evidence established pool saturation.',
+              latestInvestigationRun: run('inconclusive', 'The new restart cause remains unknown.'),
+            },
+          ]}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('Earlier evidence established pool saturation.')).toBeTruthy();
+    expect(screen.getByText('The new restart cause remains unknown.')).toBeTruthy();
+    expect(screen.getByText('Last trusted assessment')).toBeTruthy();
+  });
+});

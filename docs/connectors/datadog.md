@@ -1,7 +1,7 @@
 # Datadog
 
 Read logs, spans, events, error tracking and metrics from your Datadog organisation.
-This connector gathers evidence; configure alert intake separately under **Inbound**.
+This connector gathers investigation evidence and can receive authenticated monitor lifecycle events.
 
 ## What it adds to an investigation
 
@@ -129,3 +129,83 @@ supply an arbitrary API path. Time ranges accept timestamps or relative expressi
 Tool results pass through shared credential redaction and size limits. Redaction cannot guarantee
 that every secret in application text is recognized. Restrict key permissions and avoid logging
 credentials in the source system.
+
+## Native alert lifecycle
+
+Enable **Receive authenticated alert lifecycle events**, select a subscribed Slack channel, and
+configure a separate webhook bearer token. Send events to the displayed public API webhook path.
+In Datadog's webhook integration, use `Authorization: Bearer YOUR_CONFIGURED_TOKEN` as a custom
+header and configure this JSON payload:
+
+```json
+{
+  "alert_id": "$ALERT_ID",
+  "alert_scope": "$ALERT_SCOPE",
+  "alert_cycle_key": "$ALERT_CYCLE_KEY",
+  "alert_transition": "$ALERT_TRANSITION",
+  "alert_title": "$ALERT_TITLE",
+  "date": "$DATE"
+}
+```
+
+These are [documented webhook variables](https://docs.datadoghq.com/integrations/webhooks/).
+Transitions are handled as follows:
+
+| Transition | Effect |
+| --- | --- |
+| `Triggered` | Opens or updates the exact cycle's episode. |
+| `Re-Triggered`, `Renotify` | Re-drives an episode that a `Triggered` delivery, or an exact cycle binding, already established. A repeat never opens or dates a cycle by itself, because it carries the time it repeated rather than when the cycle began. With no established cycle it is acknowledged. |
+| `Recovered` | Resolves the exact cycle's episode. |
+| `Warn`, `Re-Warn`, `No Data`, `Re-No Data` | Acknowledged and never page. |
+
+Acknowledged deliveries answer HTTP 200 and change no incident. They count as received deliveries
+but never clear an earlier delivery diagnostic. A transition Datadog adds later is acknowledged the
+same way rather than being treated as a malformed payload. If a `Triggered` delivery is lost, a later
+repeat does not recover it; Datadog retries a delivery that fails to connect or receives a server
+error. Datadog sends `Recovered` for recovery from Warn and No Data as well as from Alert, so a
+recovery for a cycle that never alerted is retained as pending, the same as a recovery that arrives
+before its trigger. The exact monitor, group scope,
+and opaque cycle jointly identify an episode. A recovery received before its trigger remains
+pending without an invented start timestamp. A late recovery cannot clear another cycle.
+
+Exact-state reconciliation additionally requires both read keys and `monitors_read`. It refuses
+missing groups, unknown state, and historical episodes the current group no longer proves.
+Authenticated events for retained historical cycles still resolve their exact episodes after a refire.
+
+Connections shows the number of recovery episodes waiting for their original trigger, even when a
+later unrelated webhook succeeds. Replay the authenticated trigger with the same monitor, group,
+and cycle identifiers, or review provider history. The platform does not substitute receipt time for
+a missing trigger. Credential changes require fresh verification before an old pending recovery can
+authorize closure.
+
+## Associating historical Slack records
+
+Datadog's current monitor API exposes trigger time; its webhook exposes the opaque alert cycle key.
+Those values are different identities. API read binding and reconciliation work without a cycle key,
+but do not establish native deduplication. For native adoption, enter `alert_cycle_key` from a retained
+authenticated provider payload in **Native alert cycle key**, preview the exact monitor/group/episode,
+and save with an audit reason. The platform stores only the scoped cycle digest. Matching authenticated
+trigger delivery confirms the association and reuses the original Slack root. A different cycle stays
+separate, and one historical binding cannot be reassigned to another opaque cycle.
+
+Resend the exact retained `Triggered` JSON to the displayed webhook endpoint with its configured bearer
+credential kept private. This means an authenticated HTTP request, not an assumed Datadog UI replay
+button. If the payload or key is unavailable, use API read reconciliation; native association cannot be
+established from title, URL or trigger time alone. A new native intake matching a read-only binding's
+monitor/group/start remains pending until an explicit cycle association and authenticated replay.
+
+If a native incident already exists, binding returns its canonical incident link without changing the
+legacy record. Review both records and use the existing audited incident resolve/close action for
+administrative supersession of the duplicate. That action is not proof of provider recovery or past
+service health; rebinding cannot merge existing incidents.
+
+A recovery timestamp before its paired trigger is retained as `conflicting_episode_times`; resend a
+corrected authenticated recovery for that exact cycle. A trigger contradicting an explicitly bound
+start remains `binding_episode_mismatch`, without posting a new root. Review the provider payload and
+resend the corrected trigger. These unresolved diagnostics remain visible even if another cycle's
+webhook succeeds. Neither conflict can authorize automatic closure.
+
+A delivery whose configured Slack channel is not subscribed is reported as
+`alert_channel_not_subscribed` and posts nothing. The webhook answers HTTP 503 so the provider
+retries it. Subscribe the channel, then resend the authenticated delivery if the provider's retries
+have already stopped.

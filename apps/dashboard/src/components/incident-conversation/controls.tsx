@@ -1,4 +1,4 @@
-import { POSTMORTEM_TRIGGERS, type PostmortemTrigger } from '@sre/contracts';
+import { POSTMORTEM_TRIGGERS, type PostmortemTrigger, type ResolutionPolicy } from '@sre/contracts';
 import { Link } from 'react-router-dom';
 import { incidentPath, postmortemPath } from '../../lib/routes';
 import { lifecycleActions, signalHeadline } from './signals';
@@ -75,7 +75,9 @@ export function IncidentControls({ view }: { view: IncidentLiveViewModel }) {
               ? (incident.pendingApprovalCount ?? 0) > 0
                 ? 'Decide the pending change before SRE Platform completes the automatic resolution.'
                 : 'SRE Platform should resolve this recovered occurrence automatically. Preventative follow-up remains in the brief but does not keep the incident active.'
-              : 'Cleared provider notifications do not establish user recovery. Review current evidence before resolving.'}
+              : incident.resolutionPolicy === 'provider_clear'
+                ? 'Resolution requires authoritative provider recovery for every signal and no pending approval. Independent health verification is not required by this policy.'
+                : 'Cleared provider notifications do not establish user recovery. Review current evidence before resolving.'}
           </p>
         </div>
       )}
@@ -241,6 +243,48 @@ export function IncidentControls({ view }: { view: IncidentLiveViewModel }) {
                 </button>
               ))}
           </div>
+          {incident.purpose !== 'health_check' &&
+            ['open', 'mitigated'].includes(incident.status) && (
+              <div className="mt-3">
+                <label className="block text-xs font-semibold text-ink-secondary">
+                  Resolution policy
+                  <select
+                    className="sre-field mt-1 min-h-11 w-full"
+                    value={view.resolutionPolicy}
+                    disabled={Boolean(mergedTargetId) || view.resolutionPolicyPending}
+                    onChange={(event) =>
+                      view.setResolutionPolicy(event.target.value as ResolutionPolicy)
+                    }
+                  >
+                    <option value="provider_clear">Provider signals clear</option>
+                    <option value="verified_recovery">Verified recovery</option>
+                  </select>
+                </label>
+                <p className="mt-2 text-xs text-ink-muted">
+                  Provider signals clear resolves when every signal has authoritative provider
+                  recovery. Verified recovery requires independent current health evidence. The
+                  lifecycle change reason is recorded with this policy change.
+                </p>
+                <button
+                  type="button"
+                  className="sre-action mt-2 min-h-11"
+                  disabled={
+                    Boolean(mergedTargetId) ||
+                    view.resolutionPolicyPending ||
+                    !lifecycleReason.trim() ||
+                    view.resolutionPolicy === (incident.resolutionPolicy ?? 'verified_recovery')
+                  }
+                  onClick={() => void view.changeResolutionPolicy()}
+                >
+                  {view.resolutionPolicyPending ? 'Saving…' : 'Save resolution policy'}
+                </button>
+                {view.resolutionPolicyError && (
+                  <p role="alert" className="mt-2 text-xs text-critical">
+                    {view.resolutionPolicyError}
+                  </p>
+                )}
+              </div>
+            )}
           {lifecycleError && (
             <p role="alert" className="mt-2 text-xs text-critical">
               {lifecycleError}

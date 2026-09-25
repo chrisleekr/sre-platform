@@ -227,7 +227,7 @@ describe('Layout', () => {
         'Reliability',
         'Error budgets',
       ],
-      Configure: ['Connections', 'Inbound', 'Usage & Cost', 'Settings'],
+      Configure: ['Connections', 'Inbound', 'Usage & Cost', 'Work queue', 'Settings'],
     };
     for (const [group, links] of Object.entries(expected)) {
       const section = within(nav).getByRole('region', { name: group });

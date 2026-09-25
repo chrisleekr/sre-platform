@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useSession } from '../auth';
 import { config } from '../config';
-import { useIncidents } from '../lib/useIncidents';
+import { useIncidents, type IncidentSort } from '../lib/useIncidents';
 import { useKeysetPages } from '../lib/useKeysetPages';
 import { usePaginationAnnouncer } from '../lib/usePaginationAnnouncer';
 import type { Incident } from '../lib/types';
@@ -18,30 +18,36 @@ const CLOSED_STATUSES = new Set(['resolved', 'closed']);
 const NOUN = { one: 'incident', many: 'incidents' };
 const OPEN_POLL_MS = 30_000;
 const OPEN_QUEUE_LIMIT = 100;
-type IncidentTab = 'needs-human' | 'automation' | 'closed' | 'all';
+type IncidentTab = 'open' | 'closed' | 'all';
 type SeverityFilter = '' | 'sev1' | 'sev2' | 'sev3';
 
-/** Partition the server-prioritized rows into the two active attention lanes and terminal history. */
+const SORT_OPTIONS: ReadonlyArray<{ value: IncidentSort; label: string; openOnly?: boolean }> = [
+  { value: 'newest', label: 'Newest first' },
+  { value: 'oldest', label: 'Oldest first' },
+  { value: 'severity', label: 'Severity' },
+  // Priority keys on mutable attention state, so the server offers it only for the unpaginated Open scope.
+  { value: 'priority', label: 'Needs human first', openOnly: true },
+];
+
+/** Split the server rows into active work and terminal history. Handling state is shown per row. */
 export function partitionIncidentQueue(incidents: Incident[]): {
-  needsHuman: Incident[];
-  automation: Incident[];
+  open: Incident[];
   closed: Incident[];
 } {
-  const needsHuman: Incident[] = [];
-  const automation: Incident[] = [];
+  const open: Incident[] = [];
   const closed: Incident[] = [];
   for (const incident of incidents) {
     if (CLOSED_STATUSES.has(incident.status)) closed.push(incident);
-    else if (incident.requiresHumanAttention ?? true) needsHuman.push(incident);
-    else automation.push(incident);
+    else open.push(incident);
   }
-  return { needsHuman, automation, closed };
+  return { open, closed };
 }
 
 /** The incident queue: active work first, with a paginated resolved archive. */
 export function IncidentsPanel() {
   const { getCredentials } = useSession();
-  const [tab, setTab] = useState<IncidentTab>('needs-human');
+  const [tab, setTab] = useState<IncidentTab>('open');
+  const [sort, setSort] = useState<IncidentSort>('newest');
   const [searchDraft, setSearchDraft] = useState('');
   const [query, setQuery] = useState('');
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -60,7 +66,7 @@ export function IncidentsPanel() {
     apiBaseUrl: config.apiBaseUrl,
     getCredentials,
     state,
-    attention: tab === 'needs-human' ? 'human' : tab === 'automation' ? 'automation' : undefined,
+    sort,
     query: query || undefined,
     severity: severity || undefined,
     cursor: historical ? historyCursor : undefined,
@@ -85,34 +91,33 @@ export function IncidentsPanel() {
     loading,
     error,
     enabled: historical,
-    resetKey: `${tab}:${query}:${severity}`,
+    resetKey: `${tab}:${sort}:${query}:${severity}`,
   });
   const { announcement, announce } = usePaginationAnnouncer({
     pages: historyPages,
     nextCursor,
     error,
     noun: NOUN,
-    resetKey: `${tab}:${query}:${severity}`,
+    resetKey: `${tab}:${sort}:${query}:${severity}`,
   });
 
-  const { needsHuman, automation, closed } = partitioned;
-  const shown =
-    tab === 'needs-human' ? needsHuman : tab === 'automation' ? automation : historyRows;
+  const { open, closed } = partitioned;
+  const shown = historical ? historyRows : open;
   // "Load more" is a PAGINATION fetch, not a scope switch, and keyset paging exists to GROW the list.
   // Gating the rows on `loading` alone blanked the archive the human had already read and flashed it back
   // grown. Key off the ACCUMULATED pages, mirroring DeploymentsPanel's `firstLoad = loading && !hasRows`.
   //
   // It must be historyPages, NOT `shown.length > 0`: on the OPEN tab `shown` derives from the live
   // `incidents` slice, which still holds the PREVIOUS scope's rows mid-switch, so keying off `shown` would
-  // keep stale rows on screen during an Open↔Closed switch, which is exactly what forbids.
+  // keep stale rows on screen during an Open↔Closed switch.
   const paginatingHistory = historical && historyPages.length > 0;
   // Badges reflect the server's true per-scope totals, not the length of the current page; fall
   // back to the fetched partition lengths on the legacy no-counts path.
-  const needsHumanCount = counts?.needsHuman ?? needsHuman.length;
-  const automationCount = counts?.automation ?? automation.length;
+  const openCount = counts?.open ?? open.length;
   const closedCount = counts?.closed ?? closed.length;
   const allCount = counts?.all ?? incidents.length;
-  const activeLaneCount = tab === 'needs-human' ? needsHumanCount : automationCount;
+  // Newest is the default, so a truncated Open list can hide waiting cases below the cut.
+  const needsHumanCount = counts?.needsHuman;
 
   // the server returns per-scope counts on every settled load, so switching Open↔Closed refetches
   // with the counts still in hand. Blank the whole panel only on the FIRST load (loading with no counts
@@ -127,6 +132,7 @@ export function IncidentsPanel() {
 
   function selectTab(next: string) {
     setTab(next as IncidentTab);
+    if (next !== 'open' && sort === 'priority') setSort('newest');
     setHistoryCursor(undefined);
     announce('');
   }
@@ -135,7 +141,7 @@ export function IncidentsPanel() {
     <section>
       <PageHeader
         title="Incidents"
-        description="Exception-driven response: human decisions first, routine investigation handled by SRE Platform."
+        description="Every incident with its handling state: needs human, or handled by SRE Platform."
         action={<CreateIncidentAction />}
       />
       {/* paging is otherwise silent to a screen reader, because "Load more" unmounts on click and the
@@ -160,23 +166,12 @@ export function IncidentsPanel() {
         <>
           <div className="mb-4">
             <SegmentedTabs
-              label="Incident handling"
+              label="Incident status"
               value={tab}
               panelId="thread-list-panel"
               onChange={selectTab}
               items={[
-                {
-                  id: 'needs-human',
-                  label: 'Needs human',
-                  compactLabel: 'Human',
-                  count: needsHumanCount,
-                },
-                {
-                  id: 'automation',
-                  label: 'Automation handling',
-                  compactLabel: 'Auto',
-                  count: automationCount,
-                },
+                { id: 'open', label: 'Open', count: openCount },
                 { id: 'closed', label: 'Closed', count: closedCount },
                 { id: 'all', label: 'All', count: allCount },
               ]}
@@ -244,6 +239,26 @@ export function IncidentsPanel() {
                   <option value="sev3">SEV3</option>
                 </select>
               </label>
+              <label className="text-xs font-medium text-ink-secondary">
+                Sort
+                <select
+                  value={sort}
+                  onChange={(event) => {
+                    setSort(event.target.value as IncidentSort);
+                    // A history cursor is bound to the ordering that issued it.
+                    setHistoryCursor(undefined);
+                  }}
+                  className="sre-field sre-hit-target mt-1 w-full"
+                >
+                  {SORT_OPTIONS.filter((option) => !option.openOnly || !historical).map(
+                    (option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </label>
               <div className="flex flex-wrap gap-2">
                 <button type="submit" className="sre-action sre-action-primary sre-hit-target">
                   Search
@@ -270,10 +285,17 @@ export function IncidentsPanel() {
             id="thread-list-panel"
             aria-labelledby={`thread-list-panel-tab-${tab}`}
           >
-            {!historical && !filtersActive && activeLaneCount > shown.length && !loading && (
+            {!historical && !filtersActive && openCount > shown.length && !loading && (
               <p className="mb-3 rounded-md border border-warning-line bg-warning-soft p-3 text-sm text-warning">
-                Showing the {shown.length} highest-priority of {activeLaneCount}{' '}
-                {tab === 'needs-human' ? 'human exceptions' : 'automation-handled incidents'}.
+                Showing the first {shown.length} of {openCount} open incidents in this order.
+                {needsHumanCount != null && needsHumanCount > 0 && (
+                  <>
+                    {' '}
+                    {needsHumanCount} {needsHumanCount === 1 ? 'needs' : 'need'} a human; sort by
+                    Needs human first to see them at the top.
+                  </>
+                )}{' '}
+                Search or filter by severity to narrow the list.
               </p>
             )}
             {loading && !paginatingHistory ? (

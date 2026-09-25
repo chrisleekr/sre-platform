@@ -362,3 +362,36 @@ describe('truthful incident response state', () => {
     expect(screen.queryByRole('heading', { name: 'Recovery not verified' })).toBeNull();
   });
 });
+
+test.each([
+  ['newer recovery', '2026-09-10T01:01:00Z', '2026-09-10T01:00:00Z', 'incident', true],
+  ['equal timestamps', '2026-09-10T01:00:00Z', '2026-09-10T01:00:00Z', 'incident', true],
+  ['newer assessment', '2026-09-10T01:00:00Z', '2026-09-10T01:01:00Z', 'incident', false],
+  ['undated recovery', null, '2026-09-10T01:00:00Z', 'incident', false],
+  ['undated assessment', '2026-09-10T01:01:00Z', null, 'incident', true],
+  ['both undated', null, null, 'incident', true],
+  ['health check', '2026-09-10T01:01:00Z', '2026-09-10T01:00:00Z', 'health_check', false],
+] as const)(
+  'retained impact has truthful assessment provenance: %s',
+  (_name, recoveryUpdatedAt, assessmentUpdatedAt, purpose, historical) => {
+    const model = view({
+      purpose,
+      impact: 'The deployment was blocked by the migration.',
+      assessmentUpdatedAt,
+      recoveryUpdatedAt,
+      recoveryState: 'verified',
+      recoverySummary: 'The migration now passes.',
+    });
+    render(
+      <MemoryRouter>
+        <IncidentOverview view={model} />
+      </MemoryRouter>,
+    );
+    expect(Boolean(screen.queryByText('Impact at last assessment'))).toBe(historical);
+    const impact = screen.getByText('The deployment was blocked by the migration.').parentElement!;
+    if (historical && assessmentUpdatedAt) {
+      expect(impact.querySelector('time')?.getAttribute('datetime')).toBe(assessmentUpdatedAt);
+    }
+    expect(screen.queryByText(/no current impact/i)).toBeNull();
+  },
+);

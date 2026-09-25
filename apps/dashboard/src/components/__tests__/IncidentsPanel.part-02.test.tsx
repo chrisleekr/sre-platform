@@ -54,7 +54,7 @@ let hookState: {
 // cursor-aware page source; renderPanel resets it to the default so the other tests are unaffected.
 let useIncidentsMock: (opts: {
   state?: 'open' | 'closed' | 'all';
-  attention?: 'human' | 'automation';
+  sort?: string;
   cursor?: string;
   query?: string;
   severity?: string;
@@ -441,7 +441,7 @@ describe('IncidentsPanel pagination live region', () => {
 
     // A scope switch is not a pagination result. If the message were DERIVED from render state rather than
     // set by the pagination event, the stale "3 more…" would survive here and be re-announced on re-render.
-    fireEvent.click(screen.getByRole('tab', { name: 'Needs human' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Open' }));
     expect(screen.getByRole('status').textContent).toBe('');
 
     unmount();

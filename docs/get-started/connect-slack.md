@@ -105,11 +105,20 @@ before changing anything.
 Socket Mode carries event and interactive payloads over the authenticated WebSocket opened with the
 `xapp-` token. Do not configure a public Request URL.
 
-An incoming webhook created under this same Slack app is supported as an alert source. Its posts are
-bot-authored, and so are the platform's own replies, but the two cannot be confused: only a
-top-level channel message can enter alert classification, and the platform only ever posts thread
-replies, never a top-level message. A webhook alert is a top-level message, so it is classified; a
-platform reply is a thread reply, so it is not. There is nothing to configure for this.
+An incoming webhook created under this same Slack app is supported as an alert source. Its unowned
+root messages still enter ordinary alert classification. Native Alertmanager delivery also posts a
+platform-owned root: its Slack echo is suppressed only when the routed bot identity and durable
+intake ownership match. The marker alone is not authority. Human replies and ordinary provider
+messages remain eligible for their normal paths.
+
+Choose one incident-ingestion owner per provider route. Do not send both direct provider Slack copies
+and native webhook copies into subscribed incident channels. Native delivery still needs a connected
+bot and an enabled destination subscription so responders can use the conversation. Before changing
+owners, drain active episodes through recorded provider clears or explicitly reconcile a verified
+mapping; native activation does not migrate existing Slack incidents. Follow the
+[cutover, canary and rollback procedure](../connectors/prometheus.md#alertmanager-delivery) before
+changing a route. Native notification visibility depends on the platform and Slack post succeeding;
+an uncertain post is not automatically repaired.
 
 ## 6. Choose the channels to listen to
 
@@ -158,9 +167,18 @@ also announces a recovery.
 | Certificate monitors | `SSL monitoring`, `expiration reminder … certificate`, or `certificate valid until` |
 
 The set is fixed, not open-ended: a provider whose message matches none of these rows is not
-recognised, so its alerts are judged by the classifier like any other message. Any message, from a
-bot or a person, with a line starting `[RESOLVED]` or `Resolved:` is treated as a recovery notice and
-matched against open alerts; if nothing matches, it is recorded as **Resolution not matched** and attached to nothing.
+recognised, so its alerts are judged by the classifier like any other message.
+
+A Slack message never clears an alert. Any message, from a bot or a person, that reads as a recovery
+notice (for example a line starting `[RESOLVED]` or `Resolved:`) is recorded as a log entry and shows
+as **Resolution not matched**. So does an edit of a message the platform already tracks, and a
+classifier suggestion that a message resolves an open alert. None of these change any signal or
+incident. The exception is a bot's recovery notice for exactly one open incident from the same bot
+and channel: it shows as **Recovery reported**, is noted in that incident's conversation, and a
+responder confirms resolution there. Only recovery evidence that a connector verifies, or that a provider delivers through its
+native webhook, clears a signal: see
+[Alert lifecycle and existing incidents](../dashboard/connectors.md#alert-lifecycle-and-existing-incidents)
+and [Alertmanager delivery](../connectors/prometheus.md#alertmanager-delivery).
 
 Everything else, including every human-authored message and any bot chatter that matches no row
 above (deploy notices, build results, status pings), goes to the classifier, which decides whether it

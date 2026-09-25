@@ -207,6 +207,104 @@ test('triage reflows and evidence navigation preserves the responder context', a
       });
       await page.screenshot({ path: `.vitest/incident-triage-browser/${name}.png` });
     }
+    for (const theme of ['light', 'dark']) {
+      await page.goto(`${fixture.url}?recovered=true`);
+      await page.evaluate((value) => {
+        document.documentElement.dataset.theme = value;
+      }, theme);
+      await page.getByText('Impact at last assessment', { exact: true }).waitFor();
+      const impact = page
+        .getByText('Checkout requests have elevated errors in ap-southeast-2.', { exact: true })
+        .locator('..');
+      expect(await impact.locator('time').getAttribute('datetime')).toBe('2026-09-14T00:29:00Z');
+      await page
+        .getByRole('region', { name: 'Latest investigation result' })
+        .getByText('The restart cause remains unproven.', { exact: true })
+        .waitFor();
+      expect(await page.getByText(/no current impact/i).count()).toBe(0);
+      for (const [width, height] of [
+        [390, 844],
+        [820, 1180],
+        [1440, 900],
+      ]) {
+        await page.setViewportSize({ width: width!, height: height! });
+        expect(
+          await main.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+        ).toBe(true);
+      }
+      await page.goto(`${fixture.url}?recovered=true&queue=true`);
+      await page.getByText('No trusted assessment yet.', { exact: true }).waitFor();
+      await page.getByText('The restart cause remains unproven.', { exact: true }).waitFor();
+    }
+    await page.goto(fixture.url);
+    await page.getByText('Manage incident lifecycle', { exact: true }).click();
+    const policy = page.getByRole('combobox', { name: 'Resolution policy' });
+    const savePolicy = page.getByRole('button', { name: 'Save resolution policy', exact: true });
+    await policy.selectOption('provider_clear');
+    expect(await savePolicy.isDisabled()).toBe(true);
+    await page
+      .getByLabel('Lifecycle change reason', { exact: true })
+      .fill('The monitor is our agreed recovery criterion.');
+    await policy.focus();
+    await page.keyboard.press('Tab');
+    expect(await savePolicy.evaluate((element) => element === document.activeElement)).toBe(true);
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => document.querySelector<HTMLButtonElement>('button') !== null);
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('button')].some(
+        (button) => button.textContent === 'Save resolution policy' && button.disabled,
+      ),
+    );
+    const saved = await page.request
+      .get(new URL('/__api/policy', fixture.url).toString())
+      .then((response) => response.json());
+    expect(saved.policyRequest).toMatchObject({
+      policy: 'provider_clear',
+      expectedVersion: 0,
+      reason: 'The monitor is our agreed recovery criterion.',
+    });
+    expect(saved.policyRequest.requestId).toMatch(/^[0-9a-f-]{36}$/);
+    await policy.selectOption('verified_recovery');
+    await page.request.get(new URL('/__api/policy-conflict', fixture.url).toString());
+    await savePolicy.click();
+    await page
+      .getByRole('alert')
+      .filter({ hasText: 'Incident state changed. Review it and try again.' })
+      .waitFor();
+    await page.waitForFunction(
+      () =>
+        document.querySelector<HTMLSelectElement>('#incident-lifecycle-controls select')?.value ===
+        'provider_clear',
+    );
+    expect(await policy.inputValue()).toBe('provider_clear');
+    for (const theme of ['light', 'dark']) {
+      await page.goto(`${fixture.url}?provider-resolved=true`);
+      await page.evaluate((value) => {
+        document.documentElement.dataset.theme = value;
+      }, theme);
+      await page
+        .getByRole('heading', { name: 'Resolved from provider signals', exact: true })
+        .waitFor();
+      await page.getByText('Health not independently verified', { exact: true }).waitFor();
+      await page.getByText('Impact at last assessment', { exact: true }).waitFor();
+      expect(await page.getByText('Recovery verified', { exact: true }).count()).toBe(0);
+      for (const [name, width, height] of [
+        ['mobile', 390, 844],
+        ['tablet', 820, 1180],
+        ['desktop', 1440, 900],
+      ] as const) {
+        await page.setViewportSize({ width, height });
+        expect(
+          await main.evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+        ).toBe(true);
+        await page.screenshot({
+          path: `.vitest/incident-triage-browser/provider-${theme}-${name}.png`,
+        });
+      }
+      await page.goto(`${fixture.url}?provider-resolved=true&queue=true`);
+      await page.getByText('Resolved from provider signals', { exact: true }).waitFor();
+      await page.getByText('Health not independently verified', { exact: true }).waitFor();
+    }
     expect(errors).toEqual([]);
   } finally {
     await browser?.close();

@@ -64,13 +64,14 @@ let hookState: {
     automation?: number;
     closed: number;
   };
+  nextCursor?: string | null;
 };
 
 // Swappable hook impl: defaults to returning hookState (args ignored). The Load-more test swaps in a
 // cursor-aware page source; renderPanel resets it to the default so the other tests are unaffected.
 let useIncidentsMock: (opts: {
   state?: 'open' | 'closed' | 'all';
-  attention?: 'human' | 'automation';
+  sort?: string;
   cursor?: string;
   query?: string;
   severity?: string;
@@ -115,7 +116,7 @@ afterEach(() => {
 });
 
 describe('partitionIncidentQueue', () => {
-  test('separates human exceptions, automation-owned work, and terminal history', () => {
+  test('keeps human exceptions and automation-owned work together in one open list', () => {
     const automated = {
       ...mk('a1', 'open', 'automation'),
       severity: 'sev3',
@@ -123,31 +124,26 @@ describe('partitionIncidentQueue', () => {
       attentionReason: null,
     };
     const input = [openThread, resolvedThread, investigatingThread, degradedThread];
-    const { needsHuman, automation, closed } = partitionIncidentQueue([...input, automated]);
+    const { open, closed } = partitionIncidentQueue([...input, automated]);
 
-    expect(needsHuman.map((incident) => incident.id)).toEqual(['o1', 'i1', 'd1']);
-    expect(automation.map((incident) => incident.id)).toEqual(['a1']);
+    expect(open.map((incident) => incident.id)).toEqual(['o1', 'i1', 'd1', 'a1']);
     expect(closed.map((i) => i.id)).toEqual(['r1']);
   });
 
   test('routes an auto-closed thread to closed too, not just resolved', () => {
-    // 'closed' is terminal lifecycle history, so it must not land in either active lane.
-    const { needsHuman, closed } = partitionIncidentQueue([
-      openThread,
-      closedThread,
-      resolvedThread,
-    ]);
-    expect(needsHuman.map((incident) => incident.id)).toEqual(['o1']);
+    // 'closed' is terminal lifecycle history, so it must not land in the open list.
+    const { open, closed } = partitionIncidentQueue([openThread, closedThread, resolvedThread]);
+    expect(open.map((incident) => incident.id)).toEqual(['o1']);
     expect(closed.map((i) => i.id)).toEqual(['c1', 'r1']);
   });
 
   test('empty input yields empty partitions', () => {
-    expect(partitionIncidentQueue([])).toEqual({ needsHuman: [], automation: [], closed: [] });
+    expect(partitionIncidentQueue([])).toEqual({ open: [], closed: [] });
   });
 });
 
-describe('IncidentsPanel handling tabs', () => {
-  test('C1: Needs human is active on load and shows only human exceptions', () => {
+describe('IncidentsPanel status tabs', () => {
+  test('C1: Open is active on load and shows only active incidents', () => {
     renderPanel({ incidents: [openThread, resolvedThread] });
 
     // non-resolved is visible, resolved is hidden
@@ -155,14 +151,14 @@ describe('IncidentsPanel handling tabs', () => {
     expect(screen.queryByText('billing')).toBeNull();
   });
 
-  test('C3→C2: clicking Closed shows only resolved; clicking Needs human restores', () => {
+  test('C3→C2: clicking Closed shows only resolved; clicking Open restores', () => {
     renderPanel({ incidents: [openThread, resolvedThread] });
 
     fireEvent.click(screen.getByRole('tab', { name: 'Closed' }));
     expect(screen.getByText('billing')).toBeDefined();
     expect(screen.queryByText('checkout')).toBeNull();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Needs human' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Open' }));
     expect(screen.getByText('checkout')).toBeDefined();
     expect(screen.queryByText('billing')).toBeNull();
   });
@@ -202,6 +198,46 @@ describe('IncidentsPanel handling tabs', () => {
     expect(calls.at(-1)?.severity).toBeUndefined();
   });
 
+  test('sorts newest first by default, and offers needs-human-first only on Open', () => {
+    const calls: Parameters<typeof useIncidentsMock>[0][] = [];
+    hookState = {
+      incidents: [openThread, resolvedThread],
+      loading: false,
+      error: false,
+      counts: { open: 1, closed: 1 },
+      nextCursor: 'CUR2',
+    };
+    useIncidentsMock = (opts) => {
+      calls.push(opts);
+      return hookState;
+    };
+    render(
+      <MemoryRouter>
+        <IncidentsPanel />
+      </MemoryRouter>,
+    );
+
+    const sortSelect = () => screen.getByLabelText('Sort') as HTMLSelectElement;
+    expect(calls.at(-1)?.sort).toBe('newest');
+    fireEvent.change(sortSelect(), { target: { value: 'priority' } });
+    expect(calls.at(-1)).toMatchObject({ state: 'open', sort: 'priority' });
+
+    // Priority cannot page, so leaving Open falls back to newest and hides the option.
+    fireEvent.click(screen.getByRole('tab', { name: 'Closed' }));
+    expect(calls.at(-1)).toMatchObject({ state: 'closed', sort: 'newest' });
+    expect([...sortSelect().options].map((option) => option.value)).toEqual([
+      'newest',
+      'oldest',
+      'severity',
+    ]);
+
+    // A cursor is bound to its ordering, so changing the sort restarts from page one.
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+    expect(calls.at(-1)?.cursor).toBe('CUR2');
+    fireEvent.change(sortSelect(), { target: { value: 'severity' } });
+    expect(calls.at(-1)).toMatchObject({ state: 'closed', sort: 'severity', cursor: undefined });
+  });
+
   test('validates the normalized search before requesting the API', () => {
     const calls: Parameters<typeof useIncidentsMock>[0][] = [];
     useIncidentsMock = (opts) => {
@@ -227,7 +263,7 @@ describe('IncidentsPanel handling tabs', () => {
     expect(calls.at(-1)?.query).toBeUndefined();
   });
 
-  test('does not describe filtered matches as a priority-truncated queue', () => {
+  test('does not describe filtered matches as a truncated queue', () => {
     renderPanel({
       incidents: [openThread],
       counts: { open: 42, needsHuman: 42, automation: 0, closed: 0 },
@@ -238,7 +274,7 @@ describe('IncidentsPanel handling tabs', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
 
-    expect(screen.queryByText(/highest-priority of 42/i)).toBeNull();
+    expect(screen.queryByText(/of 42 open incidents/i)).toBeNull();
   });
 
   test('All hides archived records even if a stale client response contains one', () => {
@@ -277,7 +313,7 @@ describe('IncidentsPanel handling tabs', () => {
   test('C17 polls only the mounted Open tab within 30 seconds and keeps Closed pagination one-shot', () => {
     const calls: {
       state?: 'open' | 'closed' | 'all';
-      attention?: 'human' | 'automation';
+      sort?: string;
       cursor?: string;
       limit?: number;
       pollMs?: number;
@@ -299,13 +335,10 @@ describe('IncidentsPanel handling tabs', () => {
     );
 
     const openCall = calls.find((call) => call.state === 'open');
-    expect(openCall?.attention).toBe('human');
+    expect(openCall?.sort).toBe('newest');
     expect(openCall?.pollMs).toBeGreaterThan(0);
     expect(openCall?.pollMs).toBeLessThanOrEqual(30_000);
     expect(openCall?.limit).toBe(100);
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Automation handling' }));
-    expect(calls.some((call) => call.attention === 'automation')).toBe(true);
 
     fireEvent.click(screen.getByRole('tab', { name: 'Closed' }));
     const closedCall = calls.filter((call) => call.state === 'closed').at(-1);
@@ -327,7 +360,7 @@ describe('IncidentsPanel handling tabs', () => {
 
   test('tab badges show the per-partition counts', () => {
     renderPanel({ incidents: [openThread, investigatingThread, resolvedThread] });
-    expect(within(screen.getByRole('tab', { name: 'Needs human' })).getByText('2')).toBeDefined();
+    expect(within(screen.getByRole('tab', { name: 'Open' })).getByText('2')).toBeDefined();
     expect(within(screen.getByRole('tab', { name: 'Closed' })).getByText('1')).toBeDefined();
   });
 
@@ -339,11 +372,10 @@ describe('IncidentsPanel handling tabs', () => {
       incidents: [openThread],
       counts: { open: 42, needsHuman: 42, automation: 0, closed: 7 },
     });
-    expect(within(screen.getByRole('tab', { name: 'Needs human' })).getByText('42')).toBeDefined();
+    expect(within(screen.getByRole('tab', { name: 'Open' })).getByText('42')).toBeDefined();
     expect(within(screen.getByRole('tab', { name: 'Closed' })).getByText('7')).toBeDefined();
-    expect(
-      screen.getByText(/showing the 1 highest-priority of 42 human exceptions/i),
-    ).toBeDefined();
+    const banner = screen.getByText(/showing the first 1 of 42 open incidents/i);
+    expect(banner.textContent).toMatch(/42 need a human; sort by Needs human first/);
   });
 
   test('C5: all-resolved incidents show an empty Open tab, and a populated Closed tab', () => {
@@ -394,8 +426,7 @@ describe('IncidentsPanel handling tabs', () => {
   // RED today: the panel gates the WHOLE tab bar behind !loading, so both tabs unmount during loading.
   test('keeps the tab bar mounted during a refetch when counts are known', () => {
     renderPanel({ incidents: [], loading: true, counts: { open: 5, closed: 3 } });
-    expect(screen.getByRole('tab', { name: 'Needs human' })).toBeDefined();
-    expect(screen.getByRole('tab', { name: 'Automation handling' })).toBeDefined();
+    expect(screen.getByRole('tab', { name: 'Open' })).toBeDefined();
     expect(screen.getByRole('tab', { name: 'Closed' })).toBeDefined();
   });
 
@@ -405,8 +436,7 @@ describe('IncidentsPanel handling tabs', () => {
   test('blanks only the row region during a refetch — tab bar stays, rows are not shown stale', () => {
     renderPanel({ incidents: [openThread], loading: true, counts: { open: 1, closed: 0 } });
     // Tab bar mounted.
-    expect(screen.getByRole('tab', { name: 'Needs human' })).toBeDefined();
-    expect(screen.getByRole('tab', { name: 'Automation handling' })).toBeDefined();
+    expect(screen.getByRole('tab', { name: 'Open' })).toBeDefined();
     expect(screen.getByRole('tab', { name: 'Closed' })).toBeDefined();
     // Row region skeletoned.
     expect(screen.getByText('Loading…')).toBeDefined();
@@ -419,7 +449,7 @@ describe('IncidentsPanel handling tabs', () => {
     renderPanel({ incidents: [], error: true });
     expect(screen.getByText('Failed to load incidents.')).toBeDefined();
     // a first-load error hides the tab bar (nothing loaded to tab through) — only the banner shows.
-    expect(screen.queryByRole('tab', { name: 'Needs human' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Open' })).toBeNull();
     expect(screen.queryByRole('tab', { name: 'Closed' })).toBeNull();
   });
 
@@ -512,7 +542,7 @@ describe('IncidentsPanel handling tabs', () => {
   test('an error during a refetch hides the tab bar and rows, showing only the banner', () => {
     renderPanel({ incidents: [], error: true, loading: true, counts: { open: 3, closed: 2 } });
     expect(screen.getByText('Failed to load incidents.')).toBeDefined();
-    expect(screen.queryByRole('tab', { name: 'Needs human' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Open' })).toBeNull();
     expect(screen.queryByRole('tab', { name: 'Closed' })).toBeNull();
   });
 });

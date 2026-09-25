@@ -4,6 +4,18 @@ Topology records identities, relationships and their supporting evidence. The op
 catalog adds ownership, corrections and declared dependencies. Neither discovery nor a declaration
 proves customer impact.
 
+Incident queue and workspace ownership use the same current service teams. An explicit incident
+service assignment takes precedence over provider candidates and confirmed entity mappings. If
+there is no assignment, confirmed mappings take precedence over exact catalog service identities.
+The incident's original service supplies ownership only when no service context resolves. A
+selected service without a team stays unowned. Conflicting identities for the same candidate key
+also stay unowned until a confirmed mapping resolves that key.
+
+Several affected services can contribute distinct teams. Assignment and catalog team changes appear
+on the next read without rewriting provider signals or incident history. Removing an explicit
+assignment restores the provider mapping policy. Only a workspace owner or administrator can
+change these assignments; support impersonation remains read-only.
+
 ## Automatic discovery
 
 | Source | Contributes |
@@ -82,8 +94,15 @@ sightings. Authentication, TLS verification and destination restrictions still a
 Paginated sources retain progress by tenant and connection generation. Continuations read only
 available collections whose cursor advanced; they do not restart completed collections.
 Partial child-read failures retain coverage gaps without blocking progress. Rate limits pause
-immediate continuation. The next periodic pass includes every collection again; Argo CD keeps a
-cursor for each configured project.
+immediate continuation and defer the connection's next pass by at least five minutes. A throttled
+Grafana dashboard page is read again rather than skipped. The next periodic pass includes every
+collection again; Argo CD keeps a cursor for each configured project.
+
+Each connection has at most one waiting pass. Every pass reads the provider's current state, so a
+pass that arrives while another waits is absorbed rather than queued behind it. When a periodic
+pass meets a waiting page continuation, the waiting pass is widened to read every collection, so the
+cycle skips none of them. A slow connection therefore delays its own discovery without multiplying
+reads against the other providers.
 
 Only a completed scan without gaps removes unseen old facts. Failed or expired scans retain prior
 evidence with its original time. An expired Kubernetes cursor restarts the scan instead of mixing

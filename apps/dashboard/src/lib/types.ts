@@ -1,9 +1,13 @@
 import type {
+  IncidentAttentionReason,
+  ResolutionPolicy,
+  ResolutionBasis,
   IncidentFeedbackRecord,
   IncidentTitlePresentation,
   IncidentFindingPayload,
   InvestigationBudgetSnapshot,
   InvestigationGap,
+  RecoveryQuestion,
   InvestigationTriggerReason,
   WsMessageDelivery,
 } from '@sre/contracts';
@@ -83,6 +87,7 @@ export interface Incident extends Partial<IncidentTitlePresentation> {
     triggerBudget: InvestigationBudgetSnapshot | null;
     summary?: string | null;
     nextStep?: string | null;
+    gaps?: string[];
     reason?: string | null;
     completedAt: string;
   } | null;
@@ -102,10 +107,13 @@ export interface Incident extends Partial<IncidentTitlePresentation> {
   unknowns?: InvestigationGap[] | null;
   nextStep?: string | null;
   assessmentUpdatedAt?: string | null;
+  resolutionPolicy?: ResolutionPolicy;
+  resolutionBasis?: ResolutionBasis | null;
   recoveryState?: 'verifying' | 'monitoring' | 'verified' | 'not_verified' | null;
   recoverySummary?: string | null;
   recoveryEvidenceIds?: string[] | null;
   recoveryUnknowns?: string[] | null;
+  recoveryQuestions?: RecoveryQuestion[] | null;
   recoveryNextStep?: string | null;
   recoveryUpdatedAt?: string | null;
   recoveryAttempt?: number | null;
@@ -126,20 +134,8 @@ export interface Incident extends Partial<IncidentTitlePresentation> {
   activeSignalCount?: number;
   pendingApprovalCount?: number;
   requiresHumanAttention?: boolean;
-  attentionReason?:
-    | 'approval_pending'
-    | 'investigation_degraded'
-    | 'recovery_not_verified'
-    | 'resolution_required'
-    | 'manual_review'
-    | 'signal_tracking_unavailable'
-    | 'mitigation_active'
-    | 'investigation_inconclusive'
-    | 'investigation_blocked'
-    | 'budget_exhausted'
-    | 'investigation_failed'
-    | 'severity_requires_human'
-    | null;
+  attentionReason?: IncidentAttentionReason | null;
+  operatorDecision?: string | null;
   attentionDecision?: string | null;
   responsibleOwner?: string | null;
   nextAutomation?: { description: string; scheduledAt: string | null } | null;
@@ -157,6 +153,8 @@ export interface Incident extends Partial<IncidentTitlePresentation> {
 }
 
 export interface IncidentSignal {
+  verifiedProviderState?: 'firing' | 'resolved';
+  lifecycleCoverage?: 'binding_required' | 'verified' | 'reverification_required';
   id: string;
   dataSourceId?: string | null;
   provider?: string | null;
@@ -237,6 +235,8 @@ export interface IncidentWorkspaceData {
     owner: string | null;
     nextAutomation: { description: string; scheduledAt: string | null } | null;
   } | null;
+  /** Advisory Slack recovery notices linked to this incident's signals, oldest first. */
+  providerRecoveryReports?: Array<{ signalId: string; reportedAt: string }>;
   automation?: {
     nextAction: { description: string; scheduledAt: string | null } | null;
     currentBudget: InvestigationBudgetSnapshot | null;

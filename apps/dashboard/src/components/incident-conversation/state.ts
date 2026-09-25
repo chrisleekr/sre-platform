@@ -55,6 +55,7 @@ export function deriveIncidentState(workspace: IncidentWorkspaceData) {
             label: `${activeSignalCount} unresolved record${activeSignalCount === 1 ? '' : 's'}`,
           };
   const recoveryIsCurrent =
+    incident.resolutionBasis !== 'provider_clear' &&
     incident.purpose !== 'health_check' &&
     incident.recoveryState != null &&
     (incident.recoveryUpdatedAt != null

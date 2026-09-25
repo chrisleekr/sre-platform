@@ -1,3 +1,5 @@
+import { ObservabilityVerificationResult } from './ObservabilityVerificationResult';
+import { NativeAlertEventFields } from './NativeAlertEventFields';
 import { requestErrorMessage } from '../lib/request-error';
 import { SetupActions } from './SetupDialogSlots';
 import { useState } from 'react';
@@ -44,6 +46,7 @@ export function ObservabilityConnectWizard({
     name: string;
     settings: Record<string, unknown>;
     credential?: string;
+    eventToken?: string;
     insecureTlsAcknowledged?: boolean;
     insecureHttpAcknowledged?: boolean;
   }) => Promise<{ connectorId: string }>;
@@ -79,6 +82,9 @@ export function ObservabilityConnectWizard({
   const [apiKey, setApiKey] = useState('');
   const [appKey, setAppKey] = useState('');
   const [token, setToken] = useState('');
+  const [eventDelivery, setEventDelivery] = useState(initialSettings?.eventTransport === 'direct');
+  const [alertChannel, setAlertChannel] = useState(String(initialSettings?.alertChannel ?? ''));
+  const [eventToken, setEventToken] = useState('');
   const [busy, setBusy] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
@@ -166,9 +172,17 @@ export function ObservabilityConnectWizard({
           name: name.trim(),
           settings:
             type === 'datadog'
-              ? { site, collectApm, collectLogs }
+              ? {
+                  site,
+                  collectApm,
+                  collectLogs,
+                  eventTransport: eventDelivery ? 'direct' : 'none',
+                  alertChannel: alertChannel.trim(),
+                }
               : {
                   baseUrl: baseUrl.trim(),
+                  eventTransport: eventDelivery ? 'direct' : 'none',
+                  alertChannel: alertChannel.trim(),
                   ...(usesHttps && trust === 'ca'
                     ? caCert.trim()
                       ? { caCert: caCert.trim() }
@@ -177,6 +191,7 @@ export function ObservabilityConnectWizard({
                   insecureSkipTLSVerify: usesHttps && trust === 'insecure',
                 },
           ...(credential ? { credential } : {}),
+          ...(eventToken.trim() ? { eventToken: eventToken.trim() } : {}),
           ...(usesHttps && trust === 'insecure' ? { insecureTlsAcknowledged: true } : {}),
           ...(usesHttp && httpAcknowledged ? { insecureHttpAcknowledged: true } : {}),
         });
@@ -338,6 +353,15 @@ export function ObservabilityConnectWizard({
               )}
             </>
           )}
+          <NativeAlertEventFields
+            eventDelivery={eventDelivery}
+            setEventDelivery={setEventDelivery}
+            alertChannel={alertChannel}
+            setAlertChannel={setAlertChannel}
+            eventToken={eventToken}
+            setEventToken={setEventToken}
+            credentialConfigured={Boolean(initialSettings?.eventCredentialConfigured)}
+          />
           {error && (
             <p role="alert" className="text-sm text-critical">
               {error}
@@ -463,31 +487,13 @@ export function ObservabilityConnectWizard({
         </div>
       )}
       {step === 4 && result && (
-        <div className="flex flex-col gap-4">
-          <h2
-            className={`font-medium ${result.status === 'healthy' ? 'text-success' : 'text-critical'}`}
-          >
-            {result.status === 'healthy'
-              ? `${name} enabled.`
-              : 'Verification failed; this connection remains disabled.'}
-          </h2>
-          <ul className="list-disc space-y-1 pl-5 text-sm">
-            <li>Endpoint reachable: {result.reachable ? 'yes' : 'no'}</li>
-            <li>Credential authorized: {result.authorized ? 'yes' : 'no'}</li>
-            {result.warnings.map((warning) => (
-              <li key={warning}>{warning}</li>
-            ))}
-          </ul>
-          <SetupActions>
-            <button
-              type="button"
-              onClick={onClose}
-              className="sre-action sre-action-primary self-start"
-            >
-              Finish
-            </button>
-          </SetupActions>
-        </div>
+        <ObservabilityVerificationResult
+          result={result}
+          name={name}
+          onClose={onClose}
+          type={type}
+          connectorId={eventDelivery ? savedConnectorId : undefined}
+        />
       )}
     </SetupDialog>
   );

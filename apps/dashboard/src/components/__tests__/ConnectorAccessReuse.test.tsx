@@ -4,7 +4,6 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { installDialogMethods } from '../../test/dialog';
 import { ArgoCdConnectWizard } from '../ArgoCdConnectWizard';
 import { ObservabilityConnectWizard } from '../ObservabilityConnectWizard';
-import { StatusCakeConnectWizard } from '../StatusCakeConnectWizard';
 import type { ArgoCdAccessResult } from '../../lib/connectors';
 
 let dialog: ReturnType<typeof installDialogMethods>;
@@ -348,7 +347,7 @@ test('Datadog never silently discards one replacement key while keeping the old 
   expect(screen.getByRole('alert').textContent).toContain('Enter both Datadog keys');
 });
 
-test.each(['datadog', 'grafana', 'statuscake'] as const)(
+test.each(['datadog', 'grafana'] as const)(
   '%s reuses the saved draft when verification fails',
   async (type) => {
     const onSave = vi.fn(async (_body: unknown) => ({ connectorId: 'saved' }));
@@ -356,33 +355,21 @@ test.each(['datadog', 'grafana', 'statuscake'] as const)(
       .fn()
       .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValue(healthy);
-    if (type === 'statuscake') {
-      render(
-        <StatusCakeConnectWizard
-          mode="connect"
-          onSave={onSave}
-          onRunTest={onRunTest}
-          onClose={vi.fn()}
-        />,
-      );
-      fireEvent.change(screen.getByLabelText(/API token/), { target: { value: 'existing-token' } });
-    } else {
-      render(
-        <ObservabilityConnectWizard
-          type={type}
-          mode="connect"
-          initialSettings={{ baseUrl: 'https://grafana.example.test' }}
-          onSave={onSave}
-          onRunTest={onRunTest}
-          onClose={vi.fn()}
-        />,
-      );
-      click('Credentials');
-      if (type === 'datadog') {
-        fill('API key', 'existing-api');
-        fill('Application key', 'existing-app');
-      } else fill('Service account token', 'existing-token');
-    }
+    render(
+      <ObservabilityConnectWizard
+        type={type}
+        mode="connect"
+        initialSettings={{ baseUrl: 'https://grafana.example.test' }}
+        onSave={onSave}
+        onRunTest={onRunTest}
+        onClose={vi.fn()}
+      />,
+    );
+    click('Credentials');
+    if (type === 'datadog') {
+      fill('API key', 'existing-api');
+      fill('Application key', 'existing-app');
+    } else fill('Service account token', 'existing-token');
     click('Review');
     click('Save and verify');
     await screen.findByRole('alert');

@@ -30,7 +30,7 @@ export function AccountMenu({
   const [open, setOpen] = useState(false);
   const role = workspace.role[0]!.toUpperCase() + workspace.role.slice(1);
   return (
-    <div className="relative shrink-0">
+    <div className="relative ml-auto shrink-0">
       <button
         type="button"
         aria-label={`Account menu${unreadCount ? `, ${unreadCount} unread notifications` : ''}`}

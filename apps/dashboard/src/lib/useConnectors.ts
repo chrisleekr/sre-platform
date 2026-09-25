@@ -173,7 +173,13 @@ export async function savePrometheusConnector(
 export async function saveStatusCakeConnector(
   apiBaseUrl: string,
   getCredentials: CredentialGetter,
-  body: { id?: string; name: string; credential?: string },
+  body: {
+    id?: string;
+    name: string;
+    credential?: string;
+    settings?: Record<string, unknown>;
+    eventToken?: string;
+  },
 ): Promise<{ connectorId: string }> {
   const res = await authenticatedFetch(
     connectorMutationUrl(apiBaseUrl, 'statuscake', body.id),
@@ -226,6 +232,7 @@ export async function saveObservabilityConnector(
     name: string;
     settings: Record<string, unknown>;
     credential?: string;
+    eventToken?: string;
     insecureTlsAcknowledged?: boolean;
     insecureHttpAcknowledged?: boolean;
   },

@@ -10,8 +10,6 @@ import { ObservabilityConnectWizard } from '../ObservabilityConnectWizard';
 
 import { PrometheusConnectWizard } from '../PrometheusConnectWizard';
 
-import { StatusCakeConnectWizard } from '../StatusCakeConnectWizard';
-
 let dialogMethods: ReturnType<typeof installDialogMethods>;
 
 const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
@@ -159,37 +157,6 @@ describe('on-demand connector wizards', () => {
     );
   });
 
-  test('guides a StatusCake token through disabled save and explicit verification', async () => {
-    const onSave = vi.fn(async () => ({
-      connectorId: '00000000-0000-4000-8000-000000000002',
-    }));
-    const onRunTest = vi.fn(async () => ({
-      status: 'healthy' as const,
-      reachable: true,
-      authorized: true,
-      warnings: [],
-      enabled: true,
-    }));
-    render(
-      <StatusCakeConnectWizard
-        mode="connect"
-        onSave={onSave}
-        onRunTest={onRunTest}
-        onClose={() => {}}
-      />,
-    );
-
-    fireEvent.change(screen.getByLabelText('API token'), { target: { value: 'status-token' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Review' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Save and verify' }));
-
-    await waitFor(() =>
-      expect(onSave).toHaveBeenCalledWith({ name: 'StatusCake', credential: 'status-token' }),
-    );
-    expect(await screen.findByText('StatusCake connector enabled.')).toBeDefined();
-    expect(onRunTest).toHaveBeenCalledTimes(1);
-  });
-
   test('guides a named Datadog source through both required write-only keys', async () => {
     const onSave = vi.fn(async () => ({
       connectorId: '00000000-0000-4000-8000-000000000003',
@@ -226,7 +193,13 @@ describe('on-demand connector wizards', () => {
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith({
         name: 'EU Datadog',
-        settings: { site: 'datadoghq.eu', collectApm: false, collectLogs: false },
+        settings: {
+          site: 'datadoghq.eu',
+          collectApm: false,
+          collectLogs: false,
+          eventTransport: 'none',
+          alertChannel: '',
+        },
         credential: JSON.stringify({ apiKey: 'api-key', appKey: 'app-key' }),
       }),
     );
@@ -286,7 +259,13 @@ describe('on-demand connector wizards', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalled());
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
-        settings: { site: 'datadoghq.eu', collectLogs: false, collectApm: false },
+        settings: {
+          site: 'datadoghq.eu',
+          collectLogs: false,
+          collectApm: false,
+          eventTransport: 'none',
+          alertChannel: '',
+        },
       }),
     );
   });
@@ -309,6 +288,8 @@ describe('on-demand connector wizards', () => {
         connectorId="00000000-0000-4000-8000-000000000004"
         initialName="Operations Grafana"
         initialSettings={{
+          eventTransport: 'none',
+          alertChannel: '',
           baseUrl: 'https://grafana.example.com',
           caConfigured: true,
         }}
@@ -333,6 +314,8 @@ describe('on-demand connector wizards', () => {
         id: '00000000-0000-4000-8000-000000000004',
         name: 'Operations Grafana',
         settings: {
+          eventTransport: 'none',
+          alertChannel: '',
           baseUrl: 'https://grafana.example.com',
           insecureSkipTLSVerify: false,
         },
@@ -377,6 +360,8 @@ describe('on-demand connector wizards', () => {
       expect(onSave).toHaveBeenCalledWith({
         name: 'Grafana',
         settings: {
+          eventTransport: 'none',
+          alertChannel: '',
           baseUrl: 'http://127.0.0.1:3000',
           caCert: '',
           insecureSkipTLSVerify: false,

@@ -3,6 +3,9 @@ import type { IncidentFreeStatus } from './incidentFreeStatus';
 import type { Incident } from './types';
 import { useFetchResource } from './useFetchResource';
 
+/** Server orderings for the incident list; `priority` is valid only for the open scope. */
+export type IncidentSort = 'priority' | 'newest' | 'oldest' | 'severity';
+
 export interface UseIncidents {
   operationalCounts?: UseIncidents['counts'];
   incidents: Incident[];
@@ -68,7 +71,8 @@ const EMPTY: IncidentsBody = {
 /**
  * Fetch the tenant's incidents from the API (the access token authorizes + scopes them). With `state` the
  * server filters by scope and returns true per-scope counts + a keyset cursor; without it, the
- * legacy full-list path. `attention` selects one active handling lane. Changing a filter or cursor
+ * legacy full-list path. `sort` picks the server ordering; a history cursor is only valid for the
+ * ordering it was issued under, so changing `sort` must reset the cursor. Changing a filter or cursor
  * re-runs the fetch because it rides the request path. An
  * explicit poll interval applies only to the Open scope; Closed keyset pages remain one-shot.
  */
@@ -76,7 +80,7 @@ export function useIncidents(opts: {
   apiBaseUrl: string;
   getCredentials: CredentialGetter;
   state?: 'open' | 'closed' | 'all';
-  attention?: 'human' | 'automation';
+  sort?: IncidentSort;
   query?: string;
   severity?: 'sev1' | 'sev2' | 'sev3';
   cursor?: string;
@@ -85,7 +89,7 @@ export function useIncidents(opts: {
 }): UseIncidents {
   const params = new URLSearchParams();
   if (opts.state) params.set('state', opts.state);
-  if (opts.attention) params.set('attention', opts.attention);
+  if (opts.sort) params.set('sort', opts.sort);
   if (opts.query) params.set('query', opts.query);
   if (opts.severity) params.set('severity', opts.severity);
   if (opts.cursor) params.set('cursor', opts.cursor);

@@ -97,7 +97,7 @@ chose no authentication there is nothing to enter.
 ![Choosing how Alertmanager reaches the platform](../assets/screenshots/add-prometheus-3-delivery-light.png#only-light)
 ![Choosing how Alertmanager reaches the platform](../assets/screenshots/add-prometheus-3-delivery-dark.png#only-dark)
 
-Independent of reading, and genuinely optional. Choosing a delivery mode gives Alertmanager an
+Independent of reading, and optional. Choosing a delivery mode gives Alertmanager an
 endpoint to post to, which is what lets a firing alert open an incident that already knows when it
 started and when it cleared. **Configure later** leaves reading fully working and alerts simply not
 arriving.
@@ -140,9 +140,58 @@ During setup you choose how notifications reach the platform: a public HTTPS end
 environment, a relay in local development, or nothing at all. Choosing nothing is valid, and the
 connector card then says event delivery is not configured rather than looking complete.
 
-You get a copyable block to add to the Alertmanager receiver that already routes the alerts you care
-about. Add it to that receiver. Do not change its name, its Slack configuration, or your routing
-tree.
+Use one incident-ingestion owner for each provider route: direct provider Slack delivery, or native
+Alertmanager delivery through the platform. Sending both copies into subscribed channels can create
+separate incidents. A rendered Slack alert does not share the native connector, fingerprint and start
+time identity, and matching titles do not prove that two copies are the same episode.
+
+For native delivery, first connect Slack, invite the bot to the destination channel, and enable that
+channel's **Listen** subscription on **Inbound**. Copy the generated webhook configuration into the
+selected receiver with its matching bearer token and `send_resolved: true`. Preserve receiver names,
+route matchers, grouping and null/control routes. Change only the selected route's notification owner;
+do not remove unrelated receivers or independent notification coverage.
+
+Native delivery makes the platform and its Slack posting credential part of notification delivery.
+The provider webhook is accepted only after a root is durably bound to the incident. If a post has an
+ambiguous external outcome, intake remains uncertain: later notifications can return deferred status
+without accepting the incident. There is no exactly-once Slack delivery or automatic uncertain-intake
+repair guarantee. Inspect the recorded delivery status and actual Slack root before an operator acts.
+If independent urgent notification coverage is required, use a separately approved destination
+outside this incident intake.
+
+### Change ownership without abandoning active episodes
+
+Before switching, inventory active provider episodes and their existing incidents and threads. Keep
+the current owner until its final provider clears are durably recorded. Account for pending and
+in-flight notifications, and confirm that no episode is active at the boundary. Stop and reconcile
+any firing notification that races the switch. Native activation does not backfill, deduplicate or
+clear old Slack incidents.
+
+For a condition that cannot drain, an operator must first verify the exact old-to-new episode mapping
+and explicitly audit any supersession or signal correction. Retain a case for the live condition and
+link the evidence. An administrative correction is not provider-confirmed recovery. If exact mapping
+is unavailable, keep the current owner and investigate rather than infer identity or health.
+
+### Validate an isolated route before wider cutover
+
+An owner or admin should use a synthetic provider route and an enabled destination subscription.
+Verify one visible Slack root, one incident and one initial investigation; replay the same firing
+notification and confirm no duplicate work. Send its exact resolved notification, then a new start
+time to verify independent recurrence. Inspect Slack event delivery to confirm the native opener's
+ownership marker survived, and check observable delivery failures as well as successes. A metrics
+read alone does not verify this path.
+
+Native openers retain a normal inbound receipt when Slack echoes them. Verified owned echoes do not
+start classification or another investigation. Unmarked same-app provider roots and authorized
+human replies still use ordinary intake. New native episodes require an enabled destination
+subscription. If it is revoked during a successful post, the root is retained without opening an
+incident; resubscription allows the provider retry to route that root without reposting. Accepted
+episodes continue receiving authoritative provider updates and recovery after a subscription change.
+
+For rollback, apply the same active-episode drain or explicitly mapped reconciliation before
+restoring direct Slack ownership. Direct Slack notifications cannot update an active native identity.
+Verify notification visibility, preserve the audit trail and avoid simultaneous intake owners or
+silently abandoned native updates.
 
 Saving stores a draft that is switched off. A successful verification switches it on and starts
 delivery. The connector card reports read access and delivery health separately, so a connection
