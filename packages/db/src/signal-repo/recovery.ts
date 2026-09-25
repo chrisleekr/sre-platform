@@ -1,3 +1,4 @@
+import type { SignalClearProvenance } from '@sre/contracts';
 import { and, eq, sql } from 'drizzle-orm';
 import type {
   AffectedEntityCandidate,
@@ -25,6 +26,9 @@ import {
 import { recoveryRestoreStatus } from './recovery-state';
 
 export interface SignalObservation {
+  /** Context-only intake may create unknown signals but cannot revise existing lifecycle evidence. */
+  advisory?: boolean;
+  clearProvenance?: SignalClearProvenance;
   incidentId: string;
   dataSourceId?: string;
   provider?: string;
@@ -202,6 +206,8 @@ async function lockRecoveryCandidateTx(
           recoverySummary: null,
           recoveryEvidenceIds: null,
           recoveryUnknowns: null,
+          recoveryQuestions: null,
+          recoveryQuestionsUpdatedAt: null,
           recoveryNextStep: null,
           recoveryUpdatedAt: null,
           recoveryRunId: null,
@@ -233,6 +239,8 @@ async function startRecoveryVerificationTx(
       recoverySummary: null,
       recoveryEvidenceIds: null,
       recoveryUnknowns: null,
+      recoveryQuestions: null,
+      recoveryQuestionsUpdatedAt: null,
       recoveryNextStep: null,
       recoveryUpdatedAt: sql`now()`,
       recoveryRunId: runId ?? null,
@@ -412,6 +420,8 @@ export async function restoreRecoveryVerificationTx(
       recoverySummary: null,
       recoveryEvidenceIds: null,
       recoveryUnknowns: null,
+      recoveryQuestions: null,
+      recoveryQuestionsUpdatedAt: null,
       recoveryNextStep: null,
       recoveryUpdatedAt: null,
       recoveryRunId: null,

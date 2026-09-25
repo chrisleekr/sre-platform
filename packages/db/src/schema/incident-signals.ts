@@ -1,5 +1,6 @@
 import type {
   AffectedEntityCandidate,
+  SignalClearProvenance,
   IncidentCorrelationMethod,
   SignalSource,
 } from '@sre/contracts';
@@ -88,6 +89,9 @@ export const incidentSignals = pgTable(
     // The original alert message. A separate provider resolution message updates this row but retains
     // the original identity, while last_event_key identifies that later observation.
     externalMessageId: text('external_message_id').notNull(),
+    clearProvenance: text('clear_provenance').$type<SignalClearProvenance>(),
+    /** Generation of an accepted exact provider recovery, independent of descriptive source metadata. */
+    providerClearGeneration: integer('provider_clear_generation'),
     state: text('state').$type<SignalState>().notNull(),
     lastEventType: text('last_event_type').$type<SignalEventType>().notNull(),
     summary: text('summary').notNull(),
@@ -105,6 +109,10 @@ export const incidentSignals = pgTable(
     resolvedAt: timestamp('resolved_at', { withTimezone: true, precision: 3 }),
   },
   (t) => [
+    check(
+      'incident_signals_clear_provenance_check',
+      sql`${t.clearProvenance} in ('provider', 'operator', 'suppression', 'unknown')`,
+    ),
     unique('incident_signals_external_uq').on(
       t.tenantId,
       t.surface,

@@ -4,6 +4,7 @@ import {
   approvals,
   completeInvestigationRunTx,
   filterRecoveryEvidenceIdsTx,
+  filterRecoveryAttemptIdsTx,
   incidentMessages,
   incidents,
   jobs,
@@ -25,7 +26,9 @@ import { type HubMessage } from './contracts';
 import type { HubStore } from './store';
 import {
   appendResolvedResponseGroupTx,
+  resolveProviderClearTx,
   completeVerifiedRecoveryAfterApprovalTx,
+  type EnqueueRecoveryTx,
 } from './response-group';
 
 async function hasOnlyActiveLifecycleTransitions(
@@ -69,12 +72,27 @@ export class HubRecovery {
     private readonly publishAppended: (message: HubMessage) => Promise<void>,
   ) {}
 
-  /** Completes a verified response group after its final pending approval is decided. */
+  /** Throws ProviderClearLockContendedError when a connector write holds the generation rows. */
+  async resolveProviderClear(
+    tenantId: string,
+    incidentId: string,
+    expected: { lifecycleVersion: number; signalFence: string },
+    transitionKey: string,
+  ): Promise<boolean> {
+    const result = await withTenant(this.db, tenantId, (tx) =>
+      resolveProviderClearTx(this.store, tx, tenantId, incidentId, transitionKey, expected),
+    );
+    for (const message of result.messages) await this.publishAppended(message);
+    return result.handled;
+  }
+
+  /** Completes an eligible response group after its final pending approval is decided. */
   async completeVerifiedRecoveryAfterApprovalTx(
     tx: Tx,
     tenantId: string,
     incidentId: string,
     approvalId: string,
+    enqueueRecoveryTx?: EnqueueRecoveryTx,
   ): Promise<HubMessage[]> {
     return completeVerifiedRecoveryAfterApprovalTx(
       this.store,
@@ -82,6 +100,7 @@ export class HubRecovery {
       tenantId,
       incidentId,
       approvalId,
+      enqueueRecoveryTx,
     );
   }
 
@@ -107,6 +126,7 @@ export class HubRecovery {
       maxChecks: number;
       recoveryEvidenceIds: string[];
       recoveryUnknowns: string[];
+      recoveryQuestions?: RecoveryMessagePayload['questions'];
       recoveryNextStep: string | null;
       recoveryChecks: RecoveryMessagePayload['checks'];
       finding?: IncidentFindingPayload;
@@ -304,10 +324,28 @@ export class HubRecovery {
         const completed = new Set(completedEvidenceIds);
         recoveryEvidenceIds = recoveryEvidenceIds.filter((id) => completed.has(id));
       }
+      const proposedQuestions = input.recoveryQuestions;
+      const attemptedIds = await filterRecoveryAttemptIdsTx(
+        tx,
+        conversationIncidentId,
+        proposedQuestions?.flatMap((question) => question.attemptedEvidenceIds) ?? [],
+        input.verificationStartedAt,
+      );
+      const permittedAttempts = new Set(
+        attemptedIds.filter((id) => !completedEvidenceIds || completedEvidenceIds.includes(id)),
+      );
+      let recoveryQuestions = proposedQuestions?.map((question) => ({
+        ...question,
+        attemptedEvidenceIds: question.attemptedEvidenceIds.filter((id) =>
+          permittedAttempts.has(id),
+        ),
+      }));
       const evidenceRequired = input.outcome === 'recovered' || input.outcome === 'recheck';
       const missingRequiredEvidence = evidenceRequired && recoveryEvidenceIds.length === 0;
       const outcome =
         missingRequiredEvidence ||
+        (input.outcome === 'recovered' &&
+          recoveryQuestions?.some((question) => question.resolutionRelevance === 'blocking')) ||
         (input.outcome === 'recheck' &&
           (input.attempt >= input.maxChecks || !input.scheduleRecheck))
           ? 'needs_human'
@@ -319,9 +357,31 @@ export class HubRecovery {
       const content = missingRequiredEvidence
         ? `${summary}\nRun a current health check and cite its durable evidence before resolving.`
         : input.content;
-      const recoveryUnknowns = missingRequiredEvidence
-        ? ['Cited recovery evidence was unavailable.']
-        : input.recoveryUnknowns;
+      if (
+        recoveryQuestions !== undefined &&
+        outcome === 'needs_human' &&
+        !recoveryQuestions.some((question) => question.resolutionRelevance === 'blocking')
+      ) {
+        recoveryQuestions = [
+          ...recoveryQuestions,
+          {
+            question: missingRequiredEvidence
+              ? 'Cited recovery evidence was unavailable.'
+              : 'Automatic recovery monitoring could not continue.',
+            category: 'partial_evidence',
+            evidenceKind: null,
+            attemptedEvidenceIds: [],
+            resolutionRelevance: 'blocking',
+            nextAction:
+              'Run a current health check and cite its durable evidence before resolving.',
+          },
+        ];
+      }
+      const recoveryUnknowns =
+        recoveryQuestions?.map((question) => question.question) ??
+        (missingRequiredEvidence
+          ? ['Cited recovery evidence was unavailable.']
+          : input.recoveryUnknowns);
       const recoveryNextStep = missingRequiredEvidence
         ? 'Run a current health check and cite its durable evidence before resolving.'
         : input.recoveryNextStep;
@@ -347,6 +407,7 @@ export class HubRecovery {
           outcome,
           checks: recoveryChecks,
           unknowns: recoveryUnknowns,
+          ...(recoveryQuestions !== undefined ? { questions: recoveryQuestions } : {}),
           nextStep: recoveryNextStep,
           attempt: input.attempt,
           maxChecks: input.maxChecks,
@@ -368,6 +429,8 @@ export class HubRecovery {
           recoverySummary: summary,
           recoveryEvidenceIds,
           recoveryUnknowns,
+          recoveryQuestions: recoveryQuestions ?? null,
+          recoveryQuestionsUpdatedAt: recoveryQuestions !== undefined ? sql`now()` : null,
           recoveryNextStep,
           recoveryUpdatedAt: sql`now()`,
           recoveryRunId: null,

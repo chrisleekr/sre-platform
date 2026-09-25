@@ -12,6 +12,7 @@ import {
   recordIncidentRelationTx,
   type IncidentRelationInput,
 } from './core';
+import { listResponseGroupIncidentIdsTx } from './causal';
 
 /**
  * Records a typed relationship between two tenant-visible incidents.
@@ -49,7 +50,13 @@ export async function recordUnrelatedIncidents(
   return withTenant(exec, tenantId, async (tx) => {
     await lockCausalGraphTx(tx, tenantId);
     const ids = [input.sourceIncidentId, input.targetIncidentId].sort();
-    await lockIncidentWorkTx(tx, tenantId, ids);
+    // Superseding a caused_by edge makes recordIncidentRelationTx lock both whole response groups.
+    // Take them all before the pair's row locks, the order signal writers use.
+    const groupIds = new Set<string>();
+    for (const id of ids)
+      for (const memberId of await listResponseGroupIncidentIdsTx(tx, tenantId, id))
+        groupIds.add(memberId);
+    await lockIncidentWorkTx(tx, tenantId, [...groupIds]);
     const locked = await tx
       .select()
       .from(incidents)

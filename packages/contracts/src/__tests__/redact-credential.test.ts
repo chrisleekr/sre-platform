@@ -12,6 +12,15 @@ it.each([
   expect(redacted.split('\n').at(-1)).toBe('safe source');
 });
 
+it('redacts a private key whose END line was cut off', () => {
+  const value = 'Found key:\n-----BEGIN RSA PRIVATE KEY-----\nMIIEhunter2\nmorekeydata';
+  const redacted = scrubSecrets(value);
+  expect(redacted).not.toContain('hunter2');
+  expect(redacted).not.toContain('morekeydata');
+  expect(redacted.startsWith('Found key:\n')).toBe(true);
+  expect(redacted.split('\n')).toHaveLength(value.split('\n').length);
+});
+
 describe('hasKnownCredential', () => {
   it('detects a sensitive key=value pair', () => {
     expect(hasKnownCredential('token=abc123')).toBe(true);

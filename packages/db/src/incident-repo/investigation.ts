@@ -361,6 +361,8 @@ export interface HumanMessage {
   id: string;
   content: string;
   originSurface: string | null;
+  /** Server-set idempotency key; lets a worker recognise a platform control without reading text. */
+  originMessageId: string | null;
   authorUserId: string | null;
   createdAt: Date;
 }
@@ -389,6 +391,7 @@ export async function humanMessagesSince(
         id: incidentMessages.id,
         content: incidentMessages.content,
         originSurface: incidentMessages.originSurface,
+        originMessageId: incidentMessages.originMessageId,
         authorUserId: incidentMessages.authorUserId,
         createdAt: incidentMessages.createdAt,
       })

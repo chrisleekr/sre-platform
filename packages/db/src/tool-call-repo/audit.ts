@@ -142,6 +142,34 @@ export async function filterRecoveryEvidenceIdsTx(
   return unique.filter((id) => allowed.has(id));
 }
 
+/** Keep current verification attempts, including failed or unavailable reads.
+ * @param tx - Tenant-scoped transaction.
+ * @param incidentId - Conversation that owns the attempted checks.
+ * @param proposed - Candidate attempt identifiers.
+ * @param verificationStartedAt - Lower boundary for the current verification.
+ */
+export async function filterRecoveryAttemptIdsTx(
+  tx: Tx,
+  incidentId: string,
+  proposed: string[],
+  verificationStartedAt: Date,
+): Promise<string[]> {
+  const unique = normalizedEvidenceIds(proposed);
+  if (unique.length === 0) return [];
+  const rows = await tx
+    .select({ id: agentToolCalls.id })
+    .from(agentToolCalls)
+    .where(
+      and(
+        eq(agentToolCalls.incidentId, incidentId),
+        inArray(agentToolCalls.id, unique),
+        gte(agentToolCalls.createdAt, verificationStartedAt),
+      ),
+    );
+  const allowed = new Set(rows.map((row) => row.id));
+  return unique.filter((id) => allowed.has(id));
+}
+
 /**
  * Checks whether tool call.
  *

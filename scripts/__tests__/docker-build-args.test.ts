@@ -73,7 +73,14 @@ describe('docker-build tag handling', () => {
   });
 
   test('keeps the single-tag local build unchanged', () => {
-    const result = runDockerBuild(['--image', image, '--tag', 'v1.2.3']);
+    const result = runDockerBuild([
+      '--image',
+      image,
+      '--tag',
+      'v1.2.3',
+      '--platforms',
+      'linux/arm64',
+    ]);
 
     expect(result.exitCode).toBe(0);
     expect(valuesOf(result.argv, '--tag')).toEqual([`${image}:1.2.3`]);
@@ -83,6 +90,9 @@ describe('docker-build tag handling', () => {
     ]);
     expect(result.argv).toContain('--load');
     expect(result.argv).not.toContain('--push');
+    expect(result.argv).not.toContain('--output');
+    expect(result.argv).not.toContain('--provenance=mode=min');
+    expect(valuesOf(result.argv, '--platform')).toEqual(['linux/arm64']);
   });
 
   test('does not let a tag holding a glob character expand against the working directory', () => {
@@ -94,6 +104,64 @@ describe('docker-build tag handling', () => {
     expect(result.exitCode).toBe(0);
     expect(valuesOf(result.argv, '--tag')).toEqual([`${image}:C*.md`]);
   });
+});
+
+describe('docker-build publication compatibility', () => {
+  test.each([
+    {
+      name: 'GitLab latest',
+      tags: ['latest'],
+      expectedTags: [`${image}:latest`],
+      version: 'latest',
+      platforms: 'linux/amd64,linux/arm64',
+    },
+    {
+      name: 'GitLab dev',
+      tags: ['dev'],
+      expectedTags: [`${image}:dev`],
+      version: 'dev',
+      platforms: 'linux/amd64',
+    },
+    {
+      name: 'GitHub version and latest',
+      tags: ['v1.2.3', 'latest'],
+      expectedTags: [`${image}:1.2.3`, `${image}:latest`],
+      version: '1.2.3',
+      platforms: 'linux/amd64,linux/arm64',
+    },
+  ])(
+    'publishes $name with compatible attestations and intact build metadata',
+    ({ tags, expectedTags, version, platforms }) => {
+      const result = runDockerBuild([
+        '--image',
+        image,
+        ...tags.flatMap((tag) => ['--tag', tag]),
+        '--platforms',
+        platforms,
+        '--push',
+      ]);
+
+      expect(result.exitCode).toBe(0);
+      expect(valuesOf(result.argv, '--output')).toEqual([
+        'type=image,push=true,oci-artifact=false',
+      ]);
+      expect(result.argv.filter((arg) => arg.startsWith('--provenance'))).toEqual([
+        '--provenance=mode=min',
+      ]);
+      expect(result.argv).not.toContain('--push');
+      expect(result.argv).not.toContain('--load');
+      expect(valuesOf(result.argv, '--tag')).toEqual(expectedTags);
+      expect(valuesOf(result.argv, '--platform')).toEqual([platforms]);
+      expect(valuesOf(result.argv, '--build-arg')).toEqual([
+        `SRE_VERSION=${version}`,
+        'SRE_REVISION=deadbee',
+      ]);
+      expect(result.argv.slice(0, 2)).toEqual(['buildx', 'build']);
+      expect(valuesOf(result.argv, '--file')).toEqual(['Dockerfile']);
+      expect(valuesOf(result.argv, '--target')).toEqual(['production']);
+      expect(result.argv.at(-1)).toBe('.');
+    },
+  );
 });
 
 describe('docker-build registry cache', () => {
@@ -109,7 +177,7 @@ describe('docker-build registry cache', () => {
     ]);
 
     expect(pushed.exitCode).toBe(0);
-    expect(pushed.argv).toContain('--push');
+    expect(valuesOf(pushed.argv, '--output')).toEqual(['type=image,push=true,oci-artifact=false']);
     expect(valuesOf(pushed.argv, '--cache-from')).toEqual([
       `type=registry,ref=${image}:buildcache`,
     ]);

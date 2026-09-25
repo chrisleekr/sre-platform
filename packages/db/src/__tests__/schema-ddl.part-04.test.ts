@@ -30,6 +30,23 @@ describe('generation coalescing indexes', () => {
   }
 });
 
+describe('topology pass coalescing index', () => {
+  // Queued only: a pass arriving while one runs must queue one successor, or its newer provider state
+  // would be dropped until the next schedule.
+  test('jobs_topology_discover_coalesce_idx is UNIQUE on (tenant_id, payload->>connectorId) WHERE queued only', () => {
+    const def = __fixture.indexes.get('jobs_topology_discover_coalesce_idx');
+    expect(def, 'jobs_topology_discover_coalesce_idx is missing').toBeDefined();
+    const flat = __fixture.squash(def!);
+    expect(flat).toContain('CREATEUNIQUEINDEX');
+    expect(flat).toContain('USINGbtree(tenant_id,');
+    expect(flat).toContain("payload->>'connectorId'");
+    const where = flat.slice(flat.indexOf('WHERE'));
+    expect(where).toContain("type='topology.discover'");
+    expect(where).toContain("status='queued'");
+    expect(where).not.toContain('processing');
+  });
+});
+
 describe('postmortem tables under RLS', () => {
   for (const table of ['postmortems', 'postmortem_action_items', 'assessment_grades']) {
     test(`${table} has RLS enabled, FORCEd, and exactly one tenant_isolation policy`, () => {

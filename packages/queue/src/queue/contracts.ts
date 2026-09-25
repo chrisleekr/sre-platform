@@ -98,30 +98,21 @@ export const resumeGateKey = (incidentId: string): string => `resume:pending:${i
  * flood grows Valkey until the instance OOMs, taking down EVERY stream (triage, classify, resume,
  * runbook) and the hub with it — a self-inflicted tenant burst escalating into a platform outage.
  *
- * Trimming drops NO work. Postgres is the durable source of truth and the stream carries
- * only a jobId POINTER. Two different mechanisms cover that, so do not assume reconcile is universal:
- *  - One-shot streams (triage, classify, runbook): a trimmed entry leaves the job `queued` with a stale
- *    `updated_at`, exactly the second clause of {@link reconcile}'s predicate, so a later pass re-XADDs
- *    it. A job trimmed while `processing`, after its worker crashed mid-run, is stranded the same way
- * and the same pass recovers it — XAUTOCLAIM cannot re-deliver an entry that was trimmed.
- *    Worst case is ~120s, because two 60s gates stack: the row is not reconcile-ELIGIBLE until
- *    `updated_at` is 60s stale, and the driver itself runs at most once per 60s window (poller.ts's NX
- *    window guard).
- *  - The poll stream has no reconcile driver, by design (index.ts: "Poll no longer reconciles"). A
- *    trimmed poll row lingers `queued`, or `processing` when its worker had already claimed it and
- *    crashed ({@link handleOne}'s atomic claim sets that status), and with no pass to re-XADD it the
- *    row never leaves whichever state it stranded in. The next window's enqueue still covers the WORK,
- *    because poll is periodic and the next tick re-polls the same connector (poller.ts), but it does
- *    not supersede the stranded ROW: it is a plain INSERT of a new row that never touches the old one,
- *    so both leak. Nor can the stranded row block that insert, on either unique index that could raise
- *    a 23505. A poll payload carries no incidentId, so `jobs_resume_coalesce_idx`'s key expression
- *    `payload->>'incidentId'` is NULL and btree NULLs are distinct: poll rows never conflict there in
- *    ANY status, stranded or not. And `jobs_runbook_coalesce_idx` pins `type='runbook.generate'` in its
- *    predicate, so it never covers a poll row at all. That NULL key is load-bearing rather than
- *    incidental, because `poll` is absent from {@link COALESCING_TYPES} and so takes the bare insert: a
- *    conflict here would RAISE, not be absorbed. The cost is a slow row leak, never a dropped job and
- *    never a stopped poll.
- * Either way the cost of a trim is latency, never lost work.
+ * Trimming drops no work on a reconciled stream. Postgres is the durable source of truth and the
+ * stream carries only a jobId POINTER. The triage, classify, runbook, poll and topology streams each
+ * have a guarded reconcile driver (window guards built in apps/triage-worker/src/index.ts). A trimmed entry
+ * leaves the job `queued` with a stale `updated_at`, exactly the second clause of {@link reconcile}'s
+ * predicate, so a later pass re-XADDs it. A job trimmed while `processing`, after its worker crashed
+ * mid-run, is stranded the same way and the same pass recovers it, because XAUTOCLAIM cannot
+ * re-deliver an entry that was trimmed. Worst case is ~120s, because two 60s gates stack: the row is
+ * not reconcile-ELIGIBLE until `updated_at` is 60s stale, and the driver itself runs at most once per
+ * 60s window.
+ *
+ * Poll needs its driver for one-shot provider wakeups: a StatusCake wakeup row is the only copy of
+ * its notification, and no scheduled poll recreates it. Topology needs its driver because a row
+ * stranded in `processing` after its stream entry was acked is otherwise never retried. The slo
+ * stream has no reconcile driver in the triage worker, so this guarantee does not extend to it.
+ * On a reconciled stream the cost of a trim is latency, never lost work.
  *
  * 100k pointers is ~10 MB per stream: a hard ceiling on the blast radius, yet far above any healthy
  * backlog, so normal load is never trimmed into paying that re-dispatch latency for nothing.
@@ -131,7 +122,8 @@ export const JOB_STREAM_MAXLEN = 100_000;
 
 /**
  * Job types whose duplicate enqueue is a no-op the caller wants ABSORBED. Opt-in, because the
- * coalescing indexes on `jobs` key on type and so cover every incident-scoped type: absorbing a `triage`
+ * coalescing indexes on `jobs` cover incident-scoped types, plus topology passes per connector, and
+ * `jobs_resume_coalesce_idx` keys on type so it covers every incident-scoped type: absorbing a `triage`
  * conflict would drop the re-alert's newer payload while reporting success. Anything not listed keeps the
  * 23505 and lets its caller decide.
  */
@@ -143,6 +135,7 @@ export const COALESCING_TYPES: ReadonlySet<string> = new Set([
   'recovery.verify',
   'signal.reassess',
   'subject.sync',
+  'topology.discover',
 ]);
 
 /** Marks a job failure as a transient dependency outage eligible for extended retries. */

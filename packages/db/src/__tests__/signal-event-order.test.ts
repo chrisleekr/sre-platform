@@ -229,3 +229,75 @@ test('stores a new imprecise observation at the end of its millisecond', async (
     signal: { state: 'firing', summary: 'Imprecise observation' },
   });
 });
+
+test('current observation handling preserves legacy null ordering and the floor projected by an old writer', async () => {
+  const incident = await createIncident(app.db, tenantId, {
+    fingerprint: randomUUID(),
+    alertSource: 'slack',
+    service: 'checkout',
+    severity: 'sev3',
+  });
+  const signalId = randomUUID();
+  const externalMessageId = randomUUID();
+  await admin.db.insert(incidentSignals).values({
+    id: signalId,
+    tenantId,
+    incidentId: incident.id,
+    surface: 'slack',
+    channel: 'C_ORDER',
+    externalMessageId,
+    state: 'firing',
+    lastEventType: 'opened',
+    summary: 'Legacy checkout alert',
+    contentHash: 'legacy-hash',
+    lastEventKey: 'legacy-event',
+    lastEventAt: new Date('2026-08-21T01:00:00.000Z'),
+    lastEventVersion: null,
+  });
+  const observation = {
+    incidentId: incident.id,
+    surface: 'slack',
+    channel: 'C_ORDER',
+    externalMessageId,
+    state: 'firing' as const,
+    summary: 'Legacy checkout alert updated',
+    contentHash: 'legacy-updated-hash',
+  };
+  const older = await applySignalObservation(app.db, tenantId, {
+    ...observation,
+    eventKey: 'legacy-older',
+    eventAt: new Date('2026-08-21T00:59:59.999Z'),
+    eventVersion: '1787273999999999',
+  });
+  const newer = await applySignalObservation(app.db, tenantId, {
+    ...observation,
+    eventKey: 'legacy-newer',
+    eventAt: new Date('2026-08-21T01:00:00.001Z'),
+    eventVersion: '1787274000001000',
+  });
+  expect(older.applied).toBe(false);
+  expect(newer).toMatchObject({
+    applied: true,
+    signal: { id: signalId, lastEventVersion: 1787274000001000 },
+  });
+  await admin.db
+    .update(incidentSignals)
+    .set({
+      lastEventAt: new Date('2026-08-21T01:00:00.002Z'),
+      summary: 'newer old writer observation',
+    })
+    .where(eq(incidentSignals.id, signalId));
+  const delayedSameMillisecond = await applySignalObservation(app.db, tenantId, {
+    ...observation,
+    state: 'resolved',
+    summary: 'delayed exact observation',
+    contentHash: 'delayed-exact-hash',
+    eventKey: 'legacy-delayed-same-millisecond',
+    eventAt: new Date('2026-08-21T01:00:00.002Z'),
+    eventVersion: '1787274000002500',
+  });
+  expect(delayedSameMillisecond).toMatchObject({
+    applied: false,
+    signal: { summary: 'newer old writer observation', lastEventVersion: 1787274000002999 },
+  });
+});

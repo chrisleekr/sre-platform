@@ -14,6 +14,7 @@ import {
 import type { InvestigationTrigger, InvestigationTriggerReason } from '@sre/contracts';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
+import { coalesceKeyFilter, widenCoalescedTopologyPass } from './coalescing';
 import {
   COALESCING_TYPES,
   IncidentMovedError,
@@ -73,18 +74,17 @@ export class QueueWriter {
   }
 
   /**
-   * Find the pending job a coalescing index just rejected our insert for. Every coalescing index on
-   * `jobs` (`jobs_resume_coalesce_idx`, `jobs_runbook_coalesce_idx`, `jobs_postmortem_coalesce_idx`,
-   * `jobs_assessment_grade_coalesce_idx`) is keyed on tenant + type +
-   * `payload->>'incidentId'`, so a conflict can only come from an incident-scoped job; a payload with no
-   * incidentId can never conflict. Returns the newest non-terminal match, or null when none survives.
+   * Find the pending job a coalescing index just rejected our insert for. Coalescing indexes on `jobs`
+   * key on tenant + type + one payload field: `incidentId` for incident-scoped work, `connectorId` for
+   * topology passes ({@link coalesceKeyFilter}). A payload without that field can never conflict.
+   * Returns the newest non-terminal match, or null when none survives.
    */
-  private async findPendingByIncident(
+  private async findPendingByCoalesceKey(
     input: JobInput,
     exec: Executor = this.db,
   ): Promise<string | null> {
-    const incidentId = (input.payload as { incidentId?: unknown } | null)?.incidentId;
-    if (typeof incidentId !== 'string') return null;
+    const sameKey = coalesceKeyFilter(input.type, input.payload);
+    if (!sameKey) return null;
     const rows = await exec
       .select({ id: jobs.id })
       .from(jobs)
@@ -92,7 +92,7 @@ export class QueueWriter {
         and(
           eq(jobs.tenantId, input.tenantId),
           eq(jobs.type, input.type),
-          sql`payload->>'incidentId' = ${incidentId}`,
+          sameKey,
           inArray(jobs.status, ['queued', 'processing']),
         ),
       )
@@ -143,7 +143,8 @@ export class QueueWriter {
         });
         const id = inserted[0]?.id;
         if (id !== undefined) return { id, inserted: true };
-        return { id: await this.findPendingByIncident(input, tx), inserted: false };
+        await widenCoalescedTopologyPass(tx, input);
+        return { id: await this.findPendingByCoalesceKey(input, tx), inserted: false };
       });
       if (durable.id !== null && durable.inserted) {
         try {
@@ -272,6 +273,7 @@ export class QueueWriter {
     const incidentRows = await tx
       .select({
         investigationStatus: incidents.investigationStatus,
+        resolutionPolicy: incidents.resolutionPolicy,
         recoveryState: incidents.recoveryState,
         recoveryAttempt: incidents.recoveryAttempt,
         recoveryMaxChecks: incidents.recoveryMaxChecks,
@@ -288,10 +290,12 @@ export class QueueWriter {
       incident.recoveryMaxChecks !== undefined &&
       incident.recoveryAttempt >= incident.recoveryMaxChecks;
     const inFlightAttempt = incident?.recoveryState === 'verifying';
-    // Provider updates may add evidence after the bounded cycle has escalated, but they cannot buy more
-    // automatic checks. A material update during verification replaces that stale run at the same
-    // attempt; a refire clears this state and starts a genuinely new cycle on its next resolve.
-    if (incident?.recoveryState === 'not_verified' || (exhaustedBudget && !inFlightAttempt))
+    // Model-backed recovery keeps its bounded check budget. Fresh exact provider-clear evidence can
+    // enqueue another deterministic check without spending that budget.
+    if (
+      incident?.resolutionPolicy !== 'provider_clear' &&
+      (incident?.recoveryState === 'not_verified' || (exhaustedBudget && !inFlightAttempt))
+    )
       return { jobId: null };
     let restoreInvestigationStatus: InvestigationStatus | undefined =
       currentStatus && currentStatus !== 'gathering' ? currentStatus : undefined;

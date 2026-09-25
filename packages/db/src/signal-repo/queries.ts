@@ -131,40 +131,6 @@ export async function getPreviousMonitorEpisodeTx(
 }
 
 /**
- * Finds the prior Slack episode from one authenticated producer and stable monitor scope.
- *
- * @param tx - Existing transaction carrying tenant scope.
- * @param channel - Slack channel containing the episode.
- * @param producerId - Authenticated Slack producer identity.
- * @param monitorKey - Stable provider-neutral monitor scope.
- * @param signalId - Current signal excluded from history.
- */
-export async function getPreviousSlackMonitorEpisodeTx(
-  tx: Tx,
-  channel: string,
-  producerId: string,
-  monitorKey: string,
-  signalId: string,
-) {
-  const rows = await tx
-    .select()
-    .from(incidentSignals)
-    .where(
-      and(
-        eq(incidentSignals.surface, 'slack'),
-        eq(incidentSignals.channel, channel),
-        eq(incidentSignals.monitorKey, monitorKey),
-        like(incidentSignals.lastEventKey, `%:producer:${producerId}`),
-        ne(incidentSignals.id, signalId),
-        inArray(incidentSignals.incidentId, visibleIncidentIds(tx)),
-      ),
-    )
-    .orderBy(desc(incidentSignals.firstSeenAt), desc(incidentSignals.id))
-    .limit(1);
-  return rows[0];
-}
-
-/**
  * Mark the exact normalized episode state whose investigation completed.
  *
  * @param tx - Existing transaction that already carries tenant scope.
@@ -320,7 +286,8 @@ export async function listActiveSlackSignalsByMonitorKeys(
         and(
           eq(incidentSignals.surface, 'slack'),
           eq(incidentSignals.channel, channel),
-          eq(incidentSignals.state, 'firing'),
+          // Slack-born signals are stored as advisory `unknown`, never `firing`.
+          ne(incidentSignals.state, 'resolved'),
           inArray(incidentSignals.monitorKey, keys),
           like(incidentSignals.lastEventKey, `%:producer:${producerId}`),
           inArray(incidentSignals.incidentId, visibleIncidentIds(tx)),
@@ -369,6 +336,7 @@ export async function listUnresolvedSignals(db: Db, tenantId: string) {
         severity: incidents.severity,
         alertName: incidentSignals.alertName,
         providerGroupKey: incidentSignals.providerGroupKey,
+        monitorKey: incidentSignals.monitorKey,
       })
       .from(incidentSignals)
       .innerJoin(incidents, eq(incidents.id, incidentSignals.incidentId))
@@ -399,6 +367,7 @@ export async function getSignalResolutionCandidate(db: Db, tenantId: string, sig
         severity: incidents.severity,
         alertName: incidentSignals.alertName,
         providerGroupKey: incidentSignals.providerGroupKey,
+        monitorKey: incidentSignals.monitorKey,
       })
       .from(incidentSignals)
       .innerJoin(incidents, eq(incidents.id, incidentSignals.incidentId))

@@ -67,6 +67,8 @@ export interface IncidentFindingPayload {
   currentState: string | null;
   impact: string | null;
   nextStep: string | null;
+  /** Open checks named by the evidence reviewer for an unverified result; absent when none. */
+  gaps?: string[];
 }
 
 export const INCIDENT_FEEDBACK_TARGETS = ['finding', 'entity', 'correlation', 'noise'] as const;
@@ -185,3 +187,16 @@ export interface InvestigationGap {
   evidenceKind: InvestigationEvidenceKind | null;
   attemptedEvidenceIds: string[];
 }
+
+/** A recovery question separates current resolution blockers from later prevention work. */
+export interface RecoveryQuestion extends InvestigationGap {
+  resolutionRelevance: 'blocking' | 'follow_up';
+  nextAction: string;
+}
+
+/**
+ * Prefix of the server-set origin id on a dashboard Retry investigation message. The worker keys on
+ * it, never on the message text, so a responder typing the same words still goes through intent
+ * classification.
+ */
+export const INVESTIGATION_RETRY_ORIGIN_PREFIX = 'dashboard-investigation-retry:';

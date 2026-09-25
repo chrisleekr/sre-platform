@@ -1,6 +1,11 @@
 // The incident — the central tenant-scoped record triage and the conversation attach to.
 // Under RLS. The engine session reference is provider-agnostic.
-import type { InvestigationGap } from '@sre/contracts';
+import type {
+  RecoveryQuestion,
+  InvestigationGap,
+  ResolutionPolicy,
+  ResolutionBasis,
+} from '@sre/contracts';
 import { sql } from 'drizzle-orm';
 import {
   boolean,
@@ -34,11 +39,12 @@ export type IncidentPurpose = 'incident' | 'health_check';
 // them in incident-repo instead would need schema -> incident-repo -> schema, a real runtime cycle.
 // One definition, so the index predicate and the queries that read it cannot drift apart.
 
-// Lifecycle states that still represent a live operational case. Mitigated remains active until recovery
-// is verified and the incident is resolved. These constants also drive the active fingerprint index.
+// Lifecycle states that still represent a live operational case. Mitigated remains active until an
+// explicit transition resolves or closes it. These constants also drive the active fingerprint index.
 export const ACTIVE_STATUSES = ['open', 'mitigated'] as const;
-// Resolved means service recovery is verified. Closed means post-incident work is finished or a human
-// explicitly files the case. Both leave the active correlation window.
+// Resolved records completion under the configured policy or an explicit operator decision.
+// Closed means post-incident work is finished or a human explicitly files the case.
+// Both leave the active correlation window.
 export const CLOSED_STATUSES = ['resolved', 'closed'] as const;
 
 // The agent's work state. `degraded` means the configured provider could not complete the investigation;
@@ -102,6 +108,11 @@ export const incidents = pgTable(
     // Short human-readable title from normalized provider evidence or incident characterization.
     // Historical records can remain null until their signal-derived title is repaired.
     title: text('title'),
+    resolutionPolicy: text('resolution_policy')
+      .$type<ResolutionPolicy>()
+      .notNull()
+      .default('verified_recovery'),
+    resolutionBasis: text('resolution_basis').$type<ResolutionBasis>(),
     purpose: text('purpose').$type<IncidentPurpose>().notNull().default('incident'),
     // Operational lifecycle only. Investigation progress is the independent column below.
     status: text('status').$type<IncidentStatus>().notNull().default('open'),
@@ -152,6 +163,8 @@ export const incidents = pgTable(
     recoverySummary: text('recovery_summary'),
     recoveryEvidenceIds: uuid('recovery_evidence_ids').array(),
     recoveryUnknowns: jsonb('recovery_unknowns').$type<string[]>(),
+    recoveryQuestions: jsonb('recovery_questions').$type<RecoveryQuestion[]>(),
+    recoveryQuestionsUpdatedAt: timestamp('recovery_questions_updated_at', { withTimezone: true }),
     recoveryNextStep: text('recovery_next_step'),
     recoveryUpdatedAt: timestamp('recovery_updated_at', { withTimezone: true }),
     /** Investigation run that exclusively owns the transient `verifying` state. */
@@ -179,6 +192,18 @@ export const incidents = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    check(
+      'incidents_resolution_policy_check',
+      sql`${t.resolutionPolicy} in ('verified_recovery', 'provider_clear')`,
+    ),
+    check(
+      'incidents_resolution_basis_check',
+      sql`${t.resolutionBasis} in ('verified_recovery', 'provider_clear', 'operator')`,
+    ),
+    check(
+      'incidents_health_check_policy_check',
+      sql`${t.purpose} <> 'health_check' or ${t.resolutionPolicy} = 'verified_recovery'`,
+    ),
     // Exactly one ACTIVE incident per (tenant, fingerprint) — a correlation WINDOW, not a permanent
     // claim on the fingerprint. A full unique here (what this replaced) made the window eternal: a
     // fingerprint's incident, once resolved or closed, still blocked the next occurrence's INSERT, so the

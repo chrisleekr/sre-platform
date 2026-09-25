@@ -199,6 +199,7 @@ export async function mergeIncidents(
       .set({
         status: 'closed',
         closedAt: sql`now()`,
+        resolutionBasis: null,
         lifecycleVersion: sql`${incidents.lifecycleVersion} + 1`,
         updatedAt: sql`now()`,
       })

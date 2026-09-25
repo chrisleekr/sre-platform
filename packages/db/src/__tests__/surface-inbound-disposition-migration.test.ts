@@ -4,13 +4,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import postgres, { type Sql } from 'postgres';
-import { applySignalObservation, makeDb, type DbHandle } from '../index';
 
 const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'migrations');
 const databaseName = `inbound_disposition_${randomUUID().replaceAll('-', '')}`;
 let control: Sql;
 let upgrade: Sql;
-let upgradeDb: DbHandle | undefined;
 
 async function applyMigration(client: Sql, filename: string): Promise<void> {
   const source = await readFile(join(migrationsDir, filename), 'utf8');
@@ -35,7 +33,6 @@ beforeAll(async () => {
 }, 30_000);
 
 afterAll(async () => {
-  if (upgradeDb) await upgradeDb.close();
   if (upgrade) await upgrade.end({ timeout: 5 });
   if (control) {
     await control.unsafe(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
@@ -182,35 +179,10 @@ test('0034 through 0037 preserve rows and add exact ordering plus classify idemp
     `,
   ).rejects.toMatchObject({ code: 'P2871' });
 
-  const upgradeUrl = new URL(process.env.DATABASE_URL!);
-  upgradeUrl.pathname = `/${databaseName}`;
-  upgradeDb = makeDb(upgradeUrl.toString());
-  const observation = {
-    incidentId,
-    surface: 'slack',
-    channel: 'C-upgrade',
-    externalMessageId: signalExternalId,
-    state: 'firing' as const,
-    summary: 'Legacy checkout alert updated',
-    contentHash: 'legacy-updated-hash',
-  };
-  const older = await applySignalObservation(upgradeDb.db, tenantId, {
-    ...observation,
-    eventKey: 'legacy-older',
-    eventAt: new Date('2026-08-21T00:59:59.999Z'),
-    eventVersion: '1787273999999999',
-  });
-  const newer = await applySignalObservation(upgradeDb.db, tenantId, {
-    ...observation,
-    eventKey: 'legacy-newer',
-    eventAt: new Date('2026-08-21T01:00:00.001Z'),
-    eventVersion: '1787274000001000',
-  });
-  expect(older.applied).toBe(false);
-  expect(newer).toMatchObject({
-    applied: true,
-    signal: { id: signalId, lastEventVersion: 1787274000001000 },
-  });
+  // Seed an exact writer at the historical schema boundary, then exercise the migration's trigger.
+  await upgrade`UPDATE incident_signals SET summary = 'Legacy checkout alert updated',
+    last_event_at = '2026-08-21T01:00:00.001Z', last_event_version = 1787274000001000
+    WHERE id = ${signalId}`;
   await upgrade`
     UPDATE incident_signals
     SET last_event_at = '2026-08-21T01:00:00.001Z',
@@ -243,25 +215,6 @@ test('0034 through 0037 preserve rows and add exact ordering plus classify idemp
   expect(projectedOldWriter).toEqual([
     { summary: 'newer old writer observation', last_event_version: '1787274000002999' },
   ]);
-  const delayedSameMillisecond = await applySignalObservation(upgradeDb.db, tenantId, {
-    ...observation,
-    state: 'resolved',
-    summary: 'delayed exact observation',
-    contentHash: 'delayed-exact-hash',
-    eventKey: 'legacy-delayed-same-millisecond',
-    eventAt: new Date('2026-08-21T01:00:00.002Z'),
-    eventVersion: '1787274000002500',
-  });
-  expect(delayedSameMillisecond).toMatchObject({
-    applied: false,
-    signal: {
-      summary: 'newer old writer observation',
-      lastEventVersion: 1787274000002999,
-    },
-  });
-  await upgradeDb.close();
-  upgradeDb = undefined;
-
   const duplicateIntakeId = randomUUID();
   const duplicateEventKey = `slack:C-upgrade:${randomUUID()}`;
   await upgrade`

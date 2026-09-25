@@ -3,6 +3,7 @@ import {
   enqueueConnectedSurfaceDeliveriesTx,
   incidentMessages,
   incidents,
+  lockResponseGroupWorkTx,
   withTenant,
   type Db,
   type Tx,
@@ -50,12 +51,16 @@ export class HubStore {
     msg: NewMessage,
   ): Promise<{ message: HubMessage; inserted: boolean }> {
     // Share the publication fence so a concurrent correction cannot enter behind a reviewed result.
-    if (msg.author === 'human')
+    if (msg.author === 'human') {
+      // Signal writers lock group work before the incident row; taking the row first here, then the
+      // work lock in a resume enqueue, would deadlock against them.
+      await lockResponseGroupWorkTx(tx, tenantId, incidentId);
       await tx
         .select({ id: incidents.id })
         .from(incidents)
         .where(eq(incidents.id, incidentId))
         .for('update');
+    }
     const values = {
       tenantId,
       incidentId,

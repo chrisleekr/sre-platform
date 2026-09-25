@@ -1,0 +1,1 @@
+ALTER TABLE "incident_signals" ADD COLUMN "provider_clear_generation" integer;

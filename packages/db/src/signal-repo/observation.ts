@@ -1,3 +1,4 @@
+import { hydrateEntityProjection } from './entity-projection';
 import { and, eq, sql } from 'drizzle-orm';
 import { lockResponseGroupWorkTx } from '../incident-relation-repo/causal';
 import { signalInvestigationTriggerReason } from '../investigation-trigger';
@@ -15,7 +16,19 @@ import {
   type SignalObservation,
 } from './recovery';
 import { clearRecoveryTx } from './recovery-state';
-
+import { recertifyFiringSource } from './firing-source';
+function clearGeneration(input: SignalObservation): number | null {
+  return input.state === 'resolved' &&
+    input.clearProvenance === 'provider' &&
+    input.dataSourceId &&
+    input.providerFingerprint &&
+    input.startsAt &&
+    input.signalSource?.kind === 'monitor' &&
+    input.signalSource.dataSourceId === input.dataSourceId &&
+    Number.isInteger(input.signalSource.lifecycleVersion)
+    ? input.signalSource.lifecycleVersion!
+    : null;
+}
 async function incidentAllSignalsResolved(tx: Tx, incidentId: string): Promise<boolean> {
   const rows = await tx
     .select({
@@ -26,58 +39,6 @@ async function incidentAllSignalsResolved(tx: Tx, incidentId: string): Promise<b
     .where(eq(incidentSignals.incidentId, incidentId));
   return (rows[0]?.total ?? 0) > 0 && (rows[0]?.unresolved ?? 0) === 0;
 }
-
-async function hydrateEntityProjection(
-  tx: Tx,
-  current: typeof incidentSignals.$inferSelect,
-  input: SignalObservation,
-): Promise<typeof incidentSignals.$inferSelect> {
-  const currentSource = current.signalSource;
-  const incomingSource = input.signalSource;
-  const sameSource =
-    currentSource &&
-    incomingSource &&
-    currentSource.kind === incomingSource.kind &&
-    currentSource.provider === incomingSource.provider &&
-    currentSource.dataSourceId === incomingSource.dataSourceId &&
-    currentSource.externalId === incomingSource.externalId;
-  const signalSource =
-    !currentSource ||
-    (sameSource && Date.parse(incomingSource.observedAt) > Date.parse(currentSource.observedAt))
-      ? (incomingSource ?? null)
-      : currentSource;
-
-  const affectedEntities = current.affectedEntities
-    ? [...current.affectedEntities]
-    : input.affectedEntities
-      ? []
-      : null;
-  if (affectedEntities && input.affectedEntities) {
-    const indexByKey = new Map(affectedEntities.map((candidate, index) => [candidate.key, index]));
-    for (const incoming of input.affectedEntities) {
-      const index = indexByKey.get(incoming.key);
-      if (index === undefined) {
-        indexByKey.set(incoming.key, affectedEntities.length);
-        affectedEntities.push(incoming);
-        continue;
-      }
-      if (Date.parse(incoming.observedAt) > Date.parse(affectedEntities[index]!.observedAt))
-        affectedEntities[index] = incoming;
-    }
-  }
-  if (
-    JSON.stringify(signalSource) === JSON.stringify(current.signalSource) &&
-    JSON.stringify(affectedEntities) === JSON.stringify(current.affectedEntities)
-  )
-    return current;
-  const rows = await tx
-    .update(incidentSignals)
-    .set({ signalSource, affectedEntities })
-    .where(eq(incidentSignals.id, current.id))
-    .returning();
-  return rows[0]!;
-}
-
 /** Correct a mistaken current-state projection without rewriting the provider observation itself. */
 async function lockSignalCorrectionTarget(
   tx: Tx,
@@ -137,13 +98,15 @@ export async function correctIncidentSignalTx(
   if (input.resolvedAt.getTime() < current.lastSeenAt.getTime()) return { outcome: 'invalid' };
 
   const signal =
-    current.state === 'resolved'
+    current.state === 'resolved' && current.clearProvenance === 'operator'
       ? current
       : (
           await tx
             .update(incidentSignals)
             .set({
               state: 'resolved',
+              clearProvenance: 'operator',
+              providerClearGeneration: null,
               lastEventType: 'resolved',
               resolvedAt: input.resolvedAt,
               version: sql`${incidentSignals.version} + 1`,
@@ -153,7 +116,8 @@ export async function correctIncidentSignalTx(
         )[0]!;
   const allResolved = await incidentAllSignalsResolved(tx, incidentId);
   return {
-    outcome: current.state === 'resolved' ? 'noop' : 'applied',
+    outcome:
+      current.state === 'resolved' && current.clearProvenance === 'operator' ? 'noop' : 'applied',
     signal,
     incidentStatus: incident.status,
     lifecycleVersion: incident.lifecycleVersion,
@@ -215,7 +179,11 @@ export async function applySignalObservationTx(
   // Lifecycle transitions lock the incident first and then inspect its signals. Signal writers take the
   // same lock order so a recovery decision and a refire have one factual commit order, never a deadlock.
   const incidentId = identity[0]?.incidentId ?? input.incidentId;
-  const { rootIncidentId } = await lockResponseGroupWorkTx(tx, tenantId, incidentId);
+  const { rootIncidentId: rootId, incidentIds } = await lockResponseGroupWorkTx(
+    tx,
+    tenantId,
+    incidentId,
+  );
   const lockedIncident = await tx
     .select({ id: incidents.id })
     .from(incidents)
@@ -226,9 +194,7 @@ export async function applySignalObservationTx(
 
   let current: typeof incidentSignals.$inferSelect | undefined;
 
-  // Sources without a native episode id can deliver one active provider notification under several
-  // transport message ids. The monitor identifies the continuing episode; unchanged material only
-  // advances last-seen, while changed material continues through the normal versioned update path.
+  // Stable monitor identity deduplicates transport messages within a continuing episode.
   if (
     !input.providerFingerprint &&
     input.state === 'firing' &&
@@ -279,6 +245,22 @@ export async function applySignalObservationTx(
       .for('update');
     current = existing[0];
   }
+  if (!current && input.dataSourceId && input.providerFingerprint && input.startsAt) {
+    const [bound] = await tx
+      .select()
+      .from(incidentSignals)
+      .where(
+        and(
+          eq(incidentSignals.dataSourceId, input.dataSourceId),
+          eq(incidentSignals.providerFingerprint, input.providerFingerprint),
+          eq(incidentSignals.startsAt, input.startsAt),
+        ),
+      )
+      .limit(1)
+      .for('update');
+    current = bound;
+  }
+
   if (!current) {
     const eventType: SignalEventType = input.state === 'resolved' ? 'resolved' : 'opened';
     const inserted = await tx
@@ -303,6 +285,8 @@ export async function applySignalObservationTx(
         surface: input.surface,
         channel: input.channel,
         externalMessageId: input.externalMessageId,
+        providerClearGeneration: clearGeneration(input),
+        clearProvenance: input.state === 'resolved' ? (input.clearProvenance ?? 'unknown') : null,
         state: input.state,
         lastEventType: eventType,
         summary: input.summary,
@@ -319,7 +303,7 @@ export async function applySignalObservationTx(
       .onConflictDoNothing()
       .returning();
     if (inserted[0]) {
-      if (input.state !== 'resolved') await clearRecoveryTx(tx, tenantId, rootIncidentId);
+      if (input.state !== 'resolved') await clearRecoveryTx(tx, tenantId, rootId, incidentIds);
       return {
         signal: inserted[0],
         applied: true,
@@ -348,7 +332,7 @@ export async function applySignalObservationTx(
     if (!current) throw new Error('signal identity conflict without a committed row');
   }
 
-  if (current.incidentId !== input.incidentId) {
+  if (input.advisory || current.incidentId !== input.incidentId) {
     return {
       signal: current,
       applied: false,
@@ -362,8 +346,7 @@ export async function applySignalObservationTx(
     };
   }
 
-  // A provider episode is immutable after it resolves. Alertmanager can replay an older firing
-  // notification, but a genuine recurrence has a new startsAt and therefore a different signal row.
+  // Native recurrences have a new startsAt; late firing replays cannot reopen this episode.
   if (current.providerFingerprint && current.state === 'resolved' && input.state === 'firing') {
     const signal = await hydrateEntityProjection(tx, current, input);
     return {
@@ -389,16 +372,22 @@ export async function applySignalObservationTx(
   const incomingEventVersion = observationEventVersion(input);
   const projectionEventFloor = storedObservationVersion(current);
 
-  // Alertmanager deliberately repeats an unchanged firing notification. Preserve its most recent
-  // observation time for duration/freshness without advancing the version or buying another LLM turn.
+  // Repeated unchanged material advances freshness without buying another investigation. A new connector
+  // generation is not new material while firing; a clear under one must re-certify through the update.
   if (
     current.providerFingerprint &&
     current.state === input.state &&
+    current.providerClearGeneration === clearGeneration(input) &&
     current.materialHash &&
     current.materialHash === input.materialHash &&
+    (input.state !== 'resolved' ||
+      current.signalSource?.lifecycleVersion === input.signalSource?.lifecycleVersion) &&
+    current.clearProvenance ===
+      (input.state === 'resolved' ? (input.clearProvenance ?? 'unknown') : null) &&
     incomingEventVersion > projectionEventFloor
   ) {
     let seen = await advanceObservationCursor(tx, current, input);
+    seen = await recertifyFiringSource(tx, seen, input);
     seen = await hydrateEntityProjection(tx, seen, input);
     return {
       signal: seen,
@@ -410,9 +399,12 @@ export async function applySignalObservationTx(
     };
   }
 
-  // Slack can replay an event or deliver an older edit after a reconnect. Content-identical metadata edits
-  // are also common. Neither may advance the durable signal nor trigger another investigation.
-  if (current.lastEventKey === input.eventKey || incomingEventVersion <= projectionEventFloor) {
+  // Replays and stale edits cannot advance the projection.
+  if (
+    (current.lastEventKey === input.eventKey &&
+      current.providerClearGeneration === clearGeneration(input)) ||
+    incomingEventVersion <= projectionEventFloor
+  ) {
     const signal = await hydrateEntityProjection(tx, current, input);
     return {
       signal,
@@ -424,7 +416,13 @@ export async function applySignalObservationTx(
     };
   }
 
-  if (current.state === input.state && current.contentHash === input.contentHash) {
+  if (
+    current.state === input.state &&
+    current.providerClearGeneration === clearGeneration(input) &&
+    current.contentHash === input.contentHash &&
+    current.clearProvenance ===
+      (input.state === 'resolved' ? (input.clearProvenance ?? 'unknown') : null)
+  ) {
     let signal = await advanceObservationCursor(tx, current, input);
     signal = await hydrateEntityProjection(tx, signal, input);
     return {
@@ -440,6 +438,8 @@ export async function applySignalObservationTx(
   const updated = await tx
     .update(incidentSignals)
     .set({
+      providerClearGeneration: clearGeneration(input),
+      clearProvenance: input.state === 'resolved' ? (input.clearProvenance ?? 'unknown') : null,
       state: input.state,
       dataSourceId: input.dataSourceId ?? current.dataSourceId,
       provider: input.provider ?? current.provider,
@@ -473,7 +473,7 @@ export async function applySignalObservationTx(
     .where(eq(incidentSignals.id, current.id))
     .returning();
   const signal = updated[0]!;
-  if (input.state !== 'resolved') await clearRecoveryTx(tx, tenantId, rootIncidentId);
+  if (input.state !== 'resolved') await clearRecoveryTx(tx, tenantId, rootId, incidentIds);
   return {
     signal,
     applied: true,
@@ -483,13 +483,3 @@ export async function applySignalObservationTx(
     investigationTriggerReason: signalInvestigationTriggerReason(eventType, true),
   };
 }
-
-/**
- * Resolve one provider episode independently of its current incident assignment.
- *
- * @param db - Database connection used for the operation.
- * @param tenantId - Tenant whose records are read or changed.
- * @param dataSourceId - Data source targeted by the operation.
- * @param providerFingerprint - Provider-owned alert fingerprint.
- * @param startsAt - Provider episode start timestamp.
- */

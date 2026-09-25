@@ -1,10 +1,15 @@
 import type {
+  IncidentAttentionReason,
+  ResolutionPolicy,
+  ResolutionBasis,
   InvestigationBudgetSnapshot,
   InvestigationGap,
+  RecoveryQuestion,
   InvestigationOperation,
   InvestigationRunOutcome,
   InvestigationTriggerReason,
 } from '@sre/contracts';
+import { scrubSecrets } from '@sre/contracts';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Db } from '../client';
 import { withTenant, type Tx } from '../rls';
@@ -32,6 +37,8 @@ export interface LatestInvestigationRun {
   summary: string | null;
   nextStep: string | null;
   reason: string | null;
+  /** Evidence reviewer open checks; read by the incident detail only, never by list projections. */
+  gaps?: string[];
   completedAt: string;
 }
 
@@ -41,7 +48,7 @@ export interface PendingIncidentAutomation {
   scheduledAt: string;
 }
 
-const latestInvestigationRunSql = () => sql<LatestInvestigationRun | null>`(
+const latestInvestigationRunSql = (withGaps = false) => sql<LatestInvestigationRun | null>`(
   select jsonb_build_object(
     'id', ${investigationRuns.id},
     'operation', ${investigationRuns.operation},
@@ -54,6 +61,7 @@ const latestInvestigationRunSql = () => sql<LatestInvestigationRun | null>`(
     'summary', ${investigationRuns.result} ->> 'summary',
     'nextStep', ${investigationRuns.result} ->> 'nextStep',
     'reason', ${investigationRuns.result} ->> 'reason',
+    ${withGaps ? sql`'gaps', ${investigationRuns.result} -> 'gaps',` : sql``}
     'completedAt', to_char(
       ${investigationRuns.completedAt} at time zone 'UTC',
       'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
@@ -65,7 +73,8 @@ const latestInvestigationRunSql = () => sql<LatestInvestigationRun | null>`(
     and ${investigationRuns.completedAt} is not null
     and not (
       ${investigationRuns.outcome} = 'failed'
-      and ${investigationRuns.result} ->> 'reason' = 'superseded_pending_run'
+      -- A run without a reason key must count; plain '=' yields NULL and silently hides it.
+      and (${investigationRuns.result} ->> 'reason') is not distinct from 'superseded_pending_run'
     )
   order by ${investigationRuns.startedAt} desc, ${investigationRuns.id} desc
   limit 1
@@ -126,6 +135,8 @@ export async function getIncident(db: Db, tenantId: string, id: string) {
 }
 
 export interface IncidentSummary {
+  resolutionPolicy: ResolutionPolicy;
+  resolutionBasis: ResolutionBasis | null;
   purpose?: 'incident' | 'health_check';
   id: string;
   service: string;
@@ -149,6 +160,8 @@ export interface IncidentSummary {
 
 /** The IncidentSummary column projection, shared by listIncidents / listActiveIncidents / retrieval. */
 export const summaryColumns = {
+  resolutionPolicy: incidents.resolutionPolicy,
+  resolutionBasis: incidents.resolutionBasis,
   purpose: incidents.purpose,
   id: incidents.id,
   service: incidents.service,
@@ -203,6 +216,7 @@ export interface IncidentDetail extends IncidentSummary {
   recoverySummary: string | null;
   recoveryEvidenceIds: string[] | null;
   recoveryUnknowns: string[] | null;
+  recoveryQuestions: RecoveryQuestion[] | null;
   recoveryNextStep: string | null;
   recoveryUpdatedAt: Date | null;
   recoveryAttempt: number | null;
@@ -221,24 +235,13 @@ export interface IncidentDetail extends IncidentSummary {
   originChannel: string | null;
   originChannelName: string | null;
   originThreadId: string | null;
+  operatorDecision: string | null;
   pendingApprovalCount: number;
   requiresHumanAttention: boolean;
   attentionReason: IncidentAttentionReason | null;
 }
 
-export type IncidentAttentionReason =
-  | 'approval_pending'
-  | 'investigation_degraded'
-  | 'recovery_not_verified'
-  | 'resolution_required'
-  | 'manual_review'
-  | 'signal_tracking_unavailable'
-  | 'mitigation_active'
-  | 'investigation_inconclusive'
-  | 'investigation_blocked'
-  | 'budget_exhausted'
-  | 'investigation_failed'
-  | 'severity_requires_human';
+export type { IncidentAttentionReason } from '@sre/contracts';
 
 const latestRunOutcomeSql = () => sql<InvestigationRunOutcome | null>`(
   select ${investigationRuns.outcome}
@@ -248,7 +251,8 @@ const latestRunOutcomeSql = () => sql<InvestigationRunOutcome | null>`(
     and ${investigationRuns.completedAt} is not null
     and not (
       ${investigationRuns.outcome} = 'failed'
-      and ${investigationRuns.result} ->> 'reason' = 'superseded_pending_run'
+      -- A run without a reason key must count; plain '=' yields NULL and silently hides it.
+      and (${investigationRuns.result} ->> 'reason') is not distinct from 'superseded_pending_run'
     )
   order by ${investigationRuns.startedAt} desc, ${investigationRuns.id} desc
   limit 1
@@ -268,6 +272,31 @@ export const activeSignalCountSql = () =>
 const pendingApprovalCountSql = () =>
   sql<number>`(select count(*)::int from ${approvals} where ${approvals.tenantId} = ${incidents.tenantId} and ${approvals.incidentId} = ${incidents.id} and ${approvals.decision} is null)`;
 
+const currentOperatorDecisionSql = () => sql<string | null>`(
+  select btrim(gap ->> 'question')
+  from jsonb_array_elements(case when jsonb_typeof(${incidents.unknowns}) = 'array'
+    then ${incidents.unknowns} else '[]'::jsonb end) gap
+  where gap ->> 'category' = 'operator_decision'
+    and jsonb_typeof(gap -> 'question') = 'string'
+    and btrim(gap ->> 'question') <> ''
+    and not (
+      ${incidents.purpose} <> 'health_check' and ${incidents.recoveryState} is not null
+      and case when ${incidents.recoveryUpdatedAt} is not null
+        then ${incidents.assessmentUpdatedAt} is null or ${incidents.recoveryUpdatedAt} >= ${incidents.assessmentUpdatedAt}
+        else ${incidents.assessmentUpdatedAt} is null end
+    )
+  limit 1
+)`;
+
+const hasRecordedAutomationSql = () => sql<boolean>`(
+  ${pendingIncidentAutomationSql()} is not null
+  or (${incidents.recoveryState} = 'monitoring' and ${incidents.recoveryNextCheckAt} is not null)
+)`;
+
+const missingAutomationSql = () => sql<boolean>`(
+  ${incidents.status} in ('open', 'mitigated') and not coalesce(${hasRecordedAutomationSql()}, false)
+)`;
+
 /** One deterministic exception rule shared by list rows, detail rows, ordering, and true tab counts. */
 export const humanAttentionCondition = () => sql<boolean>`(
   ${pendingApprovalCountSql()} > 0
@@ -279,6 +308,8 @@ export const humanAttentionCondition = () => sql<boolean>`(
   or (${incidents.status} = 'open' and coalesce(${incidents.recoveryState} = 'verified', false))
   or ${latestRunNeedsAttentionSql()}
   or ${incidents.severity} <> 'sev3'
+  or ${currentOperatorDecisionSql()} is not null
+  or ${missingAutomationSql()}
 )`;
 
 const attentionReasonSql = () => sql<IncidentAttentionReason | null>`case
@@ -289,15 +320,18 @@ const attentionReasonSql = () => sql<IncidentAttentionReason | null>`case
   when ${latestRunOutcomeSql()} = 'failed' then 'investigation_failed'
   when ${incidents.investigationStatus} = 'degraded' then 'investigation_degraded'
   when ${incidents.recoveryState} = 'not_verified' then 'recovery_not_verified'
+  when ${incidents.status} = 'open' and ${incidents.recoveryState} = 'verified' then 'resolution_required'
+  when ${currentOperatorDecisionSql()} is not null then 'operator_decision'
   when ${incidents.alertSource} <> 'manual' and ${signalCountSql()} = 0 then 'signal_tracking_unavailable'
   when ${incidents.alertSource} = 'manual' and ${incidents.investigationStatus} = 'assessed' then 'manual_review'
   when ${incidents.status} = 'mitigated' then 'mitigation_active'
-  when ${incidents.status} = 'open' and ${incidents.recoveryState} = 'verified' then 'resolution_required'
   when ${incidents.severity} <> 'sev3' then 'severity_requires_human'
+  when ${missingAutomationSql()} then 'automation_missing'
   else null
 end`;
 
 export const attentionColumns = {
+  operatorDecision: currentOperatorDecisionSql(),
   pendingApprovalCount: pendingApprovalCountSql().mapWith(Number),
   requiresHumanAttention: humanAttentionCondition(),
   attentionReason: attentionReasonSql(),
@@ -319,6 +353,7 @@ export async function getIncidentDetail(
     const rows = await tx
       .select({
         ...summaryColumns,
+        latestInvestigationRun: latestInvestigationRunSql(true),
         rankedHypotheses: incidents.rankedHypotheses,
         currentState: incidents.currentState,
         impact: incidents.impact,
@@ -330,6 +365,9 @@ export async function getIncidentDetail(
         recoverySummary: incidents.recoverySummary,
         recoveryEvidenceIds: incidents.recoveryEvidenceIds,
         recoveryUnknowns: incidents.recoveryUnknowns,
+        recoveryQuestions: sql<
+          RecoveryQuestion[] | null
+        >`case when ${incidents.recoveryQuestionsUpdatedAt} = ${incidents.recoveryUpdatedAt} then ${incidents.recoveryQuestions} else null end`,
         recoveryNextStep: incidents.recoveryNextStep,
         recoveryUpdatedAt: incidents.recoveryUpdatedAt,
         recoveryAttempt: incidents.recoveryAttempt,
@@ -370,6 +408,18 @@ export async function getIncidentDetail(
       )
       .where(and(eq(incidents.id, id), isNull(incidents.archivedAt)))
       .limit(1);
-    return rows[0] ?? null;
+    const row = rows[0];
+    if (!row?.latestInvestigationRun) return row ?? null;
+    const run = row.latestInvestigationRun;
+    return { ...row, latestInvestigationRun: { ...run, gaps: publicRunGaps(run.gaps) } };
   });
+}
+
+/** Stored gaps are model-shaped jsonb, so keep only bounded, scrubbed, nonblank strings. */
+function publicRunGaps(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((gap): gap is string => typeof gap === 'string' && gap.trim().length > 0)
+    .slice(0, 5)
+    .map((gap) => scrubSecrets(gap).slice(0, 240));
 }

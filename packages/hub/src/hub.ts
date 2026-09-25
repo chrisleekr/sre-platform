@@ -1,3 +1,4 @@
+import { changeResolutionPolicy } from './hub/resolution-policy';
 import {
   activeResponderTx,
   humanMessageFenceMatchesTx,
@@ -29,16 +30,13 @@ import { toHubMessage, type Author, type HubMessage, type NewMessage } from './h
 import { HubPublisher } from './hub/publisher';
 import { HubRecovery } from './hub/recovery';
 import { HubStore } from './hub/store';
-
 export * from './hub/contracts';
-
 /** Coordinates the durable incident conversation and its live surface projections. */
 export class ConversationHub {
   private readonly store: HubStore;
   private readonly publisher: HubPublisher;
   private readonly subscriber: HubPublisher;
   private readonly recovery: HubRecovery;
-
   constructor(
     private readonly db: Db,
     redis: Redis,
@@ -112,12 +110,10 @@ export class ConversationHub {
     const result = await withTenant(this.db, tenantId, (tx) =>
       this.store.appendTxOnce(tx, tenantId, incidentId, msg),
     );
-    // Publish on EVERY delivery, including a redelivered no-op. The commit->publish crash window is the
-    // one this design exists to close: delivery 1 commits the row and dies before the publish, so gating
-    // the fan-out on `inserted` would leave a hub line no surface ever renders live — a dashboard with
-    // the incident open would never see the human's reply until a reload. A DUPLICATE publish is already
-    // absorbed downstream (session.ts and useWsStream dedupe by message id; surface delivery claims CAS
-    // the durable outbox row). A failed live delivery is logged while durable replay remains authoritative.
+    // Publish on EVERY delivery, including a redelivered no-op: delivery 1 may commit and die before
+    // publishing, and gating on `inserted` would leave a line no open dashboard renders until reload.
+    // Duplicates are absorbed downstream (session.ts and useWsStream dedupe by message id; surface
+    // delivery claims CAS the outbox row). A failed live delivery is logged; durable replay remains.
     await this.publishAppendedBestEffort(result.message);
     return result;
   }
@@ -189,7 +185,8 @@ export class ConversationHub {
           publish: true,
         };
       }
-
+      // Take group locks before the human-message fence locks the incident row.
+      await lockResponseGroupWorkTx(tx, tenantId, incidentId);
       if (!(await humanMessageFenceMatchesTx(tx, incidentId, input.humanMessageFence)))
         return {
           transition: {
@@ -365,6 +362,8 @@ export class ConversationHub {
         };
       }
 
+      // The human audit append takes group work locks; take them before the archive locks the row.
+      await lockResponseGroupWorkTx(tx, tenantId, incidentId);
       const archive = await setIncidentArchivedTx(tx, incidentId, input.archived, {
         expectedVersion: input.expectedVersion,
         idleBefore: input.idleBefore,
@@ -451,6 +450,22 @@ export class ConversationHub {
       signalEventType: applied.eventType,
     });
     return { observation: applied, message: appended.message };
+  }
+
+  /** Audits an authorized resolution-policy change and schedules its reevaluation. */
+  changeResolutionPolicy(
+    tenantId: string,
+    incidentId: string,
+    input: Parameters<typeof changeResolutionPolicy>[4],
+  ) {
+    return changeResolutionPolicy(this.db, this.store, tenantId, incidentId, input);
+  }
+
+  /** Applies the explicit provider-clear policy before model admission. */
+  resolveProviderClear(
+    ...args: Parameters<HubRecovery['resolveProviderClear']>
+  ): ReturnType<HubRecovery['resolveProviderClear']> {
+    return this.recovery.resolveProviderClear(...args);
   }
 
   finalizeRecovery(

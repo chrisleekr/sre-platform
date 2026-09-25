@@ -138,6 +138,14 @@ export const jobs = pgTable(
     uniqueIndex('jobs_relation_reassessment_coalesce_idx')
       .on(t.tenantId, sql`(payload->>'incidentId')`)
       .where(sql`type = 'relation.reassess' AND ${jobStatusPredicate(['queued'])}`),
+    // One queued topology pass per (tenant, connector). Every pass reads live provider state, so a
+    // second queued pass adds load and no information. Without this the five-minute scheduler stacked
+    // passes behind the single serial consumer, and the backlog kept it re-reading providers
+    // back to back. Queued-only: a pass arriving mid-run still queues one successor, and a stranded
+    // processing row never blocks new work.
+    uniqueIndex('jobs_topology_discover_coalesce_idx')
+      .on(t.tenantId, sql`(payload->>'connectorId')`)
+      .where(sql`type = 'topology.discover' AND ${jobStatusPredicate(['queued'])}`),
     // The vocabulary guard, derived from the same const as the predicates above so a status can never be
     // legal to write yet invisible to the index that must coalesce it.
     check('jobs_status_vocabulary', jobStatusPredicate(JOB_STATUSES)),

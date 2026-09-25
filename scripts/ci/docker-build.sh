@@ -103,9 +103,11 @@ if [ "$push" = 'true' ]; then
   if [ "$cache_ref" != "$default_cache_ref" ]; then
     set -- "$@" --cache-from "type=registry,ref=$cache_ref"
   fi
+  # Preserve provenance using attestation storage accepted by subject-strict registries.
   set -- "$@" \
     --cache-to "type=registry,ref=$cache_ref,mode=max,image-manifest=true" \
-    --push
+    --provenance=mode=min \
+    --output type=image,push=true,oci-artifact=false
 else
   case "$platforms" in
     *,*)

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { NormalizedSnapshot } from '@sre/connectors';
 import type { Redis } from 'ioredis';
 
@@ -30,6 +31,9 @@ export interface SnapshotCache {
     generation?: { id: string; lifecycleVersion: number },
   ): Promise<void>;
   acquireLease?(name: string, ttlSec: number): Promise<boolean>;
+  /** A lease only its holder can release; `null` when another holder has it. */
+  acquireOwnedLease?(name: string, ttlSec: number): Promise<string | null>;
+  releaseOwnedLease?(name: string, token: string): Promise<void>;
 }
 
 const PREFIX = 'snap:';
@@ -69,6 +73,19 @@ export function makeSnapshotCache(redis: Redis): SnapshotCache {
     },
     async acquireLease(name, ttlSec) {
       return (await redis.set(`lease:${name}`, '1', 'EX', ttlSec, 'NX')) !== null;
+    },
+    async acquireOwnedLease(name, ttlSec) {
+      const token = randomUUID();
+      return (await redis.set(`lease:${name}`, token, 'EX', ttlSec, 'NX')) !== null ? token : null;
+    },
+    async releaseOwnedLease(name, token) {
+      // Compare and delete in one step, so an expired lease taken by another holder survives.
+      await redis.eval(
+        "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) end return 0",
+        1,
+        `lease:${name}`,
+        token,
+      );
     },
   };
 }
