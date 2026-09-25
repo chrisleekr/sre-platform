@@ -72,7 +72,11 @@ export class HubRecovery {
     private readonly publishAppended: (message: HubMessage) => Promise<void>,
   ) {}
 
-  /** Throws ProviderClearLockContendedError when a connector write holds the generation rows. */
+  /**
+   * Evaluates provider-clear resolution for a response-group root. A non-root id, like a stale
+   * fence, returns true with nothing written, so the caller drops its obsolete work. Throws
+   * ProviderClearLockContendedError when a connector write holds the generation rows.
+   */
   async resolveProviderClear(
     tenantId: string,
     incidentId: string,
@@ -331,6 +335,8 @@ export class HubRecovery {
         proposedQuestions?.flatMap((question) => question.attemptedEvidenceIds) ?? [],
         input.verificationStartedAt,
       );
+      // The run's evidenceIds hold every receipt of this run, failed reads included, so this keeps
+      // attempts to the run that produced the questions rather than to its cited evidence.
       const permittedAttempts = new Set(
         attemptedIds.filter((id) => !completedEvidenceIds || completedEvidenceIds.includes(id)),
       );

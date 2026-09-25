@@ -88,6 +88,25 @@ describe('listIncidents closed-archive keyset pagination', () => {
     expect(new Set(ids).size).toBe(5); // no duplicate across pages
   });
 
+  // Priority keys on mutable attention state, which a (created_at, id) keyset cannot follow.
+  test('priority ordering neither returns nor accepts a cursor', async () => {
+    const page = await incidentRepo.listIncidentsPage(__fixture.app.db, tenantK, {
+      scope: 'closed',
+      sort: 'priority',
+      limit: 2,
+    });
+    expect(page.incidents).toHaveLength(2);
+    expect(page.nextCursor).toBeNull();
+    await expect(
+      incidentRepo.listIncidentsPage(__fixture.app.db, tenantK, {
+        scope: 'closed',
+        sort: 'priority',
+        limit: 2,
+        before: { createdAt: new Date('2026-01-01T00:00:02.000Z'), id: uuidN(4) },
+      }),
+    ).rejects.toThrow('priority ordering does not support cursors');
+  });
+
   // Every paginated ordering must walk the whole scope exactly once with its own keyset.
   test('pages oldest-first and severity orderings with no dup/skip', async () => {
     const cursors: incidentRepo.IncidentPageCursor[] = [];

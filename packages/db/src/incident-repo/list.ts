@@ -201,7 +201,7 @@ export async function listIncidentsPage(
     attention?: 'human' | 'automation';
     query?: string;
     severity?: string;
-    /** Defaults to `priority` for the open scope and `newest` otherwise. */
+    /** Defaults to `priority` for the open scope and `newest` otherwise. `priority` never pages. */
     sort?: IncidentSort;
     limit?: number;
     before?: IncidentPageCursor;
@@ -223,7 +223,11 @@ export async function listIncidentsPage(
   }
   if (opts.query) where.push(incidentSearchCondition(opts.query));
   if (opts.severity) where.push(eq(incidents.severity, opts.severity));
-  if (opts.before) where.push(keysetCondition(sort, opts.before));
+  if (opts.before) {
+    // Priority keys on mutable attention state, so a createdAt keyset would skip eligible rows.
+    if (sort === 'priority') throw new Error('priority ordering does not support cursors');
+    where.push(keysetCondition(sort, opts.before));
+  }
   const rows = await withTenant(db, tenantId, (tx) =>
     tx
       .select({
@@ -261,7 +265,7 @@ export async function listIncidentsPage(
   const page = hasMore ? rows.slice(0, limit) : rows;
   const last = page[page.length - 1];
   const nextCursor =
-    hasMore && last
+    hasMore && last && sort !== 'priority'
       ? {
           createdAt: last.createdAt,
           id: last.id,

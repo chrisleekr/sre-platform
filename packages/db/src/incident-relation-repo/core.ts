@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { IncidentCorrelationFeedback } from '@sre/contracts';
 import { type Tx } from '../rls';
 import { clearRecoveryTx } from '../signal-repo/recovery-state';
@@ -156,17 +156,24 @@ export async function recordIncidentRelationTx(
     : [];
   if (affectedIds.length) {
     await lockIncidentWorkTx(tx, tenantId, affectedIds);
-    // Invalidate work only when the group has signal or recovery state that predates this membership.
+    // A membership change moves the response root and the signal set it governs. When any member
+    // carries a signal, that recovery basis changes for every member, so all of them are fenced,
+    // including members with no signal of their own. Without signals, only members that already hold
+    // recovery or resolution state have anything to invalidate.
+    const [groupSignal] = await tx
+      .select({ id: incidentSignals.id })
+      .from(incidentSignals)
+      .where(inArray(incidentSignals.incidentId, affectedIds))
+      .limit(1);
     const stale = await tx
       .select({ id: incidents.id })
       .from(incidents)
       .where(
         and(
           inArray(incidents.id, affectedIds),
-          sql`(
-        exists (select 1 from incident_signals where ${inArray(incidentSignals.incidentId, affectedIds)})
-        or ${incidents.recoveryState} is not null or ${incidents.resolutionBasis} is not null
-      )`,
+          groupSignal
+            ? undefined
+            : or(isNotNull(incidents.recoveryState), isNotNull(incidents.resolutionBasis)),
         ),
       )
       .orderBy(incidents.id)

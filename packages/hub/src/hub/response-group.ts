@@ -77,8 +77,21 @@ export async function appendResolvedResponseGroupTx(
       .update(incidents)
       .set({
         resolutionBasis: basis,
+        // A provider clear supersedes any earlier recovery narrative, such as the blocked-on-approval
+        // summary, which would otherwise tell the operator to act on a resolved incident.
         ...(basis === 'provider_clear'
-          ? { recoveryState: null, recoveryNextCheckAt: null, recoveryScheduleReason: null }
+          ? {
+              recoveryState: null,
+              recoverySummary: null,
+              recoveryEvidenceIds: null,
+              recoveryUnknowns: null,
+              recoveryQuestions: null,
+              recoveryQuestionsUpdatedAt: null,
+              recoveryNextStep: null,
+              recoveryUpdatedAt: null,
+              recoveryNextCheckAt: null,
+              recoveryScheduleReason: null,
+            }
           : {}),
       })
       .where(
@@ -96,7 +109,12 @@ export type EnqueueRecoveryTx = (
   candidate: { rootIncidentId: string; lifecycleVersion: number; signalFence: string },
 ) => Promise<string | null>;
 
-/** Completes an eligible response group after its final pending approval is decided. */
+/**
+ * Completes an eligible response group after its final pending approval is decided.
+ *
+ * The caller holds the response-group work lock (see `lockResponseGroupWorkTx`), so the root read
+ * below cannot move before `resolveProviderClearTx` locks the group.
+ */
 export async function completeVerifiedRecoveryAfterApprovalTx(
   store: HubStore,
   tx: Tx,
@@ -187,6 +205,10 @@ function requiresProviderEvidence(row: typeof incidents.$inferSelect): boolean {
 
 /**
  * Evaluates provider recovery using the same locked response group as evidence-based recovery.
+ *
+ * `incidentId` must be the response-group root. Any other id returns `handled: true` with no
+ * messages, the same as a stale `expected` fence: the group moved, so the caller's work is obsolete.
+ * A caller that must act on the current root holds the group work lock before resolving it.
  *
  * Throws {@link ProviderClearLockContendedError} when a connector write holds the generation rows.
  * The caller's transaction stays usable.

@@ -128,10 +128,14 @@ test('final approval reevaluates provider clearance without a verified health pr
     );
   });
   expect(messages).toHaveLength(1);
+  // The blocked narrative must not survive onto the resolved incident.
   expect(await getIncident(fixture.app.db, fixture.tenantA, incident.id)).toMatchObject({
     status: 'resolved',
     resolutionBasis: 'provider_clear',
     recoveryState: null,
+    recoverySummary: null,
+    recoveryNextStep: null,
+    recoveryUpdatedAt: null,
   });
 });
 test('causal removal and re-add invalidate an earlier group decision even with identical signal membership', async () => {

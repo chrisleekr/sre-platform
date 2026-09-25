@@ -52,6 +52,8 @@ test('0092 keeps one queued topology pass per connector, preferring a full pass'
   const processing = randomUUID();
   const onlyB = randomUUID();
   const otherTenant = randomUUID();
+  const unkeyedA = randomUUID();
+  const unkeyedB = randomUUID();
   // sql.json: a bare string bound to a jsonb cast is stored as a JSON string scalar, not an object.
   const full = upgrade.json({ connectorId: connectorA });
   const continuation = upgrade.json({
@@ -76,7 +78,11 @@ test('0092 keeps one queued topology pass per connector, preferring a full pass'
       (${onlyB}, ${tenantId}, 'topology.discover', ${upgrade.json({ connectorId: connectorB })},
        'queued', 'sre:jobs:topology', now() - interval '3 minutes'),
       (${otherTenant}, ${otherTenantId}, 'topology.discover', ${full}, 'queued',
-       'sre:jobs:topology', now() - interval '3 minutes')
+       'sre:jobs:topology', now() - interval '3 minutes'),
+      (${unkeyedA}, ${tenantId}, 'topology.discover', ${upgrade.json({})}, 'queued',
+       'sre:jobs:topology', now() - interval '2 minutes'),
+      (${unkeyedB}, ${tenantId}, 'topology.discover', ${upgrade.json({})}, 'queued',
+       'sre:jobs:topology', now() - interval '1 minute')
   `;
 
   await applyMigration(upgrade, '0092_real_quasimodo.sql');
@@ -92,6 +98,9 @@ test('0092 keeps one queued topology pass per connector, preferring a full pass'
     [processing]: 'processing',
     [onlyB]: 'queued',
     [otherTenant]: 'queued',
+    // The unique index admits any number of NULL keys, so these need no retirement.
+    [unkeyedA]: 'queued',
+    [unkeyedB]: 'queued',
   });
   const indexes = await upgrade<Array<{ indexname: string }>>`
     SELECT indexname FROM pg_indexes WHERE indexname = 'jobs_topology_discover_coalesce_idx'

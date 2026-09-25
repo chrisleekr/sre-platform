@@ -13,7 +13,7 @@ END $$;--> statement-breakpoint
 -- Every pass reads live provider state, so one queued pass per connector does all the work the backlog
 -- represents. A full pass (no collections) is kept over a page continuation, which reads only some
 -- collections; the oldest wins a tie. Retiring the rest is lossless; their stream entries are refused
--- and acked.
+-- and acked. The index skips a NULL connectorId, so such rows are never deduplicated and are left alone.
 WITH ranked AS (
 	SELECT "id",
 		row_number() OVER (
@@ -21,7 +21,9 @@ WITH ranked AS (
 			ORDER BY ("payload" ? 'collections'), "created_at", "id"
 		) AS "ordinal"
 	FROM "jobs"
-	WHERE "type" = 'topology.discover' AND "status" = 'queued'
+	WHERE "type" = 'topology.discover'
+		AND "status" = 'queued'
+		AND "payload"->>'connectorId' IS NOT NULL
 )
 UPDATE "jobs"
 SET "status" = 'done', "updated_at" = now()
