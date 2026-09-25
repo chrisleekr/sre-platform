@@ -45,7 +45,9 @@ export function useEvidenceInspector(incidentId: string, loadDetail: (id: string
         loadDetail(match[1]!);
       }
     };
-    navigateEvidence();
+    // The component is keyed by incident and mounts closed, so only a deep link changes state here.
+    // Closing unconditionally would undo an All evidence click that landed before this effect ran.
+    if (window.location.hash.startsWith('#evidence-')) navigateEvidence();
     window.addEventListener('hashchange', navigateEvidence);
     window.addEventListener('popstate', navigateEvidence);
     return () => {
