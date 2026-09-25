@@ -74,7 +74,7 @@ export class HubRecovery {
 
   /**
    * Evaluates provider-clear resolution for a response-group root. A non-root id, like a stale
-   * fence, returns true with nothing written, so the caller drops its obsolete work. Throws
+   * fence, returns true with nothing written; the verified-recovery path also refuses it. Throws
    * ProviderClearLockContendedError when a connector write holds the generation rows.
    */
   async resolveProviderClear(

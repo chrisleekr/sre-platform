@@ -112,8 +112,8 @@ export type EnqueueRecoveryTx = (
 /**
  * Completes an eligible response group after its final pending approval is decided.
  *
- * The caller holds the response-group work lock (see `lockResponseGroupWorkTx`), so the root read
- * below cannot move before `resolveProviderClearTx` locks the group.
+ * `resolveResponseRootTx` takes the tenant causal-graph lock, which every causal edge writer also
+ * takes, so the root it returns stays the root for the rest of this transaction.
  */
 export async function completeVerifiedRecoveryAfterApprovalTx(
   store: HubStore,
@@ -206,9 +206,9 @@ function requiresProviderEvidence(row: typeof incidents.$inferSelect): boolean {
 /**
  * Evaluates provider recovery using the same locked response group as evidence-based recovery.
  *
- * `incidentId` must be the response-group root. Any other id returns `handled: true` with no
- * messages, the same as a stale `expected` fence: the group moved, so the caller's work is obsolete.
- * A caller that must act on the current root holds the group work lock before resolving it.
+ * `incidentId` must be the response-group root. Any other id returns `handled: true` with nothing
+ * written, as a stale `expected` fence does, and as the verified-recovery path refuses a non-root
+ * recovery job. Pass the id `resolveResponseRootTx` or `prepareResponseGroupRecoveryTx` returned.
  *
  * Throws {@link ProviderClearLockContendedError} when a connector write holds the generation rows.
  * The caller's transaction stays usable.
