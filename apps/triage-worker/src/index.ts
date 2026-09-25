@@ -23,6 +23,7 @@ import {
   DEFAULT_STUCK_GRACE_MS,
   makeClassifyQueue,
   makeRunbookQueue,
+  makePollQueue,
   makeSnapshotCache,
   pruneTerminalJobs,
   type StuckJobInfo,
@@ -121,12 +122,7 @@ const queue = new Queue(adminDb.db, redis, {
 });
 // Poll jobs ride a SEPARATE stream + consumer group so connector polling scales out independently
 // of triage. jobs live in Postgres (adminDb), same as the triage queue.
-const pollQueue = new Queue(adminDb.db, redis, {
-  stream: 'sre:jobs:poll',
-  group: 'poll',
-  dispatchRedis: settingsRedis,
-  onStuck,
-});
+const pollQueue = makePollQueue(adminDb.db, redis, { dispatchRedis: settingsRedis, onStuck });
 const topologyQueue = new Queue(adminDb.db, redis, {
   stream: 'sre:jobs:topology',
   group: 'topology',

@@ -198,6 +198,23 @@ describe('connector configuration authorization boundary', () => {
     expect(rows[0]?.enabled).toBe(false);
   });
 
+  test.each(['preview', 'bind', 'reconcile'])(
+    'a member cannot %s provider lifecycle configuration',
+    async (mode) => {
+      await setRole('member');
+      const response = await connectorApp().request(
+        `/connectors/statuscake/${randomUUID()}/lifecycle`,
+        {
+          method: 'POST',
+          headers: await headers(),
+          body: JSON.stringify({ mode }),
+        },
+      );
+      expect(response.status).toBe(403);
+      expect(await dataSourceRows()).toEqual([]);
+    },
+  );
+
   test('a member still reads the workspace data sources', async () => {
     const app = connectorApp();
     const seeded = await seedDataSource(app);
