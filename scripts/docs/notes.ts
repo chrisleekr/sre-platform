@@ -102,10 +102,6 @@ export const DASHBOARD_PANEL_NOTES: Record<string, { page: string; answers: stri
     answers: 'Which Slack channels does it listen to, and what did it do with them?',
   },
   '/w/usage': { page: 'usage.md', answers: 'What has the model cost me?' },
-  '/w/work-queue': {
-    page: 'work-queue.md',
-    answers: 'Is background work keeping up, and which jobs failed for good?',
-  },
   '/w/settings': {
     page: 'settings.md',
     answers: 'What is the workspace called, how do people sign in, and who belongs to it?',

@@ -37,6 +37,8 @@ test.each(['legacy_provider', 'human_report', 'platform_observer'] as const)(
     );
     expect(response.status).toBe(200);
     const detail = (await response.json()) as { signals: Array<{ lifecycleCoverage?: string }> };
+    // Pins the read so an absent signal cannot pass the undefined cases.
+    expect(detail.signals).toHaveLength(1);
     expect(detail.signals[0]?.lifecycleCoverage).toBe(
       kind === 'legacy_provider' ? 'binding_required' : undefined,
     );

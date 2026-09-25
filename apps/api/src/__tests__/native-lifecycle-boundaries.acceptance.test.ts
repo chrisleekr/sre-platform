@@ -70,7 +70,7 @@ async function state() {
       .from(incidents)
       .where(eq(incidents.tenantId, fixture.tenantId)),
     jobs: await fixture.admin.db.select().from(jobs).where(eq(jobs.tenantId, fixture.tenantId)),
-    posts: fixture.postRoot.mock.calls,
+    posts: fixture.postRoot.mock.calls.length,
   };
 }
 test('Datadog scope secrets never reach the whole durable intake or triage payload, and duplicate identity stays stable', async () => {

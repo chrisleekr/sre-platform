@@ -33,7 +33,6 @@ const start = new Date(Date.now() - 600000);
 const end = new Date(Date.now() - 60000);
 let firing = false;
 let beforeRead: (() => Promise<void>) | undefined;
-const reads = vi.fn();
 const registry = new ConnectorRegistry([
   {
     ...statusCakeConnectorDefinition,
@@ -41,7 +40,6 @@ const registry = new ConnectorRegistry([
       makeStatusCakeConnector(config, (async (input) => {
         const url = new URL(String(input));
         const id = url.pathname.split('/')[3]!;
-        reads(id);
         if (beforeRead) {
           const callback = beforeRead;
           beforeRead = undefined;
