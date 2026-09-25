@@ -247,6 +247,14 @@ describe('signal-driven recovery and explicit lifecycle commands', () => {
       eventKey: `recovery-followup-clear:${id}`,
       eventAt: new Date('2026-08-21T02:01:00.000Z'),
     });
+    const followUp = {
+      question: 'Does the downstream synthetic need a separate reliability follow-up?',
+      category: 'partial_evidence' as const,
+      evidenceKind: 'metrics' as const,
+      attemptedEvidenceIds: [],
+      resolutionRelevance: 'follow_up' as const,
+      nextAction: 'Open a follow-up to confirm the downstream synthetic.',
+    };
     const engine: TriageEngine = {
       provider: 'fake',
       async investigate() {
@@ -273,6 +281,7 @@ describe('signal-driven recovery and explicit lifecycle commands', () => {
             ],
             evidenceIds: [evidenceId],
             unknowns: [],
+            questions: [followUp],
             nextStep: 'Open a follow-up to confirm the downstream synthetic.',
           },
         };
@@ -298,6 +307,8 @@ describe('signal-driven recovery and explicit lifecycle commands', () => {
       status: 'resolved',
       lifecycleVersion: 1,
       recoveryState: 'verified',
+      recoveryQuestions: [followUp],
+      recoveryUnknowns: [followUp.question],
       recoveryNextStep: 'Open a follow-up to confirm the downstream synthetic.',
     });
     expect(
