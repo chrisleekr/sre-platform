@@ -128,11 +128,13 @@ const alertmanagerSmee =
     ? undefined
     : makeAlertmanagerSmeeManager({ port: config.port, log });
 const queue = new Queue(adminDb.db, redis, { dispatchRedis: settingsRedis });
-// Classify producer rides its own stream (jobs table is non-RLS, so the admin
-// connection, same as the triage queue).
+const lifecyclePollQueue = new Queue(adminDb.db, redis, {
+  stream: 'sre:jobs:poll',
+  group: 'poll',
+  dispatchRedis: settingsRedis,
+});
+// Classification and runbook jobs use dedicated streams.
 const classifyQueue = makeClassifyQueue(adminDb.db, redis, { dispatchRedis: settingsRedis });
-// Runbook-generation producer: the generate-runbook command enqueues onto the dedicated
-// runbook stream. jobs table is non-RLS, so the admin connection, same as the triage queue.
 const runbookQueue = makeRunbookQueue(adminDb.db, redis, { dispatchRedis: settingsRedis });
 const consumerQueueOptions = { dispatchRedis: settingsRedis, onStuck };
 const foundingQueue = makeFoundingQueue(adminDb.db, redis, consumerQueueOptions);
@@ -356,7 +358,9 @@ root.route(
       },
       hub,
       dashboardBaseUrl: config.dashboardBaseUrl,
-      postAlertRoot: async (tenantId, channel, text) => {
+      enqueueLifecycle: (tenantId, payload) =>
+        lifecyclePollQueue.enqueue({ tenantId, type: 'poll', payload }),
+      postAlertRoot: async (tenantId, channel, text, intakeId) => {
         const token = await secrets.get(tenantId, surfaceBotTokenKey('slack'));
         if (!token)
           throw new SlackApiError(
@@ -364,12 +368,8 @@ root.route(
             'not_connected',
             'Slack is not connected; Alertmanager cannot create an incident thread',
           );
-        return slackChatPostAlertRoot(
-          globalThis.fetch as unknown as FetchLike,
-          token,
-          channel,
-          text,
-        );
+        const fetchImpl = globalThis.fetch as unknown as FetchLike;
+        return slackChatPostAlertRoot(fetchImpl, token, channel, text, intakeId);
       },
     },
     log,

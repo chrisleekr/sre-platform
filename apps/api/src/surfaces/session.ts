@@ -10,6 +10,7 @@ import {
   getIncident,
   getUserTenantSessionState,
   incidents,
+  lockResponseGroupWorkTx,
   tenants,
   withTenant,
   type Db,
@@ -290,6 +291,8 @@ export async function openIncidentSession(
               'this session has ended; reconnect to post',
             );
           }
+          // Group work locks before the incident row, matching signal writers and the hub append.
+          await lockResponseGroupWorkTx(tx, tenantId, incidentId);
           const current = await tx
             .select({ archivedAt: incidents.archivedAt })
             .from(incidents)

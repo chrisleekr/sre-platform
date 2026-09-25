@@ -17,7 +17,7 @@ export const WORKSPACE_NOTES: Record<string, string> = {
   'apps/triage-worker': 'Queue consumer and Triage Engine host (Claude / OpenAI).',
   'packages/agent-tools': 'Triage tool implementations and the per-engine binding layer.',
   'packages/alerts':
-    '`openIncidentWorkspace`, the sole atomic incident opener, plus the Slack `routeToIncident` adapter and platform subject identity.',
+    '`openIncidentWorkspace`, the sole atomic incident opener, plus the Slack `routeToIncident` adapter, native provider-lifecycle intake (Alertmanager, Datadog, Grafana, StatusCake), and platform subject identity.',
   'packages/connectors':
     'Compile-time connector catalog, provider modules, stable connector ports, and registries.',
   'packages/contracts':
@@ -102,6 +102,10 @@ export const DASHBOARD_PANEL_NOTES: Record<string, { page: string; answers: stri
     answers: 'Which Slack channels does it listen to, and what did it do with them?',
   },
   '/w/usage': { page: 'usage.md', answers: 'What has the model cost me?' },
+  '/w/work-queue': {
+    page: 'work-queue.md',
+    answers: 'Is background work keeping up, and which jobs failed for good?',
+  },
   '/w/settings': {
     page: 'settings.md',
     answers: 'What is the workspace called, how do people sign in, and who belongs to it?',

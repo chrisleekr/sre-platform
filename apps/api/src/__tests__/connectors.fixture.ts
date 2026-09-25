@@ -234,6 +234,7 @@ export function createFixture() {
       gitlabSmee?: Parameters<typeof connectorRoutes>[0]['gitlabSmee'];
       alertmanagerSmee?: Parameters<typeof connectorRoutes>[0]['alertmanagerSmee'];
       cache?: Parameters<typeof connectorRoutes>[0]['cache'];
+      statusCakeFetch?: typeof fetch;
     },
   ): Hono {
     const h = new Hono();
@@ -254,6 +255,7 @@ export function createFixture() {
         gitlabSmee: integrations?.gitlabSmee,
         alertmanagerSmee: integrations?.alertmanagerSmee,
         cache: integrations?.cache,
+        statusCakeFetch: integrations?.statusCakeFetch,
       }),
     );
     return h;

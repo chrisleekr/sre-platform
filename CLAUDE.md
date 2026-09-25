@@ -61,7 +61,7 @@ edit `scripts/docs/notes.ts`, never the block below.
 | `apps/surface-worker` | Consumes the hub fan-out stream and posts to external surfaces. `surface_deliveries` is the durable outbox; every post threads under the incident binding. |
 | `apps/triage-worker` | Queue consumer and Triage Engine host (Claude / OpenAI). |
 | `packages/agent-tools` | Triage tool implementations and the per-engine binding layer. |
-| `packages/alerts` | `openIncidentWorkspace`, the sole atomic incident opener, plus the Slack `routeToIncident` adapter and platform subject identity. |
+| `packages/alerts` | `openIncidentWorkspace`, the sole atomic incident opener, plus the Slack `routeToIncident` adapter, native provider-lifecycle intake (Alertmanager, Datadog, Grafana, StatusCake), and platform subject identity. |
 | `packages/connectors` | Compile-time connector catalog, provider modules, stable connector ports, and registries. |
 | `packages/contracts` | Shared client/server wire contracts (WebSocket ingress cap and error-frame shape). Pure TypeScript, no runtime dependencies. |
 | `packages/db` | Drizzle schema (tables, indexes, RLS policies), generated migrations, role/grant/FORCE-RLS bootstrap, `SecretStore`, `Embedder`. |
