@@ -1,6 +1,7 @@
 import { connectorCapabilities, githubSmeeUrl, isConnectorType } from '@sre/connectors';
 import {
   connectorConfigs,
+  alertEpisodeIntakes,
   connectorCredentialKey,
   connectorEventCredentialKey,
   countGitHubRepositories,
@@ -8,7 +9,7 @@ import {
   gitLabPollingCoverage,
   withTenant,
 } from '@sre/db';
-import { isNull } from 'drizzle-orm';
+import { isNull, count, or, inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { type TenantAuthVariables } from '../../auth';
 
@@ -68,13 +69,30 @@ export function registerConnectorListRoutes(
         .from(connectorConfigs)
         .where(isNull(connectorConfigs.deletedAt)),
     );
+    const pendingCycles = await withTenant(deps.db, tenantId, (tx) =>
+      tx
+        .select({ connectorId: alertEpisodeIntakes.dataSourceId, count: count() })
+        .from(alertEpisodeIntakes)
+        .where(
+          or(
+            isNull(alertEpisodeIntakes.startsAt),
+            inArray(alertEpisodeIntakes.failureCategory, [
+              'binding_episode_mismatch',
+              'native_cycle_association_required',
+              'conflicting_episode_times',
+            ]),
+          ),
+        )
+        .groupBy(alertEpisodeIntakes.dataSourceId),
+    );
     const connectors = await Promise.all(
       rows.map(async (row) => {
         const credential = await deps.secrets.get(tenantId, connectorCredentialKey(row.id));
-        const eventCredential =
-          row.type === 'prometheus'
-            ? await deps.secrets.get(tenantId, connectorEventCredentialKey(row.id))
-            : null;
+        const eventCredential = ['prometheus', 'datadog', 'grafana', 'statuscake'].includes(
+          row.type,
+        )
+          ? await deps.secrets.get(tenantId, connectorEventCredentialKey(row.id))
+          : null;
         const legacy = parseLegacyGitHubCredential(credential);
         const settings = (
           row.type === 'gitlab'
@@ -102,10 +120,13 @@ export function registerConnectorListRoutes(
                       ? publicGrafanaSettings(row.settings)
                       : (row.settings ?? {})
         ) as Record<string, unknown>;
+        if (row.type === 'grafana' || row.type === 'datadog')
+          settings.eventCredentialConfigured = Boolean(eventCredential);
         const capabilities = isConnectorType(row.type)
           ? connectorCapabilities(row.type)
           : {
               availability: 'incomplete' as const,
+              alertLifecycle: 'none' as const,
               configuration: 'tenant' as const,
               instances: 'multiple' as const,
               investigation: 'none' as const,
@@ -151,6 +172,20 @@ export function registerConnectorListRoutes(
           name: row.name,
           type: row.type,
           capabilities,
+          lifecycle: {
+            pendingEpisodes:
+              pendingCycles.find((pending) => pending.connectorId === row.id)?.count ?? 0,
+            mode: capabilities.alertLifecycle ?? 'none',
+            lastReconciledAt:
+              (row.pollCursor as { lifecycle?: { lastAttemptAt?: string } } | null)?.lifecycle
+                ?.lastAttemptAt ?? null,
+            failureCategory:
+              (row.pollCursor as { lifecycle?: { failureCategory?: string } } | null)?.lifecycle
+                ?.failureCategory ?? null,
+            boundEpisodes: Array.isArray(settings.lifecycleBindings)
+              ? settings.lifecycleBindings.length
+              : 0,
+          },
           settings,
           enabled: row.enabled,
           credentialConfigured:
@@ -195,7 +230,7 @@ export function registerConnectorListRoutes(
             ? { repositoryCount }
             : {}),
           ...(row.type === 'github' ||
-          row.type === 'prometheus' ||
+          ['prometheus', 'datadog', 'grafana', 'statuscake'].includes(row.type) ||
           (row.type === 'gitlab' && 'groupId' in settings)
             ? {
                 webhookPath: `/webhooks/${row.type === 'prometheus' ? 'alertmanager' : row.type}/${row.webhookKey ?? row.id}`,

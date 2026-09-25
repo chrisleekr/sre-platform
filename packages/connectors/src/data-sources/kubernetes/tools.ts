@@ -2,7 +2,7 @@ import * as z from 'zod';
 import type { ConnectorConfig } from '../../registry';
 import { dnsLookup, type HostLookup } from '../../ssrf';
 import { sanitizeObject } from '../../shared/kubernetes/sanitize';
-import type { ConnectorTool } from '../../types';
+import type { ConnectorTool, ToolRunOptions } from '../../types';
 import { obj, str } from '../../values';
 import { resourcePath, validateSegment } from './path';
 import { K8sApiError, itemsOf, k8sClient, mapEvent } from './runtime';
@@ -25,7 +25,7 @@ function tool<S extends z.ZodType>(def: {
   name: string;
   description: string;
   inputSchema: S;
-  run: (input: z.infer<S>) => Promise<unknown>;
+  run: (input: z.infer<S>, options?: ToolRunOptions) => Promise<unknown>;
 }): ConnectorTool {
   return def as ConnectorTool;
 }
@@ -65,8 +65,8 @@ export function makeK8sTools(
         'Discover the API resources served by the cluster (core group plus named API groups). ' +
         'Optionally filter to a single group. Returns [{group, version, resource, kind, namespaced}].',
       inputSchema: z.object({ group: z.string().optional() }),
-      run: async ({ group }) => {
-        const client = await k8sClient(config, fetchImpl, lookup);
+      run: async ({ group }, call) => {
+        const client = await k8sClient(config, fetchImpl, lookup, call?.signal);
         const out: Array<{
           group: string;
           version: string;
@@ -119,14 +119,14 @@ export function makeK8sTools(
         name: z.string(),
         namespace: z.string().optional(),
       }),
-      run: async ({ apiVersion, resource, name, namespace }) => {
+      run: async ({ apiVersion, resource, name, namespace }, call) => {
         // Use only the caller-provided namespace: an omitted namespace must build the cluster-scoped
         // path (no /namespaces/{ns} segment), correct for cluster-scoped kinds (nodes, PVs). Falling
         // back to the configured default here would 404 a nodes get by scoping it to a namespace.
         const ns = namespace;
         // Segment validation runs here (pure) before any client/fetch: injection is rejected early.
         const path = resourcePath(apiVersion, resource, { namespace: ns, name });
-        const client = await k8sClient(config, fetchImpl, lookup);
+        const client = await k8sClient(config, fetchImpl, lookup, call?.signal);
         return sanitizeObject(await client.kjson(path), resourceKindFor(resource));
       },
     }),
@@ -145,7 +145,10 @@ export function makeK8sTools(
         fieldSelector: z.string().optional(),
         limit: z.number().int().positive().optional(),
       }),
-      run: async ({ apiVersion, resource, namespace, labelSelector, fieldSelector, limit }) => {
+      run: async (
+        { apiVersion, resource, namespace, labelSelector, fieldSelector, limit },
+        call,
+      ) => {
         // Caller-provided namespace only: omitted means list across all namespaces (or a
         // cluster-scoped kind), not a silent fallback to the configured default.
         const ns = namespace;
@@ -153,7 +156,7 @@ export function makeK8sTools(
         const qs = new URLSearchParams({ limit: String(limit ?? 200) });
         if (labelSelector) qs.set('labelSelector', labelSelector);
         if (fieldSelector) qs.set('fieldSelector', fieldSelector);
-        const client = await k8sClient(config, fetchImpl, lookup);
+        const client = await k8sClient(config, fetchImpl, lookup, call?.signal);
         const data = await client.kjson(`${path}?${qs.toString()}`);
         const kind = resourceKindFor(resource);
         return { items: itemsOf(data).map((it) => sanitizeObject(it, kind)) };
@@ -173,7 +176,7 @@ export function makeK8sTools(
         sinceSeconds: z.number().int().positive().optional(),
         previous: z.boolean().optional(),
       }),
-      run: async ({ namespace, name, container, tailLines, sinceSeconds, previous }) => {
+      run: async ({ namespace, name, container, tailLines, sinceSeconds, previous }, call) => {
         validateSegment('namespace', namespace);
         validateSegment('name', name);
         const qs = new URLSearchParams({
@@ -184,7 +187,7 @@ export function makeK8sTools(
         if (container) qs.set('container', container);
         if (sinceSeconds != null) qs.set('sinceSeconds', String(sinceSeconds));
         if (previous) qs.set('previous', 'true');
-        const client = await k8sClient(config, fetchImpl, lookup);
+        const client = await k8sClient(config, fetchImpl, lookup, call?.signal);
         return {
           log: await client.ktext(`/api/v1/namespaces/${namespace}/pods/${name}/log?${qs}`),
         };
@@ -201,7 +204,7 @@ export function makeK8sTools(
         type: z.string().optional(),
         limit: z.number().int().positive().optional(),
       }),
-      run: async ({ namespace, type, limit }) => {
+      run: async ({ namespace, type, limit }, call) => {
         const ns = namespace ?? defaultNs();
         let path = '/api/v1/events';
         if (ns) path = `/api/v1/namespaces/${validateSegment('namespace', ns)}/events`;
@@ -210,7 +213,7 @@ export function makeK8sTools(
           fieldSelector: `type=${type ?? 'Warning'}`,
           limit: String(limit ?? 200),
         });
-        const client = await k8sClient(config, fetchImpl, lookup);
+        const client = await k8sClient(config, fetchImpl, lookup, call?.signal);
         const data = await client.kjson(`${path}?${qs}`);
         return { events: itemsOf(data).map(mapEvent) };
       },
@@ -221,8 +224,8 @@ export function makeK8sTools(
       description:
         'Node CPU/memory usage from the metrics API. Unavailable if metrics-server is absent.',
       inputSchema: z.object({}),
-      run: async () => {
-        const client = await k8sClient(config, fetchImpl, lookup);
+      run: async (_input, call) => {
+        const client = await k8sClient(config, fetchImpl, lookup, call?.signal);
         return readMetrics(client, '/apis/metrics.k8s.io/v1beta1/nodes');
       },
     }),
@@ -233,13 +236,13 @@ export function makeK8sTools(
         'Pod CPU/memory usage from the metrics API. Omit namespace to span all namespaces; provide ' +
         'it to scope to one namespace. Unavailable if metrics-server is absent.',
       inputSchema: z.object({ namespace: z.string().optional() }),
-      run: async ({ namespace }) => {
+      run: async ({ namespace }, call) => {
         // Caller-provided namespace only: omitted means all-namespace metrics, not the configured default.
         const ns = namespace;
         const path = ns
           ? `/apis/metrics.k8s.io/v1beta1/namespaces/${validateSegment('namespace', ns)}/pods`
           : '/apis/metrics.k8s.io/v1beta1/pods';
-        const client = await k8sClient(config, fetchImpl, lookup);
+        const client = await k8sClient(config, fetchImpl, lookup, call?.signal);
         return readMetrics(client, path);
       },
     }),

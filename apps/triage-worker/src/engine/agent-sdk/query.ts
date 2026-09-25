@@ -9,7 +9,13 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 import { redactInput } from '@sre/agent-tools';
 import { startClaudeTelemetry } from '../../llm-telemetry';
-import { ProviderRateLimitError, ProviderUnavailableError, type LlmUsageObserver } from '../types';
+import {
+  isProviderConfigurationStatus,
+  ProviderConfigurationError,
+  ProviderRateLimitError,
+  ProviderUnavailableError,
+  type LlmUsageObserver,
+} from '../types';
 import { STRUCTURED_UNTRUSTED_DATA_INSTRUCTION } from '../types';
 import type { AgentSdkConfig } from './contracts';
 
@@ -189,10 +195,12 @@ function sanitizedAgentResultError(
   rateLimit?: ProviderRateLimitError,
 ): Error {
   if (result.subtype === 'success' && result.api_error_status != null) {
-    if (result.api_error_status === 429) return rateLimit ?? new ProviderRateLimitError();
-    return result.api_error_status >= 500
-      ? new ProviderUnavailableError('Claude Agent SDK provider unavailable')
-      : new Error('Claude Agent SDK execution failed');
+    const status = result.api_error_status;
+    if (status === 429) return rateLimit ?? new ProviderRateLimitError();
+    if (status >= 500) return new ProviderUnavailableError('Claude Agent SDK provider unavailable');
+    return isProviderConfigurationStatus(status)
+      ? new ProviderConfigurationError(status)
+      : new Error(`Claude Agent SDK execution failed (status ${status})`);
   }
   if (rateLimit) return rateLimit;
   const text = result.subtype === 'success' ? result.result : result.errors.join(' ');

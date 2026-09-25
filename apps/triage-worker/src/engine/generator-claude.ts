@@ -7,6 +7,7 @@ import {
   sanitizeHardError,
   systemParam,
   observeClaudeUsage,
+  strictOutputTool,
   type AnthropicLike,
   type ClaudeEngineConfig,
 } from './claude';
@@ -17,16 +18,16 @@ import type {
   VisionModel,
 } from './types';
 import { STRUCTURED_UNTRUSTED_DATA_INSTRUCTION } from './types';
+import { parseStructuredOutput } from './structured-repair';
 
 /**
- * The forced single-tool name. Claude's structured-output pattern is a tool_use turn constrained to
- * exactly one tool via `tool_choice`, so the model must emit the schema-shaped object as that tool's
- * input rather than prose. [Anthropic Messages tool-use]
+ * The single output tool. The model is instructed to call it and the tool is strict, so the
+ * schema-shaped object arrives as that tool's input rather than prose. [Anthropic strict tool use]
  */
 const OUTPUT_TOOL = 'emit_structured_output';
 
 const SYSTEM =
-  'Return the answer by calling the provided tool exactly once with a value matching its schema. ' +
+  `Respond only by calling ${OUTPUT_TOOL}, exactly once, with a value matching its schema. ` +
   `Do not write prose. ${STRUCTURED_UNTRUSTED_DATA_INSTRUCTION}`;
 
 interface ClaudeBlock {
@@ -38,7 +39,7 @@ interface ClaudeResponse {
 }
 
 /**
- * Claude binding of `StructuredGenerator`: one forced-tool-use call whose tool input is the
+ * Claude binding of `StructuredGenerator`: one strict tool call whose tool input is the
  * structured result, then zod-validated. Reuses the engine's auth (`claudeAuthMode`/`buildAnthropic`/
  * `systemParam` — OAuth quota gate) and error handling (`classifyProviderError`/
  * `sanitizeHardError` — CWE-209). Pass `sdkOverride` in tests. `max_tokens: 4096` — a distilled
@@ -75,13 +76,15 @@ export function makeClaudeGenerator(
               options?.system ? `${SYSTEM}\n\n${options.system}` : SYSTEM,
             ),
             tools: [
-              {
-                name: OUTPUT_TOOL,
-                description: 'Emit the structured result matching the provided JSON schema.',
-                input_schema: inputSchema,
-              },
+              strictOutputTool(
+                OUTPUT_TOOL,
+                'Emit the structured result matching the provided JSON schema.',
+                inputSchema,
+              ),
             ],
-            tool_choice: { type: 'tool', name: OUTPUT_TOOL },
+            // Opus 5.5 rejects forced tool choice. The strict tool plus the instruction keep one valid
+            // call, and a missing call still fails below.
+            tool_choice: { type: 'auto' },
             messages: [{ role: 'user', content: prompt }],
           },
           { signal: options?.signal },
@@ -93,11 +96,10 @@ export function makeClaudeGenerator(
         throw sanitizeHardError(err);
       }
       observeClaudeUsage(response, config.model, onUsage);
-      // A forced single tool yields exactly one tool_use block; validate against the wrapped schema
-      // and unwrap the caller's value from `result`.
+      // Validate the tool_use block against the wrapped schema and unwrap the caller's value.
       const toolUse = (response.content ?? []).find((b) => b.type === 'tool_use');
       if (!toolUse) throw new Error('claude returned no structured output');
-      return wrapped.parse(toolUse.input).result;
+      return parseStructuredOutput(wrapped, toolUse.input, options).result;
     },
   };
 }

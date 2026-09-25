@@ -235,7 +235,6 @@ describe('inbound side-effect idempotency — live Postgres', () => {
     target: string,
     over?: {
       enqueueResume?: () => Promise<string>;
-      hasPendingClassification?: () => Promise<boolean>;
     },
   ): { handler: ReturnType<typeof makeClassifyHandler>; enqueueResume: ReturnType<typeof vi.fn> } {
     const enqueueResume = vi.fn(over?.enqueueResume ?? (async () => 'resume-1'));
@@ -249,7 +248,6 @@ describe('inbound side-effect idempotency — live Postgres', () => {
       embedder: fakeEmbedder,
       appDb: app.db,
       redis,
-      hasPendingClassification: over?.hasPendingClassification,
       queue: {
         enqueueResume,
         insertReassessmentTx: async () => ({ jobId: `signal-job-${randomUUID()}` }),
@@ -289,13 +287,9 @@ describe('inbound side-effect idempotency — live Postgres', () => {
         .where(eq(incidentMessages.originMessageId, originMessageId)),
     );
 
-  test('an edit racing its root retries, then applies to the durable signal without rerouting', async () => {
+  test('an unverified edit never mutates the durable signal', async () => {
     const externalId = `edit-race-${randomUUID()}`;
-    const hasPendingClassification = vi
-      .fn<() => Promise<boolean>>()
-      .mockResolvedValueOnce(true)
-      .mockResolvedValue(false);
-    const { handler } = sideEffectHandler(aIncidentId, { hasPendingClassification });
+    const { handler } = sideEffectHandler(aIncidentId);
     const edited = job({
       externalId,
       author: 'bot',
@@ -304,37 +298,28 @@ describe('inbound side-effect idempotency — live Postgres', () => {
       eventKey: `slack:${CHANNEL_X}:${externalId}:edit:2`,
       eventAt: '2026-08-21T00:01:00.000Z',
     });
-    try {
-      await expect(handler(edited)).rejects.toThrow('edited signal is not tracked yet');
-      expect(hasPendingClassification).toHaveBeenCalledWith(
-        tenantA,
-        { surface: 'slack', channel: CHANNEL_X, externalMessageId: externalId },
-        undefined,
-      );
+    await expect(handler(edited)).resolves.toBeUndefined();
 
-      await applySignalObservation(app.db, tenantA, {
-        incidentId: aIncidentId,
-        surface: 'slack',
-        channel: CHANNEL_X,
-        externalMessageId: externalId,
-        state: 'firing',
-        summary: 'checkout errors are high',
-        contentHash: 'initial',
-        eventKey: `slack:${CHANNEL_X}:${externalId}`,
-        eventAt: new Date('2026-08-21T00:00:00.000Z'),
-      });
-      await handler(edited);
+    await applySignalObservation(app.db, tenantA, {
+      incidentId: aIncidentId,
+      surface: 'slack',
+      channel: CHANNEL_X,
+      externalMessageId: externalId,
+      state: 'firing',
+      summary: 'checkout errors are high',
+      contentHash: 'initial',
+      eventKey: `slack:${CHANNEL_X}:${externalId}`,
+      eventAt: new Date('2026-08-21T00:00:00.000Z'),
+    });
+    await handler(edited);
 
-      await expect(
-        getSignalByExternal(app.db, tenantA, 'slack', CHANNEL_X, externalId),
-      ).resolves.toMatchObject({
-        version: 2,
-        summary: 'checkout errors increased to 20%',
-        lastEventType: 'updated',
-      });
-    } finally {
-      hasPendingClassification.mockReset();
-    }
+    await expect(
+      getSignalByExternal(app.db, tenantA, 'slack', CHANNEL_X, externalId),
+    ).resolves.toMatchObject({
+      version: 1,
+      summary: 'checkout errors are high',
+      lastEventType: 'opened',
+    });
   });
 
   // THE CRASH WINDOW. The first delivery COMMITS the human's hub line and then dies before the ACK (here

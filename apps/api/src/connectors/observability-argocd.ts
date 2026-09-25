@@ -98,7 +98,13 @@ export function publicGrafanaSettings(input: unknown): Record<string, unknown> {
   const parsed = parseGrafanaSettings(input);
   if (!parsed) return {};
   const { caCert, ...visible } = parsed;
-  return { ...visible, ...(caCert ? { caConfigured: true } : {}) };
+  const raw = requestObject(input) ?? {};
+  return {
+    ...visible,
+    eventTransport: raw.eventTransport ?? 'none',
+    ...(typeof raw.alertChannel === 'string' ? { alertChannel: raw.alertChannel } : {}),
+    ...(caCert ? { caConfigured: true } : {}),
+  };
 }
 
 export const FORBIDDEN_PROMETHEUS_HEADERS = new Set([

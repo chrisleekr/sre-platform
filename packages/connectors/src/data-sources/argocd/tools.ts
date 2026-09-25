@@ -1,7 +1,7 @@
 import * as z from 'zod';
 import type { ConnectorConfig } from '../../registry';
 import type { HostLookup } from '../../ssrf';
-import type { ConnectorTool } from '../../types';
+import type { ConnectorTool, ToolRunOptions } from '../../types';
 import {
   DEFAULT_TAIL_LINES,
   MAX_LOG_CHARS,
@@ -26,7 +26,7 @@ export function atool<S extends z.ZodType>(def: {
   name: string;
   description: string;
   inputSchema: S;
-  run: (input: z.infer<S>) => Promise<unknown>;
+  run: (input: z.infer<S>, options?: ToolRunOptions) => Promise<unknown>;
 }): ConnectorTool {
   return def as ConnectorTool;
 }
@@ -46,7 +46,11 @@ export function makeArgoCdTools(
   fetchImpl: FetchLike,
   lookup: HostLookup,
 ): ConnectorTool[] {
-  const client = () => connect(config, lookup);
+  // The tool caller's cancellation rides the client, so every read the tool makes stops with it.
+  const client = async (call?: ToolRunOptions) => ({
+    ...(await connect(config, lookup)),
+    signal: call?.signal,
+  });
 
   return [
     atool({
@@ -56,8 +60,8 @@ export function makeArgoCdTools(
         'inventory) within the connector scope. Returns a summary per app: name, project, sync ' +
         'status, health status, revision.',
       inputSchema: z.object({}),
-      run: async () => {
-        const c = await client();
+      run: async (_input, call) => {
+        const c = await client(call);
         const applications = await readApplications(config, fetchImpl, c);
         return { applications: applications.map(summarizeApp) };
       },
@@ -69,8 +73,8 @@ export function makeArgoCdTools(
         'operationState (last sync result), conditions, and revision history. appNamespace is ' +
         'required when Applications-in-any-namespace is enabled.',
       inputSchema: z.object({ name: z.string(), appNamespace: z.string().optional() }),
-      run: async ({ name, appNamespace }) => {
-        const c = await client();
+      run: async ({ name, appNamespace }, call) => {
+        const c = await client(call);
         const app = validateName('name', name);
         const namespace = appNamespace ? validateName('appNamespace', appNamespace) : undefined;
         const data = await readScopedApplication(config, fetchImpl, c, app, namespace);
@@ -84,8 +88,8 @@ export function makeArgoCdTools(
         'health and sync status (find the Degraded Deployment/Pod). No manifest bodies are returned. ' +
         'appNamespace is required when Applications-in-any-namespace is enabled.',
       inputSchema: z.object({ name: z.string(), appNamespace: z.string().optional() }),
-      run: async ({ name, appNamespace }) => {
-        const c = await client();
+      run: async ({ name, appNamespace }, call) => {
+        const c = await client(call);
         const app = validateName('name', name);
         const namespace = appNamespace ? validateName('appNamespace', appNamespace) : undefined;
         await readScopedApplication(config, fetchImpl, c, app, namespace);
@@ -101,8 +105,8 @@ export function makeArgoCdTools(
         'it OutOfSync" detail). Secret and ConfigMap values and container env values are redacted. ' +
         'appNamespace is required when Applications-in-any-namespace is enabled.',
       inputSchema: z.object({ name: z.string(), appNamespace: z.string().optional() }),
-      run: async ({ name, appNamespace }) => {
-        const c = await client();
+      run: async ({ name, appNamespace }, call) => {
+        const c = await client(call);
         const app = validateName('name', name);
         const namespace = appNamespace ? validateName('appNamespace', appNamespace) : undefined;
         await readScopedApplication(config, fetchImpl, c, app, namespace);
@@ -121,8 +125,8 @@ export function makeArgoCdTools(
         'List Kubernetes events for an application (why a sync failed, image pull errors, etc.). ' +
         'appNamespace is required when Applications-in-any-namespace is enabled.',
       inputSchema: z.object({ name: z.string(), appNamespace: z.string().optional() }),
-      run: async ({ name, appNamespace }) => {
-        const c = await client();
+      run: async ({ name, appNamespace }, call) => {
+        const c = await client(call);
         const app = validateName('name', name);
         const namespace = appNamespace ? validateName('appNamespace', appNamespace) : undefined;
         await readScopedApplication(config, fetchImpl, c, app, namespace);
@@ -147,16 +151,11 @@ export function makeArgoCdTools(
         sinceSeconds: z.number().int().positive().optional(),
         appNamespace: z.string().optional(),
       }),
-      run: async ({
-        name,
-        podName,
-        container,
-        namespace,
-        tailLines,
-        sinceSeconds,
-        appNamespace,
-      }) => {
-        const c = await client();
+      run: async (
+        { name, podName, container, namespace, tailLines, sinceSeconds, appNamespace },
+        call,
+      ) => {
+        const c = await client(call);
         const app = validateName('name', name);
         const applicationNamespace = appNamespace
           ? validateName('appNamespace', appNamespace)
@@ -190,8 +189,8 @@ export function makeArgoCdTools(
         path: z.string(),
         query: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
       }),
-      run: async ({ path, query }) => {
-        const c = await client();
+      run: async ({ path, query }, call) => {
+        const c = await client(call);
         if (apiGetPathIsDenied(c.base, buildGetUrl(c.base, path, query)))
           throw new Error(
             'argocd connector: raw Applications, global inventory, and manifest endpoints are ' +

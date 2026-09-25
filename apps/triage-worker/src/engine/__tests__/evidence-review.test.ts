@@ -26,6 +26,7 @@ test.each(['x', '\\"\n'])(
     const prompts: string[] = [];
     const generator = makeFakeGenerator((prompt) => {
       prompts.push(prompt);
+      if (JSON.parse(prompt).evidenceSlices) return { complete: true, notes: [] };
       return { supported: true, summary: 'Checked', reason: 'Covered', evidenceIds: [evidenceId] };
     });
     const largeCandidate = { ...candidate, detail: 'context '.repeat(5_000) };
@@ -124,7 +125,8 @@ test('an oversized review fails closed without claiming semantic contradiction d
   expect(script).not.toHaveBeenCalled();
   expect(result).toMatchObject({
     outcome: 'inconclusive',
-    summary: expect.stringContaining('could not be verified'),
+    summary:
+      'Evidence review did not complete: Evidence review input budget exceeded; coverage is incomplete. The evidence and prior assessment remain available.',
     evidenceReceipts: candidate.evidenceReceipts,
   });
 });
@@ -206,6 +208,7 @@ test('reviews both ends of a large recorded response before accepting a conclusi
   const prompts: string[] = [];
   const generator = makeFakeGenerator((prompt) => {
     prompts.push(prompt);
+    if (JSON.parse(prompt).evidenceSlices) return { complete: true, notes: [] };
     return {
       supported: true,
       summary: 'The record contains observations, not proof of recovery.',
@@ -262,6 +265,20 @@ test('carries a later contradictory observation from a large record into the cor
   const script = vi.fn((prompt: string) => {
     sawOlder ||= prompt.includes('10:28 runner absent');
     sawLater ||= prompt.includes('10:56 runner active');
+    if (JSON.parse(prompt).evidenceSlices)
+      return {
+        complete: true,
+        notes: [
+          ...(prompt.includes('10:28 runner absent')
+            ? [{ kind: 'observation', text: '10:28 runner absent', evidenceIds: [evidenceId] }]
+            : []),
+          ...(prompt.includes('10:56 runner active')
+            ? [{ kind: 'contradiction', text: '10:56 runner active', evidenceIds: [evidenceId] }]
+            : []),
+        ],
+      };
+    expect(prompt).toContain('10:28 runner absent');
+    expect(prompt).toContain('10:56 runner active');
     return {
       supported: !sawLater,
       summary: sawLater
@@ -408,5 +425,70 @@ test.each([
     expect(result.outcome).toBe('inconclusive');
     expect(result.unknowns?.at(-1)?.category).toBe(category);
     expect(result.evidenceReceipts).toEqual(candidate.evidenceReceipts);
+  },
+);
+
+test.each(['invalid_output', 'chunk_budget', 'foreign_evidence'] as const)(
+  'preserves the exact %s reviewer failure as an actionable recovery blocker',
+  async (failure) => {
+    const generator = makeFakeGenerator(() =>
+      failure === 'invalid_output'
+        ? { supported: 'invalid' }
+        : failure === 'foreign_evidence'
+          ? {
+              supported: true,
+              summary: 'Recovered',
+              reason: 'Covered',
+              evidenceIds: [evidenceId, randomUUID()],
+            }
+          : {
+              complete: true,
+              notes: Array.from({ length: 6 }, () => ({
+                kind: 'observation',
+                text: '\\'.repeat(400),
+                evidenceIds: [evidenceId],
+              })),
+            },
+    );
+    const result = await reviewInvestigation(
+      generator,
+      { ...candidate, disposition: 'recovery' },
+      [
+        {
+          ...evidence[0]!,
+          outcome: 'data',
+          output: failure === 'chunk_budget' ? 'x'.repeat(200_000) : 'healthy',
+        },
+      ],
+      new AbortController().signal,
+    );
+    expect(result).toMatchObject({
+      outcome: 'inconclusive',
+      recovery: {
+        outcome: 'needs_human',
+        recovered: false,
+        questions: [
+          {
+            category: 'partial_evidence',
+            resolutionRelevance: 'blocking',
+            attemptedEvidenceIds: [evidenceId],
+            question:
+              failure === 'invalid_output'
+                ? expect.stringMatching(
+                    /single invalid structured output.*schema=evidence_review.*invalid_type:supported/,
+                  )
+                : failure === 'foreign_evidence'
+                  ? 'Evidence review single cited foreign or unadmitted evidence.'
+                  : expect.stringMatching(
+                      /slice output budget exceeded.*4000.*coverage is incomplete/,
+                    ),
+            nextAction:
+              failure === 'chunk_budget'
+                ? 'Request a focused recovery check for the affected service with a smaller evidence window.'
+                : 'Retry a focused recovery check; if review remains invalid, inspect the review service logs.',
+          },
+        ],
+      },
+    });
   },
 );

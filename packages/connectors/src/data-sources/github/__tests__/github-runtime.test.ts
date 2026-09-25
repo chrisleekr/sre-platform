@@ -1,14 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   cfg,
+  FUTURE,
   makeFetch,
   makeGitHubConnector,
   publicLookup,
+  response,
   v2cfg,
   withMint,
   type HostLookup,
   type Reply,
 } from './test-helpers';
+import { abortableFetch, expectCancelledInFlight } from '../../../__tests__/request-signal.fixture';
 
 describe('get_job_logs — redirect handling', () => {
   function logsRoutes(location: string | undefined, blob: Reply) {
@@ -419,4 +422,21 @@ describe('probe', () => {
       expect(JSON.stringify(result)).not.toContain('provider-secret-body');
     },
   );
+});
+
+describe('tool cancellation', () => {
+  it('aborts an in-flight GitHub request when the calling investigation is cancelled', async () => {
+    const { impl, signals } = abortableFetch((url) => {
+      // The installation token mint has its own bound; only the provider read must follow the caller.
+      if (/\/app\/installations\/[^/]+$/.test(url))
+        return response({ permissions: { contents: 'read' } });
+      if (url.includes('/access_tokens'))
+        return response({ token: 'ghs_tok', expires_at: FUTURE }, 201);
+      return undefined;
+    });
+    const tool = makeGitHubConnector(cfg(), impl, publicLookup)
+      .tools()
+      .find((t) => t.name === 'list_commits')!;
+    await expectCancelledInFlight((signal) => tool.run({}, { signal }), signals);
+  });
 });

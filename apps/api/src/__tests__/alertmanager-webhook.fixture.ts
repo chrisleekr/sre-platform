@@ -5,6 +5,8 @@ import {
   alertEpisodeIntakes,
   connectorConfigs,
   connectorEventCredentialKey,
+  inboundChannels,
+  subscribeChannel,
   incidentMessages,
   incidentRelations,
   incidentSignals,
@@ -31,7 +33,7 @@ import { Hono } from 'hono';
 import { Redis } from 'ioredis';
 import { createHash, randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, expect, test, vi } from 'vitest';
-import { alertmanagerWebhookRoutes } from '../alertmanager-webhook';
+import { alertmanagerWebhookRoutes, type AlertmanagerWebhookDeps } from '../alertmanager-webhook';
 
 export function createFixture() {
   const ADMIN_URL = process.env.DATABASE_URL!;
@@ -57,6 +59,7 @@ export function createFixture() {
   let webhookKey: string;
 
   let api: Hono;
+  let webhookDeps: AlertmanagerWebhookDeps;
 
   let concurrentRootGate: { started: () => void; waitForRelease: Promise<void> } | undefined;
 
@@ -166,6 +169,9 @@ export function createFixture() {
       }),
     );
     await upsertSurfaceConfig(app.db, tenantId, { surface: 'slack' });
+    for (const channel of ['C07ALERTS', 'C-ORIGINAL-ALERTS']) {
+      await subscribeChannel(app.db, { tenantId, surface: 'slack', channel, enabled: true });
+    }
     const secrets = makeSecretStore(app.db, KEY);
     await secrets.put(
       tenantId,
@@ -175,50 +181,48 @@ export function createFixture() {
     const queue = new Queue(admin.db, redis);
     const hub = new ConversationHub(app.db, redis);
     api = new Hono();
-    api.route(
-      '/webhooks/alertmanager',
-      alertmanagerWebhookRoutes({
-        adminDb: admin.db,
+    webhookDeps = {
+      adminDb: admin.db,
+      appDb: app.db,
+      secrets,
+      route: {
         appDb: app.db,
-        secrets,
-        route: {
-          appDb: app.db,
-          redis,
-          queue,
-          appendOpenerTx: async (tx, scopedTenantId, incidentId, opener, observed) => {
-            const opened = await hub.appendTxOnce(tx, scopedTenantId, incidentId, {
-              ...opener,
-              ...(observed
-                ? {
-                    kind: 'signal' as const,
-                    signalId: observed.id,
-                    signalState: observed.state,
-                    signalEventType: observed.eventType,
-                  }
-                : {}),
-            });
-            const lifecycle = await hub.appendTxOnce(tx, scopedTenantId, incidentId, {
-              author: 'system',
-              kind: 'lifecycle',
-              content: 'Incident open: alert accepted for investigation.',
-              lifecycleFrom: null,
-              lifecycleTo: 'open',
-              lifecycleVersion: 0,
-              transitionKey: `incident-open:${incidentId}:0`,
-            });
-            return {
-              incidentId,
-              afterCommit: async () => {
-                await hub.publishAppended(opened.message);
-                await hub.publishAppended(lifecycle.message);
-              },
-            };
-          },
+        redis,
+        queue,
+        appendOpenerTx: async (tx, scopedTenantId, incidentId, opener, observed) => {
+          const opened = await hub.appendTxOnce(tx, scopedTenantId, incidentId, {
+            ...opener,
+            ...(observed
+              ? {
+                  kind: 'signal' as const,
+                  signalId: observed.id,
+                  signalState: observed.state,
+                  signalEventType: observed.eventType,
+                }
+              : {}),
+          });
+          const lifecycle = await hub.appendTxOnce(tx, scopedTenantId, incidentId, {
+            author: 'system',
+            kind: 'lifecycle',
+            content: 'Incident open: alert accepted for investigation.',
+            lifecycleFrom: null,
+            lifecycleTo: 'open',
+            lifecycleVersion: 0,
+            transitionKey: `incident-open:${incidentId}:0`,
+          });
+          return {
+            incidentId,
+            afterCommit: async () => {
+              await hub.publishAppended(opened.message);
+              await hub.publishAppended(lifecycle.message);
+            },
+          };
         },
-        hub,
-        postAlertRoot: postRoot,
-      }),
-    );
+      },
+      hub,
+      postAlertRoot: postRoot,
+    };
+    api.route('/webhooks/alertmanager', alertmanagerWebhookRoutes(webhookDeps));
   });
 
   afterAll(async () => {
@@ -237,6 +241,7 @@ export function createFixture() {
         .delete(tenantSignalPolicies)
         .where(eq(tenantSignalPolicies.tenantId, tenantId));
       await admin.db.delete(incidents).where(eq(incidents.tenantId, tenantId));
+      await admin.db.delete(inboundChannels).where(eq(inboundChannels.tenantId, tenantId));
       await admin.db.delete(surfaceConfigs).where(eq(surfaceConfigs.tenantId, tenantId));
       await admin.db.delete(connectorConfigs).where(eq(connectorConfigs.tenantId, tenantId));
       await admin.db.delete(tenantSecrets).where(eq(tenantSecrets.tenantId, tenantId));
@@ -324,6 +329,9 @@ export function createFixture() {
   });
 
   return {
+    get webhookDeps() {
+      return webhookDeps;
+    },
     ADMIN_URL,
     APP_URL,
     VALKEY_URL,

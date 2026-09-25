@@ -5,6 +5,7 @@ import type {
   TopologyScanProgress,
   TopologyRuntimeScope,
 } from '@sre/contracts';
+import { runConsumerLoop } from './consumer-loop';
 import type { ConnectorProvider } from './poller';
 import { makeRedisWindowGuard, PollScheduler, type PollDispatcher } from './poller';
 import {
@@ -214,8 +215,5 @@ export async function runTopologyDiscoveryConsumer(
   queue: Pick<Queue, 'process'>,
   handler: (job: Job) => Promise<void>,
 ): Promise<never> {
-  for (;;) {
-    if ((await queue.process('topology-worker', handler, { count: 1 })) === 0)
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
+  return runConsumerLoop(() => queue.process('topology-worker', handler, { count: 1 }));
 }

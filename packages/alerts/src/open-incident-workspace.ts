@@ -19,7 +19,12 @@ import {
   type Surface,
   type Tx,
 } from '@sre/db';
-import type { AffectedEntityCandidate, InvestigationTrigger, SignalSource } from '@sre/contracts';
+import type {
+  AffectedEntityCandidate,
+  InvestigationTrigger,
+  SignalSource,
+  ResolutionPolicy,
+} from '@sre/contracts';
 import type { Queue } from '@sre/queue';
 import { createHash } from 'node:crypto';
 import {
@@ -68,6 +73,7 @@ export interface OpenIncidentSubject {
 }
 
 interface OpenIncidentWorkspaceBaseInput {
+  resolutionPolicy?: ResolutionPolicy;
   tenantId: string;
   source: string;
   service: string;
@@ -180,6 +186,8 @@ export async function openIncidentWorkspace(
     const fingerprint = bounded(route.fingerprint, 500);
     const prior = input.subject ? await findLatestSubjectIncidentTx(tx, fingerprint) : null;
     const created = await createIncident(tx, input.tenantId, {
+      resolutionPolicy:
+        input.purpose === 'health_check' ? 'verified_recovery' : input.resolutionPolicy,
       fingerprint,
       alertSource: bounded(input.source, 100),
       service: bounded(input.service, 200),

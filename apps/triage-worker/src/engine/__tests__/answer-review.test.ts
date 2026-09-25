@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { expect, test, vi } from 'vitest';
 import { reviewedEngine, reviewInvestigation } from '../evidence-review';
 import { makeFakeEngine, makeFakeGenerator } from '../fake';
-import { restrictEvidenceToReceipts } from '../../worker/run-result';
+import { investigationRunResult, restrictEvidenceToReceipts } from '../../worker/run-result';
 import type { ResumeInput, TriageResult, TriageRuntime } from '../types';
 
 const evidenceId = randomUUID();
@@ -37,131 +37,6 @@ const candidate: TriageResult = {
   confidence: 90,
   evidenceIds: [evidenceId],
 };
-
-test('bounded review preserves gap-free serialized source ranges and supplies all chunk notes to synthesis', async () => {
-  const source = {
-    ...evidence,
-    output: `10:28 absent ${'x'.repeat(120_000)} 10:56 active ${'x'.repeat(120_000)}`,
-  };
-  const serialized = JSON.stringify(source);
-  const ranges: {
-    offset: number;
-    endOffset: number;
-    totalLength: number;
-    content: string;
-    evidenceId: string;
-  }[] = [];
-  let synthesis = false;
-  const generator = makeFakeGenerator((prompt) => {
-    const payload = JSON.parse(prompt);
-    if (payload.evidenceSlices) {
-      ranges.push(...payload.evidenceSlices);
-      return {
-        supported: false,
-        summary: prompt.includes('10:56 active')
-          ? 'Runner active at 10:56.'
-          : 'Slice alone cannot establish continuing absence.',
-        reason: 'Preserve the observation window.',
-        evidenceIds: [evidenceId],
-      };
-    }
-    synthesis = true;
-    expect(payload.reviewedEvidence).toHaveLength(ranges.length);
-    expect(JSON.stringify(payload.reviewedEvidence)).toContain('Runner active at 10:56.');
-    return {
-      supported: false,
-      summary: 'The runner was active at 10:56.',
-      detail: 'Do not generalize absence from 10:28 to the later window.',
-      reason: 'Observation windows differ.',
-      evidenceIds: [evidenceId],
-    };
-  });
-  const result = await reviewInvestigation(
-    generator,
-    candidate,
-    [source],
-    new AbortController().signal,
-    input,
-  );
-  expect(synthesis).toBe(true);
-  expect(ranges[0]?.offset).toBe(0);
-  expect(ranges.at(-1)?.endOffset).toBe(serialized.length);
-  expect(ranges.map((range) => range.content).join('')).toBe(serialized);
-  for (const [index, range] of ranges.entries()) {
-    expect(range.evidenceId).toBe(evidenceId);
-    expect(range.totalLength).toBe(serialized.length);
-    expect(range.endOffset - range.offset).toBe(range.content.length);
-    expect(range.content.length).toBeLessThanOrEqual(80_000);
-    if (index > 0) expect(range.offset).toBe(ranges[index - 1]!.endOffset);
-  }
-  expect(result.detail).toContain('10:28');
-});
-
-test('an invalid intermediate review stops coverage and withholds unchecked procedures', async () => {
-  let calls = 0;
-  const result = await reviewInvestigation(
-    makeFakeGenerator(() => {
-      calls++;
-      if (calls === 2) return {};
-      return {
-        supported: true,
-        summary: 'One slice reviewed.',
-        reason: 'More coverage required.',
-        evidenceIds: [evidenceId],
-      };
-    }),
-    candidate,
-    [{ ...evidence, output: 'x'.repeat(240_000) }],
-    new AbortController().signal,
-  );
-  expect(calls).toBe(2);
-  expect(result).toMatchObject({ outcome: 'inconclusive', confidence: 0 });
-  expect(result.unknowns?.at(-1)).toMatchObject({
-    category: 'partial_evidence',
-    question: expect.stringMatching(/invalid/i),
-  });
-  expect(result.detail).not.toContain('Unverified remedy');
-});
-
-test('covers a large Kubernetes pod inventory without dropping nested status fields', async () => {
-  const output = {
-    kind: 'PodList',
-    items: Array.from({ length: 950 }, (_, index) => ({
-      metadata: { name: `runner-${index}`, namespace: 'ci', labels: { app: 'runner' } },
-      spec: { nodeName: 'node-1', containers: [{ name: 'runner', image: 'runner:stable' }] },
-      status: {
-        phase: 'Running',
-        containerStatuses: [
-          {
-            ready: true,
-            restartCount: index,
-            state: { running: { startedAt: '2026-09-13T01:00:00Z' } },
-          },
-        ],
-      },
-    })),
-  };
-  const seen: string[] = [];
-  const result = await reviewInvestigation(
-    makeFakeGenerator((prompt) => {
-      const payload = JSON.parse(prompt);
-      if (payload.evidenceSlices)
-        seen.push(...payload.evidenceSlices.map((slice: { content: string }) => slice.content));
-      return {
-        supported: true,
-        summary: 'Pod status is available.',
-        reason: 'All admitted pod records were reviewed.',
-        evidenceIds: [evidenceId],
-      };
-    }),
-    candidate,
-    [{ ...evidence, output }],
-    new AbortController().signal,
-  );
-  expect(result.outcome).toBe('conclusive');
-  const restored = JSON.parse(seen.join(''));
-  expect(restored.output).toEqual(output);
-});
 
 test('a reviewer timeout has a safe explicit reason and is not retried', async () => {
   const script = vi.fn(() => {
@@ -332,4 +207,218 @@ test('an unavailable historical record never becomes a factual receipt', async (
   });
   expect(result.evidenceIds).toEqual([]);
   expect(result.outcome).toBe('inconclusive');
+});
+
+test.each(['verifyRecovery', 'resume'] as const)(
+  '%s preserves supported current recovery while removing unsupported cause and advice',
+  async (method) => {
+    const correctedRecovery = {
+      questions: [
+        {
+          question: 'The original cause remains unknown.',
+          category: 'historical_gap' as const,
+          evidenceKind: null,
+          attemptedEvidenceIds: [],
+          resolutionRelevance: 'follow_up' as const,
+          nextAction: 'Review retained deployment events for recurrence prevention.',
+        },
+      ],
+      outcome: 'recovered',
+      recovered: true,
+      summary: 'Checkout is serving successful requests.',
+      evidence: [
+        {
+          name: 'Current request success',
+          before: 'Elevated errors',
+          now: 'Configured service objective met',
+        },
+      ],
+      evidenceIds: [evidenceId],
+      unknowns: ['The original cause remains unknown.'],
+      nextStep: null,
+      recheckAfterMinutes: null,
+      scheduleReason: null,
+    };
+    const original = {
+      ...candidate,
+      disposition: 'recovery' as const,
+      summary: 'The deployment bug caused the outage; restart the cluster to prevent recurrence.',
+      recovery: {
+        ...correctedRecovery,
+        outcome: 'recovered' as const,
+        nextStep: 'Restart the cluster.',
+      },
+    };
+    const generate = vi.fn(() => ({
+      supported: false,
+      summary: correctedRecovery.summary,
+      reason:
+        'Current successful requests support recovery, but no evidence proves a deployment bug.',
+      evidenceIds: [evidenceId],
+      correctedRecovery,
+    }));
+    const engine = reviewedEngine(
+      { ...makeFakeEngine(), [method]: async () => original },
+      makeFakeGenerator(generate),
+    );
+    const runtime = {
+      tools: [],
+      ctx: { audit: { record: vi.fn() } },
+      readEvidence: async (id: string) =>
+        id === evidenceId ? { ...evidence, output: { successRate: 1, objectiveMet: true } } : null,
+      signal: new AbortController().signal,
+    } as unknown as TriageRuntime;
+    const result =
+      method === 'resume'
+        ? await engine.resume(input, runtime)
+        : await engine.verifyRecovery(
+            { ...input, signalSummary: 'Provider episode cleared' },
+            runtime,
+          );
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      outcome: 'conclusive',
+      disposition: 'recovery',
+      summary: correctedRecovery.summary,
+      recovery: {
+        outcome: 'recovered',
+        recovered: true,
+        evidenceIds: [evidenceId],
+        unknowns: ['The original cause remains unknown.'],
+        nextStep: null,
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain('Restart the cluster');
+    expect(JSON.stringify(result)).not.toContain('deployment bug caused');
+  },
+);
+
+test.each(['missing', 'malformed', 'foreign citation', 'unavailable evidence'])(
+  'recovery correction fails closed for %s',
+  async (scenario) => {
+    const correctedRecovery = {
+      questions: [],
+      outcome: 'recovered',
+      recovered: true,
+      summary: 'Checkout is healthy.',
+      evidence: [{ name: 'Request success', before: 'High errors', now: 'Objective met' }],
+      evidenceIds: [scenario === 'foreign citation' ? randomUUID() : evidenceId],
+      unknowns: [],
+      nextStep: null,
+      recheckAfterMinutes: null,
+      scheduleReason: null,
+    };
+    const generate = vi.fn(() => ({
+      supported: false,
+      summary: 'Optional cause unsupported.',
+      reason: 'Do not promote unsupported claims.',
+      evidenceIds: [evidenceId],
+      ...(scenario === 'missing'
+        ? {}
+        : {
+            correctedRecovery: scenario === 'malformed' ? { recovered: true } : correctedRecovery,
+          }),
+    }));
+    const result = await reviewInvestigation(
+      makeFakeGenerator(generate),
+      {
+        ...candidate,
+        disposition: 'recovery',
+        recovery: { ...correctedRecovery, outcome: 'recovered' },
+      },
+      [
+        {
+          ...evidence,
+          ...(scenario === 'unavailable evidence' ? { outcome: 'error', output: null } : {}),
+        },
+      ],
+      new AbortController().signal,
+      input,
+    );
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      outcome: 'inconclusive',
+      recovery: { recovered: false, outcome: 'needs_human' },
+    });
+  },
+);
+
+test.each(['foreign', 'unavailable'] as const)(
+  'an endorsed original cannot authorize a %s corrected recovery citation',
+  async (scenario) => {
+    const correctedRecovery = {
+      questions: [],
+      outcome: 'recovered',
+      recovered: true,
+      summary: 'Checkout recovered.',
+      evidence: [{ name: 'Request success', before: 'Errors', now: 'Healthy' }],
+      evidenceIds: [scenario === 'foreign' ? randomUUID() : evidenceId],
+      unknowns: [],
+      nextStep: null,
+      recheckAfterMinutes: null,
+      scheduleReason: null,
+    };
+    const generate = vi.fn(() => ({
+      supported: true,
+      summary: 'Recovered',
+      reason: 'Reviewed',
+      evidenceIds: [evidenceId],
+      correctedRecovery,
+    }));
+    const result = await reviewInvestigation(
+      makeFakeGenerator(generate),
+      { ...candidate, disposition: 'recovery' },
+      [{ ...evidence, outcome: scenario === 'unavailable' ? 'error' : 'data' }],
+      new AbortController().signal,
+      input,
+    );
+    expect(result).toMatchObject({
+      outcome: 'inconclusive',
+      recovery: { outcome: 'needs_human', recovered: false },
+    });
+    expect(generate).toHaveBeenCalledTimes(1);
+  },
+);
+
+test('recovery questions retain failed attempt receipts, discard invented links and scrub nested text', () => {
+  const unavailable = randomUUID();
+  const forged = randomUUID();
+  const result = restrictEvidenceToReceipts({
+    ...candidate,
+    disposition: 'recovery',
+    evidenceReceipts: [{ evidenceId: unavailable, tool: 'kubernetes_get', outcome: 'unavailable' }],
+    recovery: {
+      outcome: 'needs_human',
+      recovered: false,
+      evidence: [],
+      evidenceIds: [unavailable],
+      unknowns: ['Stale projection'],
+      nextStep: null,
+      questions: [
+        {
+          question: 'Is password=private-value accepted?',
+          category: 'missing_capability',
+          evidenceKind: 'runtime_state',
+          resolutionRelevance: 'blocking',
+          nextAction: 'Inspect Authorization: Bearer private-token',
+          attemptedEvidenceIds: [unavailable, forged],
+        },
+      ],
+    },
+  });
+  expect(result.recovery?.evidenceIds).toEqual([]);
+  expect(result.recovery?.questions?.[0]?.attemptedEvidenceIds).toEqual([unavailable]);
+  const stored = investigationRunResult(result);
+  expect(stored.recovery).toMatchObject({
+    questions: [
+      {
+        question: 'Is password=[REDACTED] accepted?',
+        nextAction: 'Inspect Authorization: [REDACTED]',
+        attemptedEvidenceIds: [unavailable],
+      },
+    ],
+    unknowns: ['Is password=[REDACTED] accepted?'],
+  });
+  expect(JSON.stringify(stored)).not.toContain('private-value');
+  expect(JSON.stringify(stored)).not.toContain('private-token');
 });

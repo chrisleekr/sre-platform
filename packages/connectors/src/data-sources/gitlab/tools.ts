@@ -1,7 +1,7 @@
 import * as z from 'zod';
 import type { ConnectorConfig } from '../../registry';
 import type { HostLookup } from '../../ssrf';
-import type { ConnectorTool } from '../../types';
+import type { ConnectorTool, ToolRunOptions } from '../../types';
 import { str } from '../../values';
 import { connectorToken } from './auth';
 import {
@@ -19,7 +19,7 @@ function gtool<S extends z.ZodType>(def: {
   name: string;
   description: string;
   inputSchema: S;
-  run: (input: z.infer<S>) => Promise<unknown>;
+  run: (input: z.infer<S>, options?: ToolRunOptions) => Promise<unknown>;
 }): ConnectorTool {
   return def as ConnectorTool;
 }
@@ -54,15 +54,19 @@ export function makeGitLabTools(
   lookup: HostLookup,
 ): ConnectorTool[] {
   const settings = config.settings;
-  const getUrl = async (url: string): Promise<unknown> => {
+  const getUrl = async (url: string, signal?: AbortSignal): Promise<unknown> => {
     const token = await connectorToken(config);
-    const { json, text, truncated = false } = await apiFetch(fetchImpl, url, token);
+    const { json, text, truncated = false } = await apiFetch(fetchImpl, url, token, signal);
     if (json !== undefined) return sanitizeGitLab(new URL(url).pathname, json);
     return { truncated, body: text };
   };
-  const get = async (path: string, query?: Record<string, string | number>): Promise<unknown> => {
+  const get = async (
+    path: string,
+    query?: Record<string, string | number>,
+    signal?: AbortSignal,
+  ): Promise<unknown> => {
     const base = await apiBase(settings, lookup);
-    return getUrl(buildApiUrl(base, path, query));
+    return getUrl(buildApiUrl(base, path, query), signal);
   };
 
   if (config.settings.groupId != null || str(config.settings.groupPath)) {
@@ -83,6 +87,7 @@ export function makeGitLabTools(
       requested: string,
       suffix: string,
       query?: Record<string, string | number>,
+      signal?: AbortSignal,
     ): Promise<unknown> => {
       const fullPath = await catalogProject(requested);
       const normalized = suffix.replace(/^[\\/]+/, '');
@@ -107,7 +112,7 @@ export function makeGitLabTools(
       );
       if (!new URL(url).pathname.startsWith(projectPrefix))
         throw new Error('gitlab connector: project API path escaped its catalog project');
-      return getUrl(url);
+      return getUrl(url, signal);
     };
 
     return [
@@ -161,7 +166,8 @@ export function makeGitLabTools(
           path: z.string(),
           query: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
         }),
-        run: ({ project: requested, path, query }) => projectGet(requested, path, query),
+        run: ({ project: requested, path, query }, call) =>
+          projectGet(requested, path, query, call?.signal),
       }),
       gtool({
         name: 'list_commits',
@@ -174,27 +180,33 @@ export function makeGitLabTools(
           until: z.string().optional(),
           per_page: z.number().optional(),
         }),
-        run: ({ project, ref_name, path, since, until, per_page }) =>
+        run: ({ project, ref_name, path, since, until, per_page }, call) =>
           projectGet(
             project,
             'repository/commits',
             q({ ref_name, path, since, until, per_page: per_page ?? DEFAULT_PER_PAGE }),
+            call?.signal,
           ),
       }),
       gtool({
         name: 'get_commit',
         description: 'Get one commit with its parent revisions, changed files, and diff metadata.',
         inputSchema: z.object({ project: projectSchema, ref: z.string() }),
-        run: ({ project, ref }) =>
-          projectGet(project, `repository/commits/${encodeURIComponent(ref)}`, { stats: 'true' }),
+        run: ({ project, ref }, call) =>
+          projectGet(
+            project,
+            `repository/commits/${encodeURIComponent(ref)}`,
+            { stats: 'true' },
+            call?.signal,
+          ),
       }),
       gtool({
         name: 'compare_commits',
         description:
           'Compare two revisions in one synchronized project to find commits and files changed between them.',
         inputSchema: z.object({ project: projectSchema, from: z.string(), to: z.string() }),
-        run: ({ project, from, to }) =>
-          projectGet(project, 'repository/compare', { from, to, straight: 'true' }),
+        run: ({ project, from, to }, call) =>
+          projectGet(project, 'repository/compare', { from, to, straight: 'true' }, call?.signal),
       }),
       gtool({
         name: 'search_code',
@@ -205,12 +217,17 @@ export function makeGitLabTools(
           query: z.string(),
           per_page: z.number().optional(),
         }),
-        run: ({ project, query, per_page }) =>
-          projectGet(project, 'search', {
-            scope: 'blobs',
-            search: query,
-            per_page: Math.min(Math.max(1, Math.floor(per_page ?? 20)), 50),
-          }),
+        run: ({ project, query, per_page }, call) =>
+          projectGet(
+            project,
+            'search',
+            {
+              scope: 'blobs',
+              search: query,
+              per_page: Math.min(Math.max(1, Math.floor(per_page ?? 20)), 50),
+            },
+            call?.signal,
+          ),
       }),
       gtool({
         name: 'get_file',
@@ -221,12 +238,17 @@ export function makeGitLabTools(
           path: z.string(),
           ref: z.string().optional(),
         }),
-        run: ({ project, path, ref }) => {
+        run: ({ project, path, ref }, call) => {
           if (!path || path.startsWith('/') || path.split('/').includes('..'))
             throw new Error('gitlab connector: invalid repository path');
-          return projectGet(project, `repository/files/${encodeURIComponent(path)}`, {
-            ref: ref ?? 'HEAD',
-          });
+          return projectGet(
+            project,
+            `repository/files/${encodeURIComponent(path)}`,
+            {
+              ref: ref ?? 'HEAD',
+            },
+            call?.signal,
+          );
         },
       }),
       gtool({
@@ -238,7 +260,7 @@ export function makeGitLabTools(
           target_branch: z.string().optional(),
           per_page: z.number().optional(),
         }),
-        run: ({ project, state, target_branch, per_page }) =>
+        run: ({ project, state, target_branch, per_page }, call) =>
           projectGet(
             project,
             'merge_requests',
@@ -249,6 +271,7 @@ export function makeGitLabTools(
               sort: 'desc',
               per_page: per_page ?? DEFAULT_PER_PAGE,
             }),
+            call?.signal,
           ),
       }),
       gtool({
@@ -261,7 +284,7 @@ export function makeGitLabTools(
           sha: z.string().optional(),
           per_page: z.number().optional(),
         }),
-        run: ({ project, ref, status, sha, per_page }) =>
+        run: ({ project, ref, status, sha, per_page }, call) =>
           projectGet(
             project,
             'pipelines',
@@ -273,6 +296,7 @@ export function makeGitLabTools(
               sort: 'desc',
               per_page: per_page ?? DEFAULT_PER_PAGE,
             }),
+            call?.signal,
           ),
       }),
       gtool({
@@ -283,17 +307,23 @@ export function makeGitLabTools(
           pipeline_id: z.number(),
           per_page: z.number().optional(),
         }),
-        run: ({ project, pipeline_id, per_page }) =>
-          projectGet(project, `pipelines/${pipeline_id}/jobs`, {
-            per_page: per_page ?? 100,
-          }),
+        run: ({ project, pipeline_id, per_page }, call) =>
+          projectGet(
+            project,
+            `pipelines/${pipeline_id}/jobs`,
+            {
+              per_page: per_page ?? 100,
+            },
+            call?.signal,
+          ),
       }),
       gtool({
         name: 'get_job_trace',
         description:
           'Fetch the bounded tail of a CI job trace. Logs may contain secrets GitLab did not mask.',
         inputSchema: z.object({ project: projectSchema, job_id: z.number() }),
-        run: ({ project, job_id }) => projectGet(project, `jobs/${job_id}/trace`),
+        run: ({ project, job_id }, call) =>
+          projectGet(project, `jobs/${job_id}/trace`, undefined, call?.signal),
       }),
       gtool({
         name: 'list_deployments',
@@ -304,7 +334,7 @@ export function makeGitLabTools(
           environment: z.string().optional(),
           per_page: z.number().optional(),
         }),
-        run: ({ project, status, environment, per_page }) =>
+        run: ({ project, status, environment, per_page }, call) =>
           projectGet(
             project,
             'deployments',
@@ -315,6 +345,7 @@ export function makeGitLabTools(
               sort: 'desc',
               per_page: per_page ?? DEFAULT_PER_PAGE,
             }),
+            call?.signal,
           ),
       }),
     ];
@@ -331,7 +362,7 @@ export function makeGitLabTools(
         path: z.string(),
         query: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
       }),
-      run: ({ path, query }) => get(path, query),
+      run: ({ path, query }, call) => get(path, query, call?.signal),
     }),
     gtool({
       name: 'list_pipelines',
@@ -344,7 +375,7 @@ export function makeGitLabTools(
         sha: z.string().optional(),
         per_page: z.number().optional(),
       }),
-      run: ({ project, ref, status, sha, per_page }) =>
+      run: ({ project, ref, status, sha, per_page }, call) =>
         get(
           `projects/${encodeProject(project, settings)}/pipelines`,
           q({
@@ -355,6 +386,7 @@ export function makeGitLabTools(
             sort: 'desc',
             per_page: per_page ?? DEFAULT_PER_PAGE,
           }),
+          call?.signal,
         ),
     }),
     gtool({
@@ -365,10 +397,11 @@ export function makeGitLabTools(
         pipeline_id: z.number(),
         per_page: z.number().optional(),
       }),
-      run: ({ project, pipeline_id, per_page }) =>
+      run: ({ project, pipeline_id, per_page }, call) =>
         get(
           `projects/${encodeProject(project, settings)}/pipelines/${pipeline_id}/jobs`,
           q({ per_page: per_page ?? 100 }),
+          call?.signal,
         ),
     }),
     gtool({
@@ -380,8 +413,12 @@ export function makeGitLabTools(
         project: z.union([z.string(), z.number()]).optional(),
         job_id: z.number(),
       }),
-      run: ({ project, job_id }) =>
-        get(`projects/${encodeProject(project, settings)}/jobs/${job_id}/trace`),
+      run: ({ project, job_id }, call) =>
+        get(
+          `projects/${encodeProject(project, settings)}/jobs/${job_id}/trace`,
+          undefined,
+          call?.signal,
+        ),
     }),
     gtool({
       name: 'list_commits',
@@ -394,10 +431,11 @@ export function makeGitLabTools(
         until: z.string().optional(),
         per_page: z.number().optional(),
       }),
-      run: ({ project, ref_name, since, until, per_page }) =>
+      run: ({ project, ref_name, since, until, per_page }, call) =>
         get(
           `projects/${encodeProject(project, settings)}/repository/commits`,
           q({ ref_name, since, until, per_page: per_page ?? DEFAULT_PER_PAGE }),
+          call?.signal,
         ),
     }),
     gtool({
@@ -410,7 +448,7 @@ export function makeGitLabTools(
         target_branch: z.string().optional(),
         per_page: z.number().optional(),
       }),
-      run: ({ project, state, target_branch, per_page }) =>
+      run: ({ project, state, target_branch, per_page }, call) =>
         get(
           `projects/${encodeProject(project, settings)}/merge_requests`,
           q({
@@ -420,6 +458,7 @@ export function makeGitLabTools(
             sort: 'desc',
             per_page: per_page ?? DEFAULT_PER_PAGE,
           }),
+          call?.signal,
         ),
     }),
     gtool({
@@ -432,10 +471,11 @@ export function makeGitLabTools(
         labels: z.string().optional(),
         per_page: z.number().optional(),
       }),
-      run: ({ project, state, labels, per_page }) =>
+      run: ({ project, state, labels, per_page }, call) =>
         get(
           `projects/${encodeProject(project, settings)}/issues`,
           q({ state, labels, per_page: per_page ?? DEFAULT_PER_PAGE }),
+          call?.signal,
         ),
     }),
   ];

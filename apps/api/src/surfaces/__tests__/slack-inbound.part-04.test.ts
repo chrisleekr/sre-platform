@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
 import { randomUUID } from 'node:crypto';
 
@@ -21,7 +21,57 @@ import { createFixture } from './slack-inbound.fixture';
 const __fixture = createFixture();
 
 describe('Slack inbound processors', () => {
-  test('a control edit resolves a signal admitted before the provider semantics were recognized', async () => {
+  test('text-only control reclassification cannot retire an existing provider signal', async () => {
+    const rootTs = '1788001300.000100';
+    const incident = await createIncident(__fixture.app.db, __fixture.tenantB, {
+      fingerprint: `unverified-control-${randomUUID()}`,
+      alertSource: 'slack',
+      service: 'monitoring',
+      severity: 'sev3',
+    });
+    const original = await applySignalObservation(__fixture.app.db, __fixture.tenantB, {
+      incidentId: incident.id,
+      surface: 'slack',
+      channel: __fixture.CLS_SUB,
+      externalMessageId: rootTs,
+      state: 'firing',
+      summary: 'Durable provider alert',
+      contentHash: 'unverified-control-original',
+      eventKey: `slack:${__fixture.CLS_SUB}:${rootTs}:initial`,
+      eventAt: new Date('2026-08-29T00:00:00.000Z'),
+    });
+    await __fixture.processClassifyEvent(
+      __fixture.rootEvent({
+        channel: __fixture.CLS_SUB,
+        subtype: 'message_changed',
+        event_ts: '1788001310.000100',
+        message: {
+          type: 'message',
+          subtype: 'bot_message',
+          bot_id: 'B_ALERT',
+          text: '*Alert:* InfoInhibitor',
+          ts: rootTs,
+          edited: { ts: '1788001310.000100' },
+          attachments: [
+            {
+              fields: [
+                { title: 'Severity', value: 'none' },
+                { title: 'Receiver', value: 'null' },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    const [signal] = await __fixture.admin.db
+      .select()
+      .from(incidentSignals)
+      .where(eq(incidentSignals.id, original.signal.id));
+    expect(signal).toMatchObject({ state: 'firing', version: 1, clearProvenance: null });
+    expect(__fixture.enqueued).toHaveLength(0);
+  });
+
+  test('control admission filtering preserves a previously admitted signal', async () => {
     const rootTs = '1788001000.000100';
     const incident = await createIncident(__fixture.app.db, __fixture.tenantB, {
       fingerprint: `control-edit-${randomUUID()}`,
@@ -73,17 +123,11 @@ describe('Slack inbound processors', () => {
         .select()
         .from(incidentSignals)
         .where(eq(incidentSignals.incidentId, incident.id)),
-    ).toEqual([expect.objectContaining({ state: 'resolved', version: 2 })]);
-    expect(__fixture.enqueued).toEqual([
-      expect.objectContaining({
-        tenantId: __fixture.tenantB,
-        type: 'recovery.verify',
-        payload: expect.objectContaining({ incidentId: incident.id }),
-      }),
-    ]);
+    ).toEqual([expect.objectContaining({ state: 'firing', version: 1 })]);
+    expect(__fixture.enqueued).toHaveLength(0);
   });
 
-  test('a control edit reassesses the incident when another distinct signal remains firing', async () => {
+  test('control admission filtering preserves every existing group member', async () => {
     const rootTs = '1788001100.000100';
     const incident = await createIncident(__fixture.app.db, __fixture.tenantB, {
       fingerprint: `control-edit-partial-${randomUUID()}`,
@@ -145,27 +189,18 @@ describe('Slack inbound processors', () => {
       .from(incidentSignals)
       .where(eq(incidentSignals.incidentId, incident.id));
     expect(rows.find((row) => row.id === target.signal.id)).toMatchObject({
-      state: 'resolved',
-      version: 2,
+      state: 'firing',
+      clearProvenance: null,
+      version: 1,
     });
     expect(rows.find((row) => row.id === distinct.signal.id)).toMatchObject({
       state: 'firing',
       version: 1,
     });
-    expect(__fixture.enqueued).toEqual([
-      expect.objectContaining({
-        tenantId: __fixture.tenantB,
-        type: 'signal.reassess',
-        payload: expect.objectContaining({
-          incidentId: incident.id,
-          signalId: target.signal.id,
-          signalVersion: 2,
-        }),
-      }),
-    ]);
+    expect(__fixture.enqueued).toHaveLength(0);
   });
 
-  test('a control edit follows a signal moved while suppression waits for its incident lock', async () => {
+  test('control admission filtering does not acquire or mutate a moving signal', async () => {
     const rootTs = '1788001200.000100';
     const source = await createIncident(__fixture.app.db, __fixture.tenantB, {
       fingerprint: `control-move-source-${randomUUID()}`,
@@ -196,7 +231,6 @@ describe('Slack inbound processors', () => {
       releaseMove = resolve;
     });
     let markMoved!: () => void;
-    let blockerPid: number | null = null;
     const moved = new Promise<void>((resolve) => {
       markMoved = resolve;
     });
@@ -206,12 +240,6 @@ describe('Slack inbound processors', () => {
         .update(incidentSignals)
         .set({ incidentId: target.id })
         .where(eq(incidentSignals.id, observed.signal.id));
-      const [backend] = await tx
-        .select({ pid: sql<number>`pg_backend_pid()` })
-        .from(incidents)
-        .where(eq(incidents.id, source.id))
-        .limit(1);
-      blockerPid = backend!.pid;
       markMoved();
       await moveGate;
     });
@@ -246,21 +274,11 @@ describe('Slack inbound processors', () => {
         suppressionSettled = true;
       });
     try {
-      await vi.waitFor(
-        async () => {
-          const [row] = await __fixture.admin.sql<Array<{ waiting: number }>>`
-            SELECT count(*)::int AS waiting
-            FROM pg_stat_activity
-            WHERE ${blockerPid} = ANY(pg_blocking_pids(pid))
-          `;
-          expect(row?.waiting).toBeGreaterThan(0);
-        },
-        { timeout: 5_000 },
-      );
+      await expect(suppression).resolves.toBe('suppressed_provider_control_notification');
+      expect(suppressionSettled).toBe(true);
     } finally {
       releaseMove();
     }
-    expect(suppressionSettled).toBe(false);
     await move;
     await expect(suppression).resolves.toBe('suppressed_provider_control_notification');
 
@@ -269,14 +287,8 @@ describe('Slack inbound processors', () => {
         .select({ incidentId: incidentSignals.incidentId, state: incidentSignals.state })
         .from(incidentSignals)
         .where(eq(incidentSignals.id, observed.signal.id)),
-    ).resolves.toEqual([{ incidentId: target.id, state: 'resolved' }]);
-    expect(__fixture.enqueued).toEqual([
-      expect.objectContaining({
-        tenantId: __fixture.tenantB,
-        type: 'recovery.verify',
-        payload: expect.objectContaining({ incidentId: target.id }),
-      }),
-    ]);
+    ).resolves.toEqual([{ incidentId: target.id, state: 'firing' }]);
+    expect(__fixture.enqueued).toHaveLength(0);
   });
 
   test('a grouped resolved edit is classified from durable members after the reservation expires', async () => {

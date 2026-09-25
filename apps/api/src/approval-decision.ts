@@ -1,4 +1,11 @@
-import { getApprovalById, decideApprovalTx, withTenant, type Db, type Tx } from '@sre/db';
+import {
+  getApprovalById,
+  decideApprovalTx,
+  lockResponseGroupWorkTx,
+  withTenant,
+  type Db,
+  type Tx,
+} from '@sre/db';
 import type { ConversationHub } from '@sre/hub';
 
 // the single first-decision-wins decide path, shared by the dashboard route
@@ -23,6 +30,19 @@ export interface ResumeProducer {
     humanMessageId: string,
   ): Promise<{ jobId: string | null }>;
   publishResume(jobId: string): Promise<void>;
+  /**
+   * Durable recovery hand-off for a decision that cannot evaluate provider clearance in its own
+   * transaction. Without it that contention fails the decision instead.
+   */
+  insertRecoveryTx?(
+    tx: Tx,
+    tenantId: string,
+    incidentId: string,
+    lifecycleVersion: number,
+    signalFence: string,
+  ): Promise<{ jobId: string | null }>;
+  /** Post-commit dispatch for a job `insertRecoveryTx` created. */
+  publishJob?(jobId: string): Promise<void>;
 }
 
 export interface ApplyApprovalDecisionDeps {
@@ -130,6 +150,9 @@ export async function applyApprovalDecision(
       decidedBy,
     );
     if (!won) return null;
+    // Group work locks before the incident row lock, matching signal writers; the human append
+    // below takes the row lock.
+    await lockResponseGroupWorkTx(tx, tenantId, approval.incidentId);
     const posted = await hub.appendTx(tx, tenantId, approval.incidentId, {
       author: 'human',
       kind: 'reply',
@@ -143,17 +166,32 @@ export async function applyApprovalDecision(
       // match — deterministic when two pending approvals share an option label. Content stays unchanged.
       approvalId: approval.id,
     });
+    let recoveryJobId = null as string | null;
+    const insertRecoveryTx = queue.insertRecoveryTx?.bind(queue);
     const lifecycleMessages = await hub.completeVerifiedRecoveryAfterApprovalTx(
       tx,
       tenantId,
       approval.incidentId,
       approval.id,
+      insertRecoveryTx &&
+        (async (recoveryTx, candidate) => {
+          recoveryJobId = (
+            await insertRecoveryTx(
+              recoveryTx,
+              tenantId,
+              candidate.rootIncidentId,
+              candidate.lifecycleVersion,
+              candidate.signalFence,
+            )
+          ).jobId;
+          return recoveryJobId;
+        }),
     );
     const { jobId } = await queue.insertResumeTx(tx, tenantId, approval.incidentId, posted.id);
-    return { appended: posted, lifecycleMessages, resumeJobId: jobId };
+    return { appended: posted, lifecycleMessages, resumeJobId: jobId, recoveryJobId };
   });
   if (!result) return { status: 'already_decided' };
-  const { appended, lifecycleMessages, resumeJobId } = result;
+  const { appended, lifecycleMessages, resumeJobId, recoveryJobId } = result;
   // Post-commit fan-out + dispatch (Redis is not transactional): the reply + job are already durable, so
   // a failure here is best-effort — history replay + the reconciler recover it, never fail the decision.
   await hub.publishAppended(appended).catch((err) => onError?.(err, approval.incidentId));
@@ -163,5 +201,7 @@ export async function applyApprovalDecision(
       .catch((err) => onError?.(err, lifecycleMessage.incidentId));
   if (resumeJobId)
     await queue.publishResume(resumeJobId).catch((err) => onError?.(err, approval.incidentId));
+  if (recoveryJobId)
+    await queue.publishJob?.(recoveryJobId).catch((err) => onError?.(err, approval.incidentId));
   return { status: 'decided', label: option.label };
 }

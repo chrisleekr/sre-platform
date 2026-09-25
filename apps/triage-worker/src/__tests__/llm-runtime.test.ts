@@ -302,7 +302,7 @@ describe('LLM runtime manager', () => {
       manager.execute({ tenantId, jobId, operation: 'characterize' }, ({ generator }) =>
         generator.generate('Return ok', z.object({ ok: z.boolean() })),
       ),
-    ).rejects.toThrow('openai request failed');
+    ).rejects.toThrow('AI provider rejected the configured request (status 400)');
 
     const rows = await withTenant(app.db, tenantId, (tx) =>
       tx.select().from(llmInvocations).where(eq(llmInvocations.jobId, jobId)),
@@ -313,7 +313,7 @@ describe('LLM runtime manager', () => {
       requestCount: 0,
       usageReported: false,
       configuredCostUsd: null,
-      errorCategory: 'Error',
+      errorCategory: 'ProviderConfigurationError',
     });
   });
 

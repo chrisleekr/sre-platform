@@ -11,6 +11,8 @@ export async function eventHealth(
   attemptedAt: Date,
   failureCategory?: string,
   deferred = false,
+  // An acknowledged notice proves delivery works but resolves nothing a prior failure reported.
+  acknowledgedOnly = false,
 ): Promise<void> {
   await withTenant(deps.appDb, tenantId, (tx) =>
     tx
@@ -24,7 +26,7 @@ export async function eventHealth(
             : {
                 eventSucceededAt: attemptedAt,
                 eventCount: sql`${connectorConfigs.eventCount} + 1`,
-                eventFailureCategory: null,
+                ...(acknowledgedOnly ? {} : { eventFailureCategory: null }),
               }),
         updatedAt: sql`now()`,
       })

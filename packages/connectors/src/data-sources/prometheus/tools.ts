@@ -1,7 +1,7 @@
 import * as z from 'zod';
 import type { ConnectorConfig } from '../../registry';
 import type { HostLookup } from '../../ssrf';
-import type { ConnectorTool } from '../../types';
+import type { ConnectorTool, ToolRunOptions } from '../../types';
 import {
   DEFAULT_RANGE_FROM,
   DEFAULT_TO,
@@ -20,7 +20,7 @@ function ptool<S extends z.ZodType>(def: {
   name: string;
   description: string;
   inputSchema: S;
-  run: (input: z.infer<S>) => Promise<unknown>;
+  run: (input: z.infer<S>, options?: ToolRunOptions) => Promise<unknown>;
 }): ConnectorTool {
   return def as ConnectorTool;
 }
@@ -43,7 +43,10 @@ export function makePrometheusTools(
   lookup: HostLookup,
   options: PrometheusConnectorOptions,
 ): ConnectorTool[] {
-  const client = () => connect(config, lookup, options);
+  const client = async (call?: ToolRunOptions) => ({
+    ...(await connect(config, lookup, options)),
+    signal: call?.signal,
+  });
 
   return [
     ptool({
@@ -53,8 +56,8 @@ export function makePrometheusTools(
         'PromQL (e.g. "up", "rate(http_requests_total[5m])"). Optional time (ISO 8601 or relative ' +
         'like now-5m; defaults to now). Anchor time to the incident onset, not the current time.',
       inputSchema: z.object({ query: z.string(), time: z.string().optional() }),
-      run: async ({ query, time }) => {
-        const c = await client();
+      run: async ({ query, time }, call) => {
+        const c = await client(call);
         const form: Record<string, string> = { query };
         const t = optSeconds(time, Date.now());
         if (t !== undefined) form.time = t;
@@ -73,8 +76,8 @@ export function makePrometheusTools(
         end: z.string().optional(),
         step: z.union([z.string(), z.number()]).optional(),
       }),
-      run: async ({ query, start, end, step }) => {
-        const c = await client();
+      run: async ({ query, start, end, step }, call) => {
+        const c = await client(call);
         const nowMs = Date.now();
         const startS = resolveSeconds(start ?? DEFAULT_RANGE_FROM, nowMs);
         const endS = resolveSeconds(end ?? DEFAULT_TO, nowMs);
@@ -103,8 +106,8 @@ export function makePrometheusTools(
         start: z.string().optional(),
         end: z.string().optional(),
       }),
-      run: async ({ match, start, end }) => {
-        const c = await client();
+      run: async ({ match, start, end }, call) => {
+        const c = await client(call);
         const nowMs = Date.now();
         return pget(fetchImpl, c, '/api/v1/series', {
           'match[]': match,
@@ -123,8 +126,8 @@ export function makePrometheusTools(
         start: z.string().optional(),
         end: z.string().optional(),
       }),
-      run: async ({ match, start, end }) => {
-        const c = await client();
+      run: async ({ match, start, end }, call) => {
+        const c = await client(call);
         const nowMs = Date.now();
         return pget(fetchImpl, c, '/api/v1/labels', {
           'match[]': match,
@@ -139,8 +142,8 @@ export function makePrometheusTools(
         'List the values of one label name (e.g. name="job" → all job values). Optionally constrained ' +
         'by match selectors.',
       inputSchema: z.object({ name: z.string().min(1), match: z.array(z.string()).optional() }),
-      run: async ({ name, match }) => {
-        const c = await client();
+      run: async ({ name, match }, call) => {
+        const c = await client(call);
         // name is a model-controlled path segment: encode it so a crafted value cannot traverse.
         return pget(fetchImpl, c, `/api/v1/label/${encodeURIComponent(name)}/values`, {
           'match[]': match,
@@ -153,8 +156,8 @@ export function makePrometheusTools(
         'Read metric metadata (type, help text, unit). Optional metric to filter to one name; optional ' +
         'limit. Use to understand what a metric measures.',
       inputSchema: z.object({ metric: z.string().optional(), limit: z.number().optional() }),
-      run: async ({ metric, limit }) => {
-        const c = await client();
+      run: async ({ metric, limit }, call) => {
+        const c = await client(call);
         return pget(fetchImpl, c, '/api/v1/metadata', { metric, limit });
       },
     }),
@@ -164,8 +167,8 @@ export function makePrometheusTools(
         'List scrape targets and their health (up/down, last scrape, errors) — the "what is not being ' +
         'scraped" signal. Optional state: "active", "dropped", or "any" (default active).',
       inputSchema: z.object({ state: z.enum(['active', 'dropped', 'any']).optional() }),
-      run: async ({ state }) => {
-        const c = await client();
+      run: async ({ state }, call) => {
+        const c = await client(call);
         return pget(fetchImpl, c, '/api/v1/targets', { state });
       },
     }),
@@ -174,8 +177,8 @@ export function makePrometheusTools(
       description:
         'List alerting and recording rules and their current state. Optional type: "alert" or "record".',
       inputSchema: z.object({ type: z.enum(['alert', 'record']).optional() }),
-      run: async ({ type }) => {
-        const c = await client();
+      run: async ({ type }, call) => {
+        const c = await client(call);
         return pget(fetchImpl, c, '/api/v1/rules', { type });
       },
     }),
@@ -184,8 +187,8 @@ export function makePrometheusTools(
       description:
         'List the alerts currently firing (and pending) — the "what is on fire right now" signal.',
       inputSchema: z.object({}),
-      run: async () => {
-        const c = await client();
+      run: async (_input, call) => {
+        const c = await client(call);
         return pget(fetchImpl, c, '/api/v1/alerts');
       },
     }),
@@ -199,8 +202,8 @@ export function makePrometheusTools(
         path: z.string(),
         query: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
       }),
-      run: async ({ path, query }) => {
-        const c = await client();
+      run: async ({ path, query }, call) => {
+        const c = await client(call);
         return pget(fetchImpl, c, path, query);
       },
     }),

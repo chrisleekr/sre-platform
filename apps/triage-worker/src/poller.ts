@@ -26,8 +26,16 @@ export const POLL_INTERVAL_MS = 30_000;
 export const SNAPSHOT_TTL_SEC = 120;
 
 export interface PollHandlerDeps {
+  ingestLifecycle?: (
+    tenantId: string,
+    connector: IDataSourceConnector,
+    wakeup: { monitorId: string; observedAt: string; lifecycleVersion: number },
+  ) => Promise<void>;
+  reconcileLifecycle?: (tenantId: string, connector: IDataSourceConnector) => Promise<unknown>;
   /** Separate administrative control plane, never exposed through the investigation connector. */
   reconcileGitLabHooks?: (tenantId: string, connectorId: string) => Promise<void>;
+  /** Keeps StatusCake contact groups in line with the connection's binding; never throws. */
+  syncStatusCakeSetup?: (tenantId: string, connectorId: string) => Promise<void>;
   connectorProvider: ConnectorProvider;
   cache: SnapshotCache;
   ttlSec: number;
@@ -60,6 +68,9 @@ export interface PollOutcome {
 }
 
 interface PollPayload {
+  monitorId?: string;
+  observedAt?: string;
+  lifecycleVersion?: number;
   connectorId?: string;
   /** Rolling-upgrade compatibility for jobs queued before connector instances had IDs. */
   connectorType?: string;
@@ -88,7 +99,8 @@ function countSnapshotErrors(snapshots: NormalizedSnapshot[]): number {
 export function makePollHandler(deps: PollHandlerDeps): (job: Job) => Promise<void> {
   return async (job: Job): Promise<void> => {
     if (job.type !== 'poll') return;
-    const { connectorId, connectorType: legacyType } = (job.payload ?? {}) as PollPayload;
+    const payload = (job.payload ?? {}) as PollPayload;
+    const { connectorId, connectorType: legacyType } = payload;
     if (!connectorId && !legacyType) return;
 
     const connectors = await deps.connectorProvider(job.tenantId)();
@@ -101,6 +113,18 @@ export function makePollHandler(deps: PollHandlerDeps): (job: Job) => Promise<vo
         ? legacyMatches[0]
         : undefined;
     if (!connector) return; // disabled/removed since enqueue
+    // Only the scheduled poll reconciles the whole connector. A provider wakeup reads its own monitor,
+    // so a flood of authenticated wakeups cannot multiply full-connector provider reads.
+    if (connector.alertLifecycle?.readEpisode && !payload.monitorId)
+      await deps.reconcileLifecycle?.(job.tenantId, connector);
+    if (payload.monitorId && payload.observedAt && typeof payload.lifecycleVersion === 'number')
+      await deps.ingestLifecycle?.(job.tenantId, connector, {
+        monitorId: payload.monitorId,
+        observedAt: payload.observedAt,
+        lifecycleVersion: payload.lifecycleVersion,
+      });
+    if (connector.type === 'statuscake' && !payload.monitorId)
+      await deps.syncStatusCakeSetup?.(job.tenantId, connector.id);
     if (connector.capabilities?.polling === 'none') return;
     const connectorType = connector.type;
     const cacheGeneration = connector.generation;
@@ -255,9 +279,9 @@ export interface PollSchedulerDeps {
 /**
  * Enqueues poll jobs on a cadence, guarded so exactly one replica fans out per window. Mirrors
  * MetricSubscriber.start/stop: idempotent start, error-swallowing tick. Each won window enumerates
- * tenants x enabled connectors and enqueues a poll job for each. No reconcile: poll jobs are periodic
- * and self-healing — a lost dispatch is covered by the next window's enqueue, so only the one-shot
- * triage queue needs a reconcile driver.
+ * tenants x enabled connectors and enqueues a poll job for each. A lost scheduled poll self-heals: the
+ * next window enqueues it again. The poll stream still runs a reconcile driver (see index.ts) because
+ * a one-shot StatusCake wakeup row is the only copy of its notification.
  */
 export class PollScheduler {
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -285,7 +309,7 @@ export class PollScheduler {
         if (
           this.deps.jobType === 'topology.discover'
             ? !connector.topology
-            : connector.capabilities?.polling === 'none'
+            : connector.capabilities?.polling === 'none' && !connector.alertLifecycle?.readEpisode
         )
           continue;
         await this.deps.dispatch.enqueue({

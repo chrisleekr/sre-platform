@@ -3,6 +3,7 @@ import {
   getInvestigationSubject,
   incidents,
   investigationSubjects,
+  lockResponseGroupWorkTx,
   updateInvestigationSubjectTx,
   withTenant,
 } from '@sre/db';
@@ -63,6 +64,8 @@ export class SubjectSyncHandler {
     let staleBeyondInterval = false;
     let divergenceAgeMs = 0;
     await withTenant(deps.appDb, job.tenantId, async (tx) => {
+      // Signal observation and job enqueue below take group work locks; they must precede the rows.
+      await lockResponseGroupWorkTx(tx, job.tenantId, incidentId);
       const [lockedIncident] = await tx
         .select({
           status: incidents.status,

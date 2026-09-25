@@ -3,9 +3,7 @@ import type { IncidentSummary } from '@sre/db';
 import type { Job } from '@sre/queue';
 import {
   resolutionIntentSupported,
-  resolutionSelectionSupported,
   resolveBelongsTo,
-  resolveSignalSelection,
   type CorrelationVerdict,
 } from '../engine/correlation';
 import { publicModelText } from '../public-output';
@@ -16,7 +14,6 @@ import {
   type ClassifyOutcome,
 } from './contracts';
 import { ClassifyCore, providerAlertTitle, serviceForChannel } from './core';
-import type { ObservationHandler } from './observations';
 
 interface VerdictRoutingInput {
   candidate: InboundCandidate;
@@ -37,23 +34,7 @@ export class VerdictRouter {
   constructor(
     private readonly core: ClassifyCore,
     private readonly attachments: ClassifyAttachments,
-    private readonly observations: ObservationHandler,
   ) {}
-
-  /** Confirms a recovery selection against server-owned candidates and message identity. */
-  recoverySupported(
-    verdict: Extract<CorrelationVerdict, { decision: 'resolves_signal' }>,
-    message: string,
-    candidates: AuthorizedResolutionCandidate[],
-    allCandidates: AuthorizedResolutionCandidate[],
-  ): boolean {
-    const target = resolveSignalSelection(verdict.signalIndex, candidates);
-    return Boolean(
-      target &&
-      resolutionIntentSupported(message) &&
-      resolutionSelectionSupported(message, target, allCandidates),
-    );
-  }
 
   /** Applies a server-validated verdict without making another model decision. */
   async apply(input: VerdictRoutingInput): Promise<void> {
@@ -64,30 +45,12 @@ export class VerdictRouter {
       scrubbedText,
       verdict,
       candidates,
-      resolutionCandidates,
-      allResolutionCandidates,
       enqueueWork,
       outcome,
     } = input;
     const tenantId = job.tenantId;
-    if (verdict.decision === 'resolves_signal') {
-      const target = resolveSignalSelection(verdict.signalIndex, resolutionCandidates);
-      if (
-        !target ||
-        !resolutionIntentSupported(scrubbedText) ||
-        !resolutionSelectionSupported(scrubbedText, target, allResolutionCandidates)
-      )
-        throw new Error('unsupported recovery selection reached verdict routing');
-      await this.observations.applyResolvedSignal(
-        scrubbedCandidate,
-        job,
-        target,
-        scrubbedCandidate.observations?.[0],
-      );
-      return;
-    }
-    if (scrubbedCandidate.isEdit) {
-      await this.observations.handleEditedSignal(scrubbedCandidate, job);
+    if (verdict.decision === 'resolves_signal' || scrubbedCandidate.isEdit) {
+      await outcome('resolution_unmatched');
       return;
     }
     if (verdict.decision === 'not_worthy') {
@@ -157,6 +120,7 @@ export class VerdictRouter {
     title: string,
   ): Promise<void> {
     const { candidate, scrubbedCandidate, job, fingerprint, scrubbedText } = input;
+    const signals = this.core.signalsFor(scrubbedCandidate);
     await this.core.openNewIncident(
       job.tenantId,
       fingerprint,
@@ -166,7 +130,9 @@ export class VerdictRouter {
       scrubbedText,
       this.core.openerFor(candidate, scrubbedText),
       this.attachments.foldIntoOwner(job.tenantId, scrubbedCandidate, scrubbedText),
-      { signals: this.core.signalsFor(scrubbedCandidate) },
+      {
+        signals,
+      },
     );
   }
 }

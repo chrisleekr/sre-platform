@@ -4,6 +4,7 @@ import type { ConnectorMetadata } from '../../registry';
 export const confluenceConnectorMetadata = {
   type: 'confluence',
   capabilities: {
+    alertLifecycle: 'none',
     availability: 'incomplete',
     configuration: 'tenant',
     instances: 'multiple',

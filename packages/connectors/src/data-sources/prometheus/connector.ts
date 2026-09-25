@@ -1,3 +1,4 @@
+import { structuredAlertEvents } from '../../alert-lifecycle-events';
 import { createDataSourceConnector, defineConnector, type ConnectorConfig } from '../../registry';
 import { dataSourceEntityCoverage } from '../../entity-coverage';
 import { dnsLookup, type HostLookup } from '../../ssrf';
@@ -22,6 +23,7 @@ import { prometheusTopology } from './topology';
 const PROMETHEUS_CONNECTOR = {
   type: 'prometheus',
   capabilities: {
+    alertLifecycle: 'events',
     topology: 'inventory',
     availability: 'ready',
     configuration: 'tenant',
@@ -48,6 +50,7 @@ export function makePrometheusConnector(
   options: PrometheusConnectorOptions = {},
 ): IDataSourceConnector {
   return createDataSourceConnector(config, PROMETHEUS_CONNECTOR, {
+    alertLifecycle: structuredAlertEvents('alertmanager'),
     topology: prometheusTopology(config, fetchImpl, lookup, options),
     entityCoverage: dataSourceEntityCoverage(
       config.id,

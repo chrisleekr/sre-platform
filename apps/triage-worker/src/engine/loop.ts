@@ -67,7 +67,11 @@ export interface ToolRunResult {
 export interface LoopProvider {
   toolSpecs(tools: ToolDefinition<any, any>[]): unknown;
   userMsg(text: string): unknown;
-  /** `forceTool` maps to the provider's exact named-tool choice on a bounded finalization turn. */
+  /**
+   * `forceTool` names the terminal tool on a bounded finalization turn. OpenAI sends it as the named
+   * tool choice; Claude ignores it because Opus 5.5 rejects forced tool choice, and the loop validates
+   * the terminal call itself.
+   */
   call(
     system: string,
     messages: unknown[],
@@ -175,6 +179,7 @@ function interpretTerminal(args: RunLoopArgs, call: ToolCall): TriageResult {
         evidence: recovery.evidence,
         evidenceIds: recovery.evidenceIds,
         unknowns: recovery.unknowns,
+        ...(recovery.questions !== undefined ? { questions: recovery.questions } : {}),
         nextStep: recovery.nextStep,
         recheckAfterMinutes: recovery.recheckAfterMinutes,
         scheduleReason: recovery.scheduleReason,

@@ -206,6 +206,7 @@ export class ReassessmentHandler {
                 },
                 context: [
                   responder.text,
+                  toolRuntime.platformIdentity,
                   focused
                     ? 'Reassess only the material delta against the trusted prior assessment and durable evidence. Preserve conclusions the new evidence does not contradict.'
                     : triggerReason === 'new_episode'

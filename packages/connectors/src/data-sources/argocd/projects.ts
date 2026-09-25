@@ -153,7 +153,7 @@ function projectTool(
     name,
     description,
     inputSchema,
-    run: async (input: unknown) => {
+    run: async (input: unknown, call) => {
       const rawInput = obj(input);
       const project = str(rawInput.project);
       if (!project || !NAME_RE.test(project))
@@ -164,7 +164,7 @@ function projectTool(
       const tool = child.connector.tools().find((candidate) => candidate.name === name);
       if (!tool) throw new Error(`argocd connector: tool '${name}' is unavailable`);
       const { project: _project, ...childInput } = rawInput;
-      return tool.run(childInput);
+      return tool.run(childInput, call);
     },
   });
 }
@@ -184,7 +184,7 @@ export function makeMultiProjectTools(
       name: 'list_applications',
       description: 'List scoped ArgoCD applications across every connected project.',
       inputSchema: z.object({ project: z.string().optional() }),
-      run: async ({ project }) => {
+      run: async ({ project }, call) => {
         const children = await loadProjectConnectors(config, fetchImpl, lookup);
         const selected = project
           ? children.filter((candidate) => candidate.project === project)
@@ -196,7 +196,7 @@ export function makeMultiProjectTools(
             const tool = child.connector
               .tools()
               .find((candidate) => candidate.name === 'list_applications')!;
-            return tool.run({}) as Promise<{ applications?: unknown[] }>;
+            return tool.run({}, call) as Promise<{ applications?: unknown[] }>;
           }),
         );
         return { applications: results.flatMap((result) => result.applications ?? []) };

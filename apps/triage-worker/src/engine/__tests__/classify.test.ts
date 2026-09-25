@@ -12,7 +12,11 @@ import {
 } from '../classify';
 import type { AnthropicLike } from '../claude';
 import type { OpenAILike } from '../openai';
-import { ProviderRateLimitError, ProviderUnavailableError } from '../types';
+import {
+  ProviderConfigurationError,
+  ProviderRateLimitError,
+  ProviderUnavailableError,
+} from '../types';
 import type { LlmConfig } from '../../config';
 import type { InboundCandidate } from '@sre/connectors';
 import type { IncidentSummary } from '@sre/db';
@@ -145,7 +149,7 @@ function toolUse(input: unknown) {
   return { content: [{ type: 'tool_use', name: CLASSIFY_TOOL_NAME, input }] };
 }
 
-describe('makeClaudeClassifier (forced-tool structured output)', () => {
+describe('makeClaudeClassifier (strict-tool structured output)', () => {
   const config = { apiKey: 'sk-x', model: 'claude-opus-4-8' };
 
   test('a valid tool_use verdict resolves to the CorrelationVerdict', async () => {
@@ -159,6 +163,42 @@ describe('makeClaudeClassifier (forced-tool structured output)', () => {
     await expect(makeClaudeClassifier(config, sdk).classify(candidate, [])).resolves.toEqual(
       verdict,
     );
+  });
+
+  test('sends one strict tool under auto choice and names it in the system prompt', async () => {
+    const create = vi.fn(async (_req: unknown) => toolUse({ decision: 'not_worthy' }));
+    await makeClaudeClassifier(config, claudeSdk(create)).classify(candidate, []);
+    const req = create.mock.calls[0]![0] as {
+      tools: Array<{ name: string; strict?: boolean; input_schema: unknown }>;
+      tool_choice: unknown;
+      system: string;
+    };
+    // Opus 5.5 returns 400 for tool_choice tool/any, so the call is steered by prompt and schema.
+    expect(req.tool_choice).toEqual({ type: 'auto' });
+    expect(req.tools).toHaveLength(1);
+    expect(req.tools[0]).toMatchObject({ name: CLASSIFY_TOOL_NAME, strict: true });
+    expect(JSON.stringify(req.tools[0]!.input_schema)).toContain('"additionalProperties":false');
+    expect(req.system).toContain(`Respond only by calling ${CLASSIFY_TOOL_NAME}.`);
+  });
+
+  test('a prose answer with no tool call throws instead of dropping the message', async () => {
+    const sdk = claudeSdk(vi.fn(async () => ({ content: [{ type: 'text', text: 'not worthy' }] })));
+    await expect(makeClaudeClassifier(config, sdk).classify(candidate, [])).rejects.toThrow(
+      /classify verdict unparseable/,
+    );
+  });
+
+  test('a rejected request configuration is a ProviderConfigurationError', async () => {
+    const sdk = claudeSdk(
+      vi.fn(async () => {
+        throw Anthropic.APIError.generate(400, { detail: 'PROMPT-LEAK' }, 'bad', H());
+      }),
+    );
+    const error = await makeClaudeClassifier(config, sdk)
+      .classify(candidate, [])
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ProviderConfigurationError);
+    expect((error as Error).message).not.toContain('PROMPT-LEAK');
   });
 
   test('an unparseable verdict throws (fails open, not a silent drop)', async () => {
@@ -263,10 +303,10 @@ describe('makeOpenAIClassifier (JSON-only, defensive parse)', () => {
     }
   });
 
-  test('a 400 APIError is sanitized to its status only — no response body leaks (CWE-209)', async () => {
+  test('a 422 APIError is sanitized to its status only — no response body leaks (CWE-209)', async () => {
     const sdk = openaiSdk(
       vi.fn(async () => {
-        throw new OpenAI.APIError(400, { detail: 'BODY-MARKER-abc' }, 'bad', undefined);
+        throw new OpenAI.APIError(422, { detail: 'BODY-MARKER-abc' }, 'bad', undefined);
       }),
     );
     let thrown: unknown;
@@ -275,8 +315,21 @@ describe('makeOpenAIClassifier (JSON-only, defensive parse)', () => {
       .catch((e) => {
         thrown = e;
       });
-    expect((thrown as Error).message).toBe('classify request failed with status 400');
+    expect((thrown as Error).message).toBe('classify request failed with status 422');
     expect((thrown as Error).message).not.toContain('BODY-MARKER-abc');
+  });
+
+  test('a 400/401/403/404 APIError is a ProviderConfigurationError without provider text', async () => {
+    for (const status of [400, 401, 403, 404]) {
+      const sdk = openaiSdk(
+        vi.fn(async () => {
+          throw new OpenAI.APIError(status, { detail: 'BODY-MARKER-abc' }, 'bad', undefined);
+        }),
+      );
+      await expect(makeOpenAIClassifier(config, sdk).classify(candidate, [])).rejects.toEqual(
+        new ProviderConfigurationError(status),
+      );
+    }
   });
 
   test('a non-APIError rejects with the generic sanitized message', async () => {
@@ -305,13 +358,12 @@ const withText = (text: string): InboundCandidate => ({
 });
 
 // --- correlation verdict over a candidate list ------------------------------------
-// classify() gains a `candidates` param and returns a discriminated CorrelationVerdict:
+// classify() takes a candidates list and returns a discriminated CorrelationVerdict:
 //   { decision: 'not_worthy' } | { decision: 'resolves_signal'; signalIndex } |
 //   { decision: 'belongs_to'; index } | { decision: 'new_incident'; … }
-// The forced tool now emits that verdict; the candidate block is injected into the user prompt so the
-// model selects an OPAQUE 1-based index (never a UUID). A schema miss still THROWS (fail-open).
-// RED now: classify ignores the 2nd arg and returns the {worthy} shape, so a {decision:…} tool_use
-// fails the current relevance schema and throws 'unparseable' where these expect the verdict.
+// The terminal verdict tool emits it (Claude sends tool_choice auto, since Opus 5.5 rejects a forced
+// choice); the candidate block is injected into the user prompt so the model selects an OPAQUE
+// 1-based index (never a UUID). A schema miss still THROWS (fail-open).
 
 function incidentSummary(over: Partial<IncidentSummary> & { title?: string }): IncidentSummary {
   return {

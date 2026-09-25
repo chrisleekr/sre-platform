@@ -16,7 +16,7 @@ export function recordAlertmanagerDisposition(input: {
 }) {
   const disposition = input.alert.status === 'firing' ? 'investigate' : 'log';
   return recordSignalDisposition(input.db, input.tenantId, {
-    source: 'alertmanager',
+    source: input.alert.provider ?? 'alertmanager',
     sourceEventKey: input.eventKey,
     sourceEventAt: input.observedAt,
     signalKey: input.signalKey,
@@ -25,7 +25,7 @@ export function recordAlertmanagerDisposition(input: {
     channel: input.channel,
     threadId: input.threadId,
     summary: alertText(input.alert),
-    reason: 'Authenticated Alertmanager status observation.',
+    reason: 'Connector-verified provider lifecycle observation.',
     service: service(input.alert.labels),
     severity: severity(input.alert.labels),
     disposition,

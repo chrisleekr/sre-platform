@@ -8,7 +8,7 @@ export function registerPrepareDeliveryRoutes(r: Hono<{ Variables: TenantAuthVar
   r.post('/:type/prepare-delivery', async (c) => {
     c.header('Cache-Control', 'no-store');
     const type = c.req.param('type');
-    if (!['github', 'gitlab', 'prometheus'].includes(type))
+    if (!['github', 'gitlab', 'prometheus', 'datadog', 'grafana', 'statuscake'].includes(type))
       return c.json({ error: 'unsupported event connector' }, 400);
     const body = requestObject(await c.req.json().catch(() => null));
     if (!body || !['direct', 'smee'].includes(String(body.transport)))

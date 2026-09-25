@@ -9,6 +9,7 @@ import {
   type IncidentFreeStatusSnapshot,
   type IncidentListItem,
   type IncidentPageCursor,
+  type IncidentSort,
 } from '@sre/db';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
@@ -111,13 +112,26 @@ export function registerIncidentListRoutes(
           400,
         );
       }
+      const sortParam = c.req.query('sort');
+      if (
+        sortParam !== undefined &&
+        !['priority', 'newest', 'oldest', 'severity'].includes(sortParam)
+      ) {
+        return c.json({ error: 'sort must be priority, newest, oldest, or severity' }, 400);
+      }
+      // Priority keys on mutable attention state, so it cannot back a keyset; only the bounded open
+      // scope, which is never paginated, may use it.
+      if (sortParam === 'priority' && state !== 'open') {
+        return c.json({ error: 'priority sort is only valid for open incidents' }, 400);
+      }
+      const sort = (sortParam ?? (state === 'open' ? 'priority' : 'newest')) as IncidentSort;
       let before: IncidentPageCursor | undefined;
       const cursor = c.req.query('cursor');
       if (cursor !== undefined) {
         if (state === 'open')
           return c.json({ error: 'cursor is only valid for closed or all incidents' }, 400);
         const decoded = decodeCursor(cursor);
-        if (!decoded) return c.json({ error: 'invalid cursor' }, 400);
+        if (!decoded || decoded.sort !== sort) return c.json({ error: 'invalid cursor' }, 400);
         before = decoded;
       }
       const incidentFreeStatusPromise =
@@ -136,6 +150,7 @@ export function registerIncidentListRoutes(
           attention,
           query: query || undefined,
           severity,
+          sort,
           limit: parseLimit(c.req.query('limit')),
           before,
         }),
@@ -149,7 +164,8 @@ export function registerIncidentListRoutes(
           tenantId,
           page.incidents.map(incidentQueueState),
         ),
-        nextCursor: state !== 'open' && page.nextCursor ? encodeCursor(page.nextCursor) : null,
+        nextCursor:
+          state !== 'open' && page.nextCursor ? encodeCursor(page.nextCursor, sort) : null,
         counts,
         operationalCounts,
         ...(incidentFreeStatus

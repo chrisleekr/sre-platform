@@ -1,6 +1,6 @@
 import { getIncidentLifecycleTx, listSignalsByExternalRoot, listUnresolvedSignals } from '@sre/db';
 
-import { describe, expect, test, vi } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { makeClassifyHandler } from '../classify-consumer';
 
@@ -44,6 +44,11 @@ vi.mock('@sre/db', async (importOriginal) => {
 import { createFixture } from './classify-consumer.fixture';
 
 const __fixture = createFixture();
+beforeEach(() => {
+  vi.mocked(listUnresolvedSignals).mockReset().mockResolvedValue([]);
+  vi.mocked(listSignalsByExternalRoot).mockReset().mockResolvedValue([]);
+  vi.mocked(getIncidentLifecycleTx).mockReset().mockResolvedValue({ status: 'open', version: 0 });
+});
 
 describe('makeClassifyHandler', () => {
   // --- the inbound 24h dedup window -------------------------------------------
@@ -203,15 +208,14 @@ describe('makeClassifyHandler', () => {
       ],
     });
 
-    await expect(handler(__fixture.makeJob({ payload: resolved }))).rejects.toThrow(
-      'second observation failed',
-    );
+    await expect(handler(__fixture.makeJob({ payload: resolved }))).resolves.toBeUndefined();
+    expect(observeSignalTx).not.toHaveBeenCalled();
     expect(insertRecoveryTx).not.toHaveBeenCalled();
     expect(publishAppended).not.toHaveBeenCalled();
     expect(publishJob).not.toHaveBeenCalled();
   });
 
-  test('updates every durable member of a grouped firing edit without using the transient reservation', async () => {
+  test('does not revise any durable member from an unverified grouped firing edit', async () => {
     const producerId = 'bot:B_ALERT';
     vi.mocked(listSignalsByExternalRoot).mockResolvedValueOnce([
       {
@@ -305,19 +309,12 @@ describe('makeClassifyHandler', () => {
     await handler(__fixture.makeJob({ payload: edit }));
 
     expect(classifyFn).not.toHaveBeenCalled();
-    expect(observeSignalTx.mock.calls.map((call) => call[2])).toEqual([
-      expect.objectContaining({ externalMessageId: 'root-edit#latency-old', state: 'firing' }),
-      expect.objectContaining({ externalMessageId: 'root-edit#errors-old', state: 'firing' }),
-    ]);
-    expect(observeSignalTx.mock.calls.map((call) => call[2].eventVersion)).toEqual([
-      '1787274000000001',
-      '1787274000000001',
-    ]);
-    expect(insertReassessmentTx).toHaveBeenCalledTimes(2);
-    expect(publishJob).toHaveBeenCalledTimes(2);
+    expect(observeSignalTx).not.toHaveBeenCalled();
+    expect(insertReassessmentTx).not.toHaveBeenCalled();
+    expect(publishJob).not.toHaveBeenCalled();
   });
 
-  test('model resolution uses the newest candidate window while checking identity against all signals', async () => {
+  test('model resolution receives the newest candidate window but has no lifecycle authority', async () => {
     const producerId = 'bot:B_STATUSCAKE';
     const candidates = Array.from({ length: 26 }, (_, index) => ({
       id: `signal-${index}`,
@@ -365,12 +362,9 @@ describe('makeClassifyHandler', () => {
 
     await handler(__fixture.makeJob({ payload: recovery }));
 
-    expect(observeSignalTx).toHaveBeenCalledWith(
-      expect.anything(),
-      'tenant-1',
-      expect.objectContaining({ incidentId: 'incident-1', externalMessageId: 'root-1' }),
-      recovery.text,
-    );
+    expect(classifyFn).toHaveBeenCalledTimes(1);
+    expect(observeSignalTx).not.toHaveBeenCalled();
+    expect(insertRecoveryTx).not.toHaveBeenCalled();
   });
 
   test('an omitted candidate sharing the selected identity makes model resolution ambiguous', async () => {
@@ -416,8 +410,10 @@ describe('makeClassifyHandler', () => {
     );
 
     expect(observeSignalTx).not.toHaveBeenCalled();
-    expect(route).toHaveBeenCalledOnce();
-    expect(onOutcome).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'fail_open' }));
+    expect(route).not.toHaveBeenCalled();
+    expect(onOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'resolution_unmatched' }),
+    );
   });
 
   test('a separate resolution from another Slack bot has no mutation authority', async () => {
@@ -502,7 +498,90 @@ describe('makeClassifyHandler', () => {
 
     expect(observeSignalTx).not.toHaveBeenCalled();
     expect(onOutcome).toHaveBeenCalledWith(
-      expect.objectContaining({ outcome: 'edited_untracked' }),
+      expect.objectContaining({ outcome: 'resolution_unmatched' }),
     );
   });
+});
+
+test.each([
+  'missing monitor',
+  'conflicting notices',
+  'changed monitor edit',
+  'legacy edit',
+  'matched edit',
+])('normalized recovery keeps exact identity authority for %s', async (scenario) => {
+  const { slackInboundConnector } = await import('@sre/connectors');
+  const notice = (state: 'Up' | 'Down', url = 'https://checkout.example/health') =>
+    `Website | Your site '<${url}|checkout>' went ${state} [HTTP ${state === 'Up' ? 200 : 503}]`;
+  const read = (text: string, edit = false) => {
+    const result = slackInboundConnector.evaluate(
+      {
+        type: 'message',
+        subtype: edit ? 'message_changed' : 'bot_message',
+        channel: 'C123',
+        ts: '1787991000.000100',
+        event_ts: edit ? '1787991100.000100' : '1787991000.000100',
+        bot_id: 'B_UPTIME',
+        text,
+      },
+      { botUserId: 'U_PLATFORM' },
+    );
+    if (result?.disposition !== 'admit') throw new Error('Fixture must be admitted');
+    return result.candidate;
+  };
+  const down = read(notice('Down'));
+  const target = {
+    ...down.observations![0],
+    id: 'target',
+    incidentId: 'incident',
+    channel: 'C123',
+    externalMessageId: down.externalId,
+    lastEventKey: down.eventKey,
+    service: 'checkout',
+    title: 'Checkout down',
+    severity: 'sev3',
+  };
+  const up = read(
+    scenario === 'missing monitor'
+      ? notice('Up', 'unknown')
+      : scenario === 'conflicting notices'
+        ? `${notice('Up')}\n${notice('Down', 'https://other.example/health')}`
+        : scenario === 'changed monitor edit'
+          ? notice('Up', 'https://checkout.example/other')
+          : notice('Up'),
+    scenario.endsWith('edit'),
+  );
+  vi.mocked(listUnresolvedSignals).mockResolvedValueOnce([
+    scenario === 'legacy edit'
+      ? { ...target, monitorKey: null, providerGroupKey: null, provider: null }
+      : target,
+  ] as never);
+  const observeSignalTx = vi.fn(async () => ({
+    observation: { applied: true, allResolved: true, signal: { id: 'target', version: 2 } },
+    message: null,
+  }));
+  const insertRecoveryTx = vi.fn(async () => ({ jobId: 'verify' }));
+  const classify = vi.fn(() => ({ decision: 'not_worthy' as const }));
+  const route = vi.fn();
+  const onOutcome = vi.fn();
+  const handler = makeClassifyHandler({
+    appDb: __fixture.stubDb,
+    redis: __fixture.stubRedis,
+    reservationRedis: __fixture.stubRedis,
+    embedder: __fixture.fakeEmbedder,
+    classify: makeFakeClassifier(classify),
+    route,
+    onOutcome,
+    hub: { observeSignalTx, publishAppended: vi.fn() } as never,
+    queue: { insertRecoveryTx, publishJob: vi.fn() } as never,
+  });
+  await handler(__fixture.makeJob({ payload: up }));
+  expect(listUnresolvedSignals).not.toHaveBeenCalled();
+  expect(classify).not.toHaveBeenCalled();
+  expect(route).not.toHaveBeenCalled();
+  expect(observeSignalTx).not.toHaveBeenCalled();
+  expect(insertRecoveryTx).not.toHaveBeenCalled();
+  expect(onOutcome).toHaveBeenCalledWith(
+    expect.objectContaining({ outcome: 'resolution_unmatched' }),
+  );
 });

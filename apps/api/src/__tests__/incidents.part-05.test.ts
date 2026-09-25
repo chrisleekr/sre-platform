@@ -109,6 +109,13 @@ describe('GET /incidents?state= scope filter + counts', () => {
       title: 'Checkout latency search marker',
     });
     automatedId = idOpen;
+    await __fixture.admin.db.insert(jobs).values({
+      tenantId: tenantD,
+      type: 'triage',
+      payload: { incidentId: idOpen },
+      status: 'queued',
+      stream: `scope-automation-${randomUUID()}`,
+    });
     await subscribeChannel(__fixture.app.db, {
       tenantId: tenantD,
       surface: 'slack',
@@ -153,6 +160,7 @@ describe('GET /incidents?state= scope filter + counts', () => {
   }, 30_000);
 
   afterAll(async () => {
+    await __fixture.admin.db.delete(jobs).where(sql`tenant_id = ${tenantD}`);
     await __fixture.admin.db.delete(incidentSignals).where(sql`tenant_id = ${tenantD}`);
     await __fixture.admin.db.delete(surfaceBindings).where(sql`tenant_id = ${tenantD}`);
     await __fixture.admin.db.delete(inboundChannels).where(sql`tenant_id = ${tenantD}`);
@@ -332,6 +340,67 @@ describe('GET /incidents?state= scope filter + counts', () => {
       __fixture.auth(await __fixture.sign(orgD)),
     );
     expect(res.status).toBe(400);
+  });
+
+  test('validates sort and binds a history cursor to the ordering that issued it', async () => {
+    const auth = __fixture.auth(await __fixture.sign(orgD));
+    expect((await __fixture.api.request('/incidents?state=all&sort=random', auth)).status).toBe(
+      400,
+    );
+    // Priority has no stable keyset, so it is refused wherever a cursor could follow.
+    expect(
+      (await __fixture.api.request('/incidents?state=closed&sort=priority', auth)).status,
+    ).toBe(400);
+    expect((await __fixture.api.request('/incidents?state=open&sort=priority', auth)).status).toBe(
+      200,
+    );
+
+    const oldest = await __fixture.api.request('/incidents?state=closed&sort=oldest&limit=1', auth);
+    const { nextCursor } = (await oldest.json()) as { nextCursor: string | null };
+    expect(nextCursor).not.toBeNull();
+    const cursor = encodeURIComponent(nextCursor!);
+    expect(
+      (await __fixture.api.request(`/incidents?state=closed&sort=oldest&cursor=${cursor}`, auth))
+        .status,
+    ).toBe(200);
+    // Replaying it under another ordering would skip or repeat rows.
+    const mismatched = await __fixture.api.request(
+      `/incidents?state=closed&cursor=${cursor}`,
+      auth,
+    );
+    expect(mismatched.status).toBe(400);
+    expect(await mismatched.json()).toEqual({ error: 'invalid cursor' });
+  });
+
+  test('accepts legacy newest cursors, round-trips severity cursors, and refuses unminted ranks', async () => {
+    const auth = __fixture.auth(await __fixture.sign(orgD));
+    const closed = (query: string) =>
+      __fixture.api.request(`/incidents?state=closed&${query}`, auth);
+    const encode = (value: Record<string, unknown>): string =>
+      encodeURIComponent(Buffer.from(JSON.stringify(value)).toString('base64url'));
+    const keyset = { createdAt: '2026-01-01T00:00:00.000Z', id: randomUUID() };
+
+    // A cursor minted before sorting existed has no `sort` and means newest.
+    const legacy = encode(keyset);
+    expect((await closed(`cursor=${legacy}`)).status).toBe(200);
+    const legacyOldest = await closed(`sort=oldest&cursor=${legacy}`);
+    expect(legacyOldest.status).toBe(400);
+    expect(await legacyOldest.json()).toEqual({ error: 'invalid cursor' });
+
+    const first = await closed('sort=severity&limit=1');
+    const { nextCursor } = (await first.json()) as { nextCursor: string | null };
+    expect(nextCursor).not.toBeNull();
+    const cursor = encodeURIComponent(nextCursor!);
+    expect((await closed(`sort=severity&cursor=${cursor}`)).status).toBe(200);
+
+    // A rank the server never mints is a bad cursor, not a Postgres cast failure.
+    for (const severityRank of [undefined, 5, 3000000000]) {
+      const res = await closed(
+        `sort=severity&cursor=${encode({ ...keyset, sort: 'severity', severityRank })}`,
+      );
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'invalid cursor' });
+    }
   });
 
   test('the active priority queue rejects even a valid closed-archive cursor', async () => {

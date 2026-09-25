@@ -3,6 +3,7 @@ import { argoCdUrlError } from '@sre/contracts';
 import { assertSafeHttpOrHttpsUrl, type HostLookup } from '../../ssrf';
 import { obj, str } from '../../values';
 import { topologyReadIssue } from '../../topology-transport';
+import { boundedSignal } from '../../request-signal';
 
 /** Injectable so the REST calls are unit-testable without the network. */
 export type FetchLike = typeof fetch;
@@ -192,14 +193,13 @@ export async function connect(config: ConnectorConfig, lookup: HostLookup): Prom
 
 /** Request init: the bearer token rides a header (never the URL), 8s timeout, no redirects. */
 export function aInit(client: ArgoClient): FetchInit {
-  const timeout = AbortSignal.timeout(API_TIMEOUT_MS);
   return {
     headers: {
       Authorization: `Bearer ${client.token}`,
       Accept: 'application/json',
       ...(client.hostHeader ? { Host: client.hostHeader } : {}),
     },
-    signal: client.signal ? AbortSignal.any([timeout, client.signal]) : timeout,
+    signal: boundedSignal(API_TIMEOUT_MS, client.signal),
     redirect: 'error',
     tls: client.serverTls,
   };

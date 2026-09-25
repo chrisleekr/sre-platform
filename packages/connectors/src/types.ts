@@ -34,19 +34,29 @@ export interface ConnectorCapabilities {
   investigation: 'tools' | 'none';
   polling: 'snapshots' | 'none';
   events: 'authenticated' | 'none';
+  /** Monitoring lifecycle is independent of generic development events and read tools. */
+  alertLifecycle: 'events' | 'read' | 'events_and_read' | 'structured_snapshot' | 'none';
 }
 
 /**
  * A granular tool a connector exposes to the triage engine. Each connector owns its own tools with
  * their own input contracts, replacing the five fixed signal tools. `@sre/agent-tools`
  * `connectorTools()` namespaces these by type and immutable data-source identity, then wraps `run`
- * in the audited dispatch path. `I`/`O` are the tool's input and output shapes.
+ * in the audited dispatch path. `I`/`O` are the tool's input and output shapes. `options.signal` is the
+ * investigation's cancellation: a tool passes it to every provider request so a cancelled run stops
+ * its in-flight reads instead of waiting out each request timeout.
  */
 export interface ConnectorTool<I = unknown, O = unknown> {
   name: string;
   description: string;
   inputSchema: ZodType<I>;
-  run(input: I): Promise<O>;
+  run(input: I, options?: ToolRunOptions): Promise<O>;
+}
+
+/** Per-call options the dispatcher passes to a connector tool. */
+export interface ToolRunOptions {
+  /** Aborts when the calling investigation is cancelled, for example at its job deadline. */
+  signal?: AbortSignal;
 }
 
 export interface NormalizedSnapshot {
@@ -213,6 +223,7 @@ export interface EntityCoverageReader {
 }
 
 export interface IDataSourceConnector {
+  readonly alertLifecycle?: import('./alert-lifecycle').AlertLifecycle;
   /** External issue writes are callable only by the confirmed-action application, never tool binding. */
   readonly issues?: import('./issues').IssueManager;
   /** Immutable tenant-owned data-source identity. */
@@ -242,4 +253,6 @@ export interface IDataSourceConnector {
   tools(): ConnectorTool[];
   /** Test-connection probe. Never returns connector data — only a reachability/authorization verdict. */
   probe(): Promise<ProbeResult>;
+  /** Login this connection authenticates as, as the provider records it in its own request logs. */
+  identity?(): Promise<string | null>;
 }

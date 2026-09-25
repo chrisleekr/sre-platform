@@ -82,6 +82,7 @@ export interface ConnectorMetadata<TType extends ConnectorType = ConnectorType> 
 
 /** Provider code supplies only the ports it supports. The constructor fills compatibility defaults. */
 export interface ConnectorImplementation {
+  alertLifecycle?: import('./alert-lifecycle').AlertLifecycle;
   issues?: IssueManager;
   snapshot?: () => Promise<NormalizedSnapshot[]>;
   pollEvidence?: () => ConnectorPollEvidence | undefined;
@@ -96,6 +97,7 @@ export interface ConnectorImplementation {
   entityCoverage?: EntityCoverageReader;
   tools?: () => ConnectorTool[];
   probe: () => Promise<ProbeResult>;
+  identity?: () => Promise<string | null>;
 }
 
 export type ConnectorFactory = (config: ConnectorConfig) => IDataSourceConnector;
@@ -151,6 +153,7 @@ export function createDataSourceConnector<TType extends ConnectorType>(
       }
     : undefined;
   return {
+    alertLifecycle: implementation.alertLifecycle,
     id: config.id,
     name: config.name,
     type: metadata.type,
@@ -174,6 +177,8 @@ export function createDataSourceConnector<TType extends ConnectorType>(
     entityCoverage,
     tools: implementation.tools ?? (() => []),
     probe: implementation.probe,
+    // Same rule as topology: an unreadable credential would fail every lookup.
+    identity: config.credentialStatus === 'unavailable' ? undefined : implementation.identity,
   };
 }
 

@@ -210,7 +210,9 @@ export class ResumeHandler {
                     incident: this.runtime.incidentInput(job.tenantId, current),
                     ...input,
                     evidence,
-                    context: screenshots || undefined,
+                    context:
+                      [screenshots, runtime.platformIdentity].filter(Boolean).join('\n\n') ||
+                      undefined,
                     ...(canVerifyRecovery
                       ? {
                           recoveryContext: {

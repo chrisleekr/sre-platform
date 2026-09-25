@@ -8,9 +8,11 @@ import type { AutomaticInvestigationBudgetLimits } from '@sre/contracts';
 import {
   getIncidentDetail,
   incidentMessages,
+  INCIDENT_SEVERITY_RANKS,
   type Db,
   type EvidencePageCursor,
   type IncidentPageCursor,
+  type IncidentSort,
   type IncidentStatus,
   type Tx,
 } from '@sre/db';
@@ -217,19 +219,28 @@ export function safeSlackPermalink(value: string | null): string | null {
   }
 }
 
-// the closed-archive cursor is opaque to the client — a base64url of the (created_at, id) keyset
-// pair. Encoding hides the pagination mechanics; decoding fails closed (null → the route 400s) so a
-// tampered or truncated cursor never silently returns page one.
-export function encodeCursor(cursor: IncidentPageCursor): string {
-  return Buffer.from(JSON.stringify({ createdAt: cursor.createdAt, id: cursor.id })).toString(
-    'base64url',
-  );
+// The history cursor is opaque to the client: a base64url of the keyset position plus the ordering it
+// was minted under. Decoding fails closed (null, so the route 400s) so a tampered or truncated cursor
+// never silently returns page one. A cursor without `sort` predates sorting and means `newest`.
+export function encodeCursor(cursor: IncidentPageCursor, sort: IncidentSort): string {
+  return Buffer.from(
+    JSON.stringify({
+      createdAt: cursor.createdAt,
+      id: cursor.id,
+      sort,
+      ...(cursor.severityRank === undefined ? {} : { severityRank: cursor.severityRank }),
+    }),
+  ).toString('base64url');
 }
-export function decodeCursor(raw: string): IncidentPageCursor | null {
+export function decodeCursor(
+  raw: string,
+): (IncidentPageCursor & { sort: Exclude<IncidentSort, 'priority'> }) | null {
   try {
     const parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as {
       createdAt?: unknown;
       id?: unknown;
+      sort?: unknown;
+      severityRank?: unknown;
     };
     if (typeof parsed.createdAt !== 'string' || typeof parsed.id !== 'string') return null;
     // The id addresses a uuid column: a well-formed cursor carrying a non-UUID id would otherwise reach
@@ -237,7 +248,16 @@ export function decodeCursor(raw: string): IncidentPageCursor | null {
     if (!UUID_RE.test(parsed.id)) return null;
     const createdAt = new Date(parsed.createdAt);
     if (Number.isNaN(createdAt.getTime())) return null;
-    return { createdAt, id: parsed.id };
+    const sort = parsed.sort ?? 'newest';
+    if (sort !== 'newest' && sort !== 'oldest' && sort !== 'severity') return null;
+    if (sort !== 'severity') return { createdAt, id: parsed.id, sort };
+    // Only ranks the server mints: any other integer (e.g. beyond int4) would fail in Postgres, not 400.
+    if (
+      typeof parsed.severityRank !== 'number' ||
+      !INCIDENT_SEVERITY_RANKS.has(parsed.severityRank)
+    )
+      return null;
+    return { createdAt, id: parsed.id, sort, severityRank: parsed.severityRank };
   } catch {
     return null;
   }
@@ -249,9 +269,22 @@ export function encodeEvidenceCursor(cursor: EvidencePageCursor): string {
   );
 }
 
+// Evidence paging has one fixed order, so its cursor is only the keyset position and is validated
+// independently of the incident-list sort rules.
 export function decodeEvidenceCursor(raw: string): EvidencePageCursor | null {
-  const decoded = decodeCursor(raw);
-  return decoded ? { createdAt: decoded.createdAt, id: decoded.id } : null;
+  try {
+    const parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as {
+      createdAt?: unknown;
+      id?: unknown;
+    };
+    if (typeof parsed.createdAt !== 'string' || typeof parsed.id !== 'string') return null;
+    if (!UUID_RE.test(parsed.id)) return null;
+    const createdAt = new Date(parsed.createdAt);
+    if (Number.isNaN(createdAt.getTime())) return null;
+    return { createdAt, id: parsed.id };
+  } catch {
+    return null;
+  }
 }
 
 export function encodeMessageCursor(cursor: { createdAt: string; id: string }): string {
@@ -361,7 +394,25 @@ export function safeAssessment(incident: Awaited<ReturnType<typeof getIncidentDe
     incident.recoveryUnknowns === null ||
     (Array.isArray(incident.recoveryUnknowns) &&
       incident.recoveryUnknowns.every((item) => typeof item === 'string'));
+  const recoveryQuestionsValid =
+    incident.recoveryQuestions == null ||
+    (Array.isArray(incident.recoveryQuestions) &&
+      incident.recoveryQuestions.every(
+        (question) =>
+          question &&
+          typeof question === 'object' &&
+          typeof question.question === 'string' &&
+          typeof question.nextAction === 'string' &&
+          question.nextAction.trim().length > 0 &&
+          ['blocking', 'follow_up'].includes(question.resolutionRelevance) &&
+          INVESTIGATION_GAP_CATEGORIES.includes(question.category) &&
+          (question.evidenceKind === null ||
+            INVESTIGATION_EVIDENCE_KINDS.includes(question.evidenceKind)) &&
+          Array.isArray(question.attemptedEvidenceIds) &&
+          question.attemptedEvidenceIds.every((id) => typeof id === 'string' && UUID_RE.test(id)),
+      ));
   const valid =
+    recoveryQuestionsValid &&
     hypothesesValid &&
     unknownsValid &&
     assessmentEvidenceValid &&
@@ -385,6 +436,7 @@ export function safeAssessment(incident: Awaited<ReturnType<typeof getIncidentDe
       assessmentEvidenceIds: assessmentEvidenceValid ? incident.assessmentEvidenceIds : [],
       recoveryEvidenceIds: recoveryEvidenceValid ? incident.recoveryEvidenceIds : [],
       recoveryUnknowns: recoveryUnknownsValid ? incident.recoveryUnknowns : [],
+      recoveryQuestions: recoveryQuestionsValid ? incident.recoveryQuestions : null,
     },
     assessmentState: !valid ? 'invalid' : incident.rcaSummary ? 'available' : 'pending',
   } as const;

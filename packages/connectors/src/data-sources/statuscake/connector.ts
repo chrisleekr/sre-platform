@@ -1,10 +1,19 @@
 import * as z from 'zod';
+import { statusCakeLifecycle } from './lifecycle';
 import { createDataSourceConnector, defineConnector, type ConnectorConfig } from '../../registry';
 import { dataSourceEntityCoverage } from '../../entity-coverage';
-import type { ConnectorTool, IDataSourceConnector, ProbeResult, TriageContext } from '../../types';
+import type {
+  ConnectorTool,
+  IDataSourceConnector,
+  ProbeResult,
+  ToolRunOptions,
+  TriageContext,
+} from '../../types';
+import { boundedSignal } from '../../request-signal';
 import { obj, str } from '../../values';
 import { statuscakeTopology } from './topology';
 import { topologyFetch } from '../../topology-transport';
+import { redactStatusCakeSecrets } from './setup';
 
 /** Injectable so the REST calls are unit-testable without the network. */
 type FetchLike = typeof fetch;
@@ -21,13 +30,14 @@ const TRIAGE_DOWN_CAP = 25; // down tests returned in the first-pass seed
 const STATUSCAKE_CONNECTOR = {
   type: 'statuscake',
   capabilities: {
+    alertLifecycle: 'read',
     topology: 'inventory',
     availability: 'ready',
     configuration: 'tenant',
     instances: 'multiple',
     investigation: 'tools',
     polling: 'none',
-    events: 'none',
+    events: 'authenticated',
   },
 } as const;
 
@@ -83,30 +93,32 @@ async function connect(config: ConnectorConfig): Promise<string> {
 }
 
 /** Request init: the bearer token rides a header (never the URL), 8s timeout, no redirects. */
-function sInit(token: string): RequestInit {
+function sInit(token: string, signal?: AbortSignal): RequestInit {
   return {
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-    signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    signal: boundedSignal(API_TIMEOUT_MS, signal),
     redirect: 'error',
   };
 }
 
-/** GET a StatusCake endpoint and parse JSON. */
+/** GET a StatusCake endpoint and parse JSON. `signal` is the tool caller's cancellation. */
 async function sget(
   fetchImpl: FetchLike,
   token: string,
   path: string,
   query?: Record<string, QueryValue | undefined>,
+  signal?: AbortSignal,
 ): Promise<unknown> {
-  const res = await fetchImpl(buildGetUrl(path, query), sInit(token));
+  const res = await fetchImpl(buildGetUrl(path, query), sInit(token, signal));
   if (!res.ok)
     throw Object.assign(new Error(`statuscake api ${res.status}`), { status: res.status });
-  return res.json();
+  // Contact-group ping URLs carry this platform's webhook secret.
+  return redactStatusCakeSecrets(await res.json());
 }
 
 /** Standard page/per_page params (per_page clamped) shared by every collection tool. */
 function pageParams(page: number | undefined, perPage: number | undefined) {
-  return { page, per_page: clampPerPage(perPage) };
+  return { page, limit: clampPerPage(perPage) };
 }
 
 interface DownTest {
@@ -149,7 +161,7 @@ function stool<S extends z.ZodType>(def: {
   name: string;
   description: string;
   inputSchema: S;
-  run: (input: z.infer<S>) => Promise<unknown>;
+  run: (input: z.infer<S>, options?: ToolRunOptions) => Promise<unknown>;
 }): ConnectorTool {
   return def as ConnectorTool;
 }
@@ -165,7 +177,8 @@ function stool<S extends z.ZodType>(def: {
  * `metadata`. No bespoke sanitizer: StatusCake read data is external monitoring telemetry, not
  * manifests or a structured secret-field endpoint; the one residual (a token in a contact-group
  * integration URL) is the dispatch redaction's accepted best-effort limit, as with Datadog
- * webhook URLs and Prometheus scrape-target credentials.
+ * webhook URLs and Prometheus scrape-target credentials. The platform's own webhook secret in a
+ * contact-group `ping_url` is always redacted.
  */
 function makeStatusCakeTools(config: ConnectorConfig, fetchImpl: FetchLike): ConnectorTool[] {
   const token = () => connect(config);
@@ -185,9 +198,15 @@ function makeStatusCakeTools(config: ConnectorConfig, fetchImpl: FetchLike): Con
         page: z.number().int().positive().optional(),
         per_page: z.number().int().positive().optional(),
       }),
-      run: async ({ type, tags, matchany, page, per_page }) => {
+      run: async ({ type, tags, matchany, page, per_page }, call) => {
         const t = await token();
-        return sget(fetchImpl, t, `/v1/${type}`, { tags, matchany, ...pageParams(page, per_page) });
+        return sget(
+          fetchImpl,
+          t,
+          `/v1/${type}`,
+          { tags, matchany, ...pageParams(page, per_page) },
+          call?.signal,
+        );
       },
     }),
     stool({
@@ -197,29 +216,41 @@ function makeStatusCakeTools(config: ConnectorConfig, fetchImpl: FetchLike): Con
         'pagespeed, or heartbeat. For ssl this carries the certificate expiry/validity fields (the ' +
         '"down because the cert expired" signal).',
       inputSchema: z.object({ type: z.enum(TEST_TYPES), id: z.string() }),
-      run: async ({ type, id }) => {
+      run: async ({ type, id }, call) => {
         const t = await token();
-        return sget(fetchImpl, t, `/v1/${type}/${encodeURIComponent(validateId(id))}`);
+        return sget(
+          fetchImpl,
+          t,
+          `/v1/${type}/${encodeURIComponent(validateId(id))}`,
+          undefined,
+          call?.signal,
+        );
       },
     }),
     stool({
       name: 'get_test_history',
       description:
         'Get the recent check-run history for a test (the raw pass/fail signal over time). type is ' +
-        'uptime or pagespeed (ssl and heartbeat have no history endpoint). Paginated: optional page/per_page.',
+        'uptime or pagespeed (ssl and heartbeat have no history endpoint). Cursor paginated: optional limit, before and after UNIX seconds.',
       inputSchema: z.object({
         type: z.enum(HISTORY_TYPES),
         id: z.string(),
-        page: z.number().int().positive().optional(),
-        per_page: z.number().int().positive().optional(),
+        limit: z.number().int().positive().max(100).optional(),
+        before: z.number().int().nonnegative().optional(),
+        after: z.number().int().nonnegative().optional(),
       }),
-      run: async ({ type, id, page, per_page }) => {
+      run: async ({ type, id, limit, before, after }, call) => {
         const t = await token();
         return sget(
           fetchImpl,
           t,
           `/v1/${type}/${encodeURIComponent(validateId(id))}/history`,
-          pageParams(page, per_page),
+          {
+            limit: clampPerPage(limit),
+            before,
+            after,
+          },
+          call?.signal,
         );
       },
     }),
@@ -227,38 +258,50 @@ function makeStatusCakeTools(config: ConnectorConfig, fetchImpl: FetchLike): Con
       name: 'get_uptime_periods',
       description:
         'Get the up/down periods for an uptime test — the downtime windows ("since when down"), each ' +
-        'with a start, end, and duration. Paginated: optional page/per_page.',
+        'with a start, end, and duration. Cursor paginated: optional limit, before and after UNIX seconds.',
       inputSchema: z.object({
         id: z.string(),
-        page: z.number().int().positive().optional(),
-        per_page: z.number().int().positive().optional(),
+        limit: z.number().int().positive().max(100).optional(),
+        before: z.number().int().nonnegative().optional(),
+        after: z.number().int().nonnegative().optional(),
       }),
-      run: async ({ id, page, per_page }) => {
+      run: async ({ id, limit, before, after }, call) => {
         const t = await token();
         return sget(
           fetchImpl,
           t,
           `/v1/uptime/${encodeURIComponent(validateId(id))}/periods`,
-          pageParams(page, per_page),
+          {
+            limit: clampPerPage(limit),
+            before,
+            after,
+          },
+          call?.signal,
         );
       },
     }),
     stool({
       name: 'get_uptime_alerts',
       description:
-        'Get the alerts StatusCake sent for an uptime test. Paginated: optional page/per_page.',
+        'Get the alerts StatusCake sent for an uptime test. Cursor paginated: optional limit, before and after UNIX seconds.',
       inputSchema: z.object({
         id: z.string(),
-        page: z.number().int().positive().optional(),
-        per_page: z.number().int().positive().optional(),
+        limit: z.number().int().positive().max(100).optional(),
+        before: z.number().int().nonnegative().optional(),
+        after: z.number().int().nonnegative().optional(),
       }),
-      run: async ({ id, page, per_page }) => {
+      run: async ({ id, limit, before, after }, call) => {
         const t = await token();
         return sget(
           fetchImpl,
           t,
           `/v1/uptime/${encodeURIComponent(validateId(id))}/alerts`,
-          pageParams(page, per_page),
+          {
+            limit: clampPerPage(limit),
+            before,
+            after,
+          },
+          call?.signal,
         );
       },
     }),
@@ -271,9 +314,15 @@ function makeStatusCakeTools(config: ConnectorConfig, fetchImpl: FetchLike): Con
         page: z.number().int().positive().optional(),
         per_page: z.number().int().positive().optional(),
       }),
-      run: async ({ page, per_page }) => {
+      run: async ({ page, per_page }, call) => {
         const t = await token();
-        return sget(fetchImpl, t, '/v1/maintenance-windows', pageParams(page, per_page));
+        return sget(
+          fetchImpl,
+          t,
+          '/v1/maintenance-windows',
+          pageParams(page, per_page),
+          call?.signal,
+        );
       },
     }),
     stool({
@@ -283,9 +332,9 @@ function makeStatusCakeTools(config: ConnectorConfig, fetchImpl: FetchLike): Con
         page: z.number().int().positive().optional(),
         per_page: z.number().int().positive().optional(),
       }),
-      run: async ({ page, per_page }) => {
+      run: async ({ page, per_page }, call) => {
         const t = await token();
-        return sget(fetchImpl, t, '/v1/contact-groups', pageParams(page, per_page));
+        return sget(fetchImpl, t, '/v1/contact-groups', pageParams(page, per_page), call?.signal);
       },
     }),
     stool({
@@ -297,9 +346,9 @@ function makeStatusCakeTools(config: ConnectorConfig, fetchImpl: FetchLike): Con
         path: z.string(),
         query: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
       }),
-      run: async ({ path, query }) => {
+      run: async ({ path, query }, call) => {
         const t = await token();
-        return sget(fetchImpl, t, path, query);
+        return sget(fetchImpl, t, path, query, call?.signal);
       },
     }),
   ];
@@ -317,6 +366,9 @@ export function makeStatusCakeConnector(
   fetchImpl: FetchLike = fetch,
 ): IDataSourceConnector {
   return createDataSourceConnector(config, STATUSCAKE_CONNECTOR, {
+    alertLifecycle: statusCakeLifecycle(async (path, query) =>
+      sget(fetchImpl, await connect(config), path, query),
+    ),
     topology: statuscakeTopology(config, () => {
       const transport = topologyFetch(fetchImpl);
       return async (path, query) => sget(transport, await connect(config), path, query);
@@ -333,7 +385,7 @@ export function makeStatusCakeConnector(
       // windowMinutes is inert (StatusCake status is current, not windowed) but echoed for transparency.
       try {
         const token = await connect(config);
-        const data = await sget(fetchImpl, token, '/v1/uptime', { per_page: TRIAGE_SAMPLE });
+        const data = await sget(fetchImpl, token, '/v1/uptime', { limit: TRIAGE_SAMPLE });
         const items = obj(data).data;
         const down = (Array.isArray(items) ? items : []).map(summarizeTest).filter(isDown);
         const scoped = down.filter((t) => referencesService(t, query.service));
@@ -369,7 +421,7 @@ export function makeStatusCakeConnector(
       // A trivial uptime list proves reachability + the credential; StatusCake has no userinfo endpoint.
       let statusCode: number | null;
       try {
-        const res = await fetchImpl(buildGetUrl('/v1/uptime', { per_page: 1 }), sInit(token));
+        const res = await fetchImpl(buildGetUrl('/v1/uptime', { limit: 1 }), sInit(token));
         statusCode = res.status;
       } catch {
         statusCode = null;

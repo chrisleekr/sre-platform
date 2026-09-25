@@ -30,6 +30,7 @@ describe('makeOpenAIEngine', () => {
             evidence: [{ name: 'Error rate', before: 'Above threshold', now: 'Below 1%' }],
             evidenceIds: ['11111111-1111-4111-8111-111111111111'],
             unknowns: [],
+            questions: [],
             nextStep: null,
           }),
         ),
@@ -71,6 +72,7 @@ describe('makeOpenAIEngine', () => {
             evidence: [{ name: 'Error rate', before: 'Above threshold', now: 'Below 1%' }],
             evidenceIds: ['11111111-1111-4111-8111-111111111111'],
             unknowns: [],
+            questions: [],
             nextStep: null,
           }),
         ),
@@ -566,7 +568,7 @@ describe('makeOpenAIEngine resume and provider failures', () => {
         completions: {
           create: vi.fn(async () => {
             throw new OpenAI.APIError(
-              400,
+              422,
               { detail: 'SECRET_RESPONSE_BODY' },
               'SECRET_PROVIDER_MESSAGE',
               undefined,
@@ -579,7 +581,7 @@ describe('makeOpenAIEngine resume and provider failures', () => {
     const { runtime } = __fixture.makeRuntime();
 
     await expect(engine.investigate(__fixture.input, runtime)).rejects.toThrow(
-      /^openai request failed with status 400$/,
+      /^openai request failed with status 422$/,
     );
   });
 });

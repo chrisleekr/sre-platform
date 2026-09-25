@@ -1,3 +1,4 @@
+import { connectorLifecycleHandlers } from './connector-lifecycle';
 import { Redis } from 'ioredis';
 import { reconcileGitLabHooks } from './gitlab-hook-management/reconcile';
 import {
@@ -58,6 +59,7 @@ import { makeSubjectSyncRecovery } from './subject-sync-recovery';
 import { runSignalMaintenance } from './signal-maintenance';
 import { makeSignalEvaluationHandler } from './signal-evaluation';
 import { makeTopologyDiscoveryRuntime, runTopologyDiscoveryConsumer } from './topology-discovery';
+import { runConsumerLoop, superviseConsumer } from './consumer-loop';
 import { makePlatformTools } from './platform-tools';
 
 const adminDb = makeDb(adminUrl());
@@ -267,6 +269,7 @@ const pollHandler = makePollHandler({
   cache,
   ttlSec: SNAPSHOT_TTL_SEC,
   // Persist polled deploys. RLS-scoped appDb.
+  ...connectorLifecycleHandlers({ db: appDb.db, hub, queue, redis: settingsRedis, secrets }),
   persistDeploys: (tenantId, snapshots, connectorType, evidence, generation) =>
     persistDeploys(appDb.db, tenantId, snapshots, connectorType, evidence, generation),
   onOutcome: async (outcome) => {
@@ -329,7 +332,8 @@ await Promise.all([
 ]);
 scheduler.start();
 topology.scheduler.start(300_000);
-void runTopologyDiscoveryConsumer(topologyQueue, topology.handler);
+superviseConsumer('topology', () => runTopologyDiscoveryConsumer(topologyQueue, topology.handler));
+superviseConsumer('triage', () => runConsumerLoop(() => worker.tick()));
 slo.scheduler.start();
 console.log(
   JSON.stringify({
@@ -339,9 +343,8 @@ console.log(
   }),
 );
 
-// Triage reconcile recovers lost XADD work; periodic poll jobs self-heal on their next enqueue.
-// Guarded (SET NX per window, own 'triage:recon' prefix) so one replica reconciles per window; now
-// that reconcile is stream-scoped it re-dispatches only triage jobs. Poll no longer reconciles.
+// Reconcile drivers recover lost XADD work, one replica per stream per window (SET NX, own prefix
+// per stream so cadences never starve each other). Reconcile is stream-scoped.
 // Invariant: queue.reconcile()'s olderThanMs (60s default) must stay above process()'s idleMs (30s).
 // idleMs stays far below maxProcessingMs, which stays below the engine lock TTL so the lock cannot
 // expire under a live run.
@@ -353,13 +356,12 @@ const triageReconcileGuard = makeRedisWindowGuard(redis, 'triage:recon');
 const RECOVERY_DUE_DISPATCH_MS = 5_000;
 const recoveryDueGuard = makeRedisWindowGuard(redis, 'recovery:due');
 const recoverSubjectSync = makeSubjectSyncRecovery(redis, adminDb.db, appDb.db, queue);
-// Classify reconcile driver: same lost-XADD recovery as triage, on the isolated classify
-// stream. Stream-scoped reconcile recovers only classify jobs and preserves the idle margin.
+// Classify, runbook and poll reuse the triage cadence. Poll needs one because a lost XADD would drop a
+// one-shot StatusCake wakeup no scheduled poll recreates. Topology shares the poll window because a
+// pass stranded in `processing` after its stream entry was acked is otherwise never redelivered.
 const classifyReconcileGuard = makeRedisWindowGuard(redis, 'classify:recon');
-// Runbook reconcile driver: same lost-XADD recovery as triage/classify, on the isolated
-// runbook stream. Stream-scoped reconcile recovers only runbook jobs; 60s cadence keeps the
-// same margin over process()'s idleMs.
 const runbookReconcileGuard = makeRedisWindowGuard(redis, 'runbook:recon');
+const pollReconcileGuard = makeRedisWindowGuard(redis, 'poll:recon');
 // One replica per window applies the current platform archive policy.
 const AUTOARCHIVE_SWEEP_MS = 15 * 60_000;
 const autoArchiveGuard = makeRedisWindowGuard(redis, 'incident:autoarchive');
@@ -369,10 +371,8 @@ const jobPruneGuard = makeRedisWindowGuard(redis, 'jobs:prune');
 const signalMaintenanceGuard = makeRedisWindowGuard(redis, 'signals:maintenance');
 const SIGNAL_MAINTENANCE_MS = 5 * 60_000;
 
-// One process consumes every stream. A future dedicated poll-worker can consume 'sre:jobs:poll'
-// with this same pollHandler and needs no rework. Smarter cadence/backoff lands later.
+// Triage and topology have their own loops: a run takes minutes and would stall every stream here.
 for (;;) {
-  const triaged = await worker.tick();
   const polled = await pollQueue.process('poll-worker', async (job) => {
     // Drain discovery jobs queued before stream isolation without running them in the poll loop.
     if (job.type === 'topology.discover')
@@ -381,7 +381,7 @@ for (;;) {
   });
   const classified = await classifyQueue.process('classify-worker', classifyStreamHandler);
   const generated = await runbookQueue.process('runbook-worker', generationStreamHandler);
-  // Bounded per turn so a slow metrics backend cannot starve triage on this replica. No reconcile
+  // Bounded per turn so a slow metrics backend cannot starve the other streams. No reconcile
   // driver: a lost evaluation is covered by the next window's fan-out.
   const evaluated = await slo.queue.process('slo-worker', slo.handler, { count: 2 });
   // Coarse, guarded triage reconcile so lost-XADD incidents are recovered exactly once per window.
@@ -419,6 +419,12 @@ for (;;) {
   await runOncePerWindow(
     runbookReconcileGuard,
     () => runbookQueue.reconcile(),
+    TRIAGE_RECONCILE_MS,
+    Date.now(),
+  );
+  await runOncePerWindow(
+    pollReconcileGuard,
+    async () => (await pollQueue.reconcile()) + (await topologyQueue.reconcile()),
     TRIAGE_RECONCILE_MS,
     Date.now(),
   );
@@ -489,6 +495,6 @@ for (;;) {
     JOB_PRUNE_MS,
     Date.now(),
   );
-  if (triaged === 0 && polled === 0 && classified === 0 && generated === 0 && evaluated === 0)
+  if (polled === 0 && classified === 0 && generated === 0 && evaluated === 0)
     await new Promise((r) => setTimeout(r, 1000));
 }

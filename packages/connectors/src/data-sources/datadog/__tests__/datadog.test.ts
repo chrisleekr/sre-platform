@@ -2,6 +2,7 @@ import { describe, expect, it, test } from 'vitest';
 import type { ConnectorConfig } from '../../../registry';
 import type { ConnectorTool } from '../../../types';
 import { buildGetUrl, makeDatadogConnector } from '../connector';
+import { abortableFetch, expectCancelledInFlight } from '../../../__tests__/request-signal.fixture';
 
 interface Call {
   url: string;
@@ -325,5 +326,13 @@ describe('probe', () => {
     expect(r.status).toBe('unhealthy');
     expect(r.reachable).toBe(false);
     expect(r.warnings.some((w) => /unknown site/.test(w))).toBe(true);
+  });
+});
+
+describe('tool cancellation', () => {
+  it('aborts an in-flight Datadog request when the calling investigation is cancelled', async () => {
+    const { impl, signals } = abortableFetch();
+    const tool = toolNamed(makeDatadogConnector(cfg(), impl), 'search');
+    await expectCancelledInFlight((signal) => tool.run({ domain: 'logs' }, { signal }), signals);
   });
 });

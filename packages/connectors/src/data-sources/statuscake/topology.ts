@@ -33,7 +33,7 @@ export function statuscakeTopology(
         };
         try {
           for (let page = firstPage; page < firstPage + 5; page += 1) {
-            const response = obj(await read(`/v1/${kind}`, { page, per_page: 100 }));
+            const response = obj(await read(`/v1/${kind}`, { page, limit: 100 }));
             if (!Array.isArray(response.data)) {
               collection.completeness = 'partial';
               collection.issue = 'invalid_response';

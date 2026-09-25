@@ -8,6 +8,8 @@ import {
   effectiveSignalClassificationMode,
   markSignalEffectiveDisposition,
   markSignalEffectiveDispositionIfApproved,
+  PROVIDER_RECOVERY_REPORT_DECISION,
+  PROVIDER_RECOVERY_REPORT_ROOT_DECISION,
   recordSignalDisposition,
   type IncidentSummary,
   type SignalDisposition,
@@ -361,6 +363,17 @@ export function shadowSafeCorrelationVerdict(
     : verdict;
 }
 
+/** Deterministic link from one inbound event to the incident signal it was matched to. */
+export interface DeterministicCorrelation {
+  /** `belongs_to` for an attached repeat; a `recovery_reported` variant for an advisory Slack recovery. */
+  decision:
+    | 'belongs_to'
+    | typeof PROVIDER_RECOVERY_REPORT_DECISION
+    | typeof PROVIDER_RECOVERY_REPORT_ROOT_DECISION;
+  incidentId: string;
+  signalId: string;
+}
+
 /** Persists the effective shadow decision or a fail-open terminal disposition. */
 export async function persistEffectiveDisposition(input: {
   core: ClassifyCore;
@@ -372,6 +385,7 @@ export async function persistEffectiveDisposition(input: {
   mode: 'shadow' | 'enforce';
   reason: string;
   requireCurrentApproval?: boolean;
+  correlated?: DeterministicCorrelation;
 }): Promise<boolean> {
   const { deps } = input.core;
   if (!deps.semanticDispositionEnabled) return false;
@@ -412,6 +426,13 @@ export async function persistEffectiveDisposition(input: {
     disposition: input.disposition,
     classificationMode: input.mode,
     effectiveDisposition: input.disposition,
+    ...(input.correlated
+      ? {
+          correlationDecision: input.correlated.decision,
+          correlatedIncidentId: input.correlated.incidentId,
+          correlatedSignalId: input.correlated.signalId,
+        }
+      : {}),
     ticket: null,
   });
   return true;
@@ -426,6 +447,7 @@ export async function persistDeterministicDisposition(input: {
   scrubbedText: string;
   disposition: SignalDisposition;
   reason: string;
+  correlated?: DeterministicCorrelation;
 }): Promise<void> {
   let mode: 'shadow' | 'enforce' = 'shadow';
   try {

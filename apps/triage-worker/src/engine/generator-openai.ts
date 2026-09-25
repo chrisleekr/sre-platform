@@ -1,9 +1,11 @@
 import OpenAI from 'openai';
 import { toJSONSchema, type ZodType } from 'zod';
+import { parseStructuredOutput } from './structured-repair';
 import { providerFetch } from './provider-fetch';
 import {
   openaiText,
   observeOpenAIUsage,
+  sanitizeOpenAIHardError,
   supportsTemperature,
   type OpenAIEngineConfig,
   type OpenAILike,
@@ -95,12 +97,10 @@ export function makeOpenAIGenerator(
         if (options?.signal?.aborted) throw options.signal.reason;
         const unavailable = classifyOpenAIError(err);
         if (unavailable) throw unavailable;
-        // Fixed message (only `.message` is persisted as jobs.last_error, CWE-209); `cause` aids
-        // in-process debugging without reaching the persisted field.
-        throw new Error('openai request failed', { cause: err });
+        throw sanitizeOpenAIHardError(err);
       }
       observeOpenAIUsage(raw, model, onUsage);
-      return schema.parse(extractJson(openaiText(raw)));
+      return parseStructuredOutput(schema, extractJson(openaiText(raw)), options);
     },
   };
 }
@@ -160,7 +160,7 @@ export function makeOpenAIVision(
         if (options?.signal?.aborted) throw options.signal.reason;
         const unavailable = classifyOpenAIError(err);
         if (unavailable) throw unavailable;
-        throw new Error('openai request failed', { cause: err });
+        throw sanitizeOpenAIHardError(err);
       }
       observeOpenAIUsage(raw, model, onUsage);
       return openaiText(raw);

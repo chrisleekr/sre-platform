@@ -3,6 +3,7 @@ import type { ConnectorConfig } from '../../../registry';
 import type { HostLookup } from '../../../ssrf';
 import type { ConnectorTool } from '../../../types';
 import { buildGetUrl, makePrometheusConnector } from '../index';
+import { abortableFetch, expectCancelledInFlight } from '../../../__tests__/request-signal.fixture';
 
 interface Call {
   url: string;
@@ -476,5 +477,13 @@ describe('probe', () => {
     expect(r.status).toBe('unhealthy');
     expect(r.reachable).toBe(false);
     expect(r.warnings.some((w) => /baseUrl is required/.test(w))).toBe(true);
+  });
+});
+
+describe('tool cancellation', () => {
+  it('aborts an in-flight Prometheus request when the calling investigation is cancelled', async () => {
+    const { impl, signals } = abortableFetch();
+    const tool = toolNamed(conn(impl), 'query');
+    await expectCancelledInFlight((signal) => tool.run({ query: 'up' }, { signal }), signals);
   });
 });

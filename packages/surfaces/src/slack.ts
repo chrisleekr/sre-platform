@@ -62,6 +62,7 @@ const deepLink = (url: string, label: string): string => {
   return `<${safeUrl}|${label}>`;
 };
 const incidentLink = (url: string): string => deepLink(url, 'Open incident');
+const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
 
 const isOpeningLifecycle = (msg: OutboundMessage): boolean =>
   msg.kind === 'lifecycle' && msg.lifecycleFrom == null && msg.lifecycleTo === 'open';
@@ -83,6 +84,9 @@ function render(msg: OutboundMessage, link?: string | null): string {
   }
   const who = msg.author === 'agent' ? '🤖' : msg.author === 'human' ? '👤' : 'ℹ️';
   const takeaway = msg.summary ? truncateTakeaway(msg.summary) : null;
+  const unverified =
+    msg.finding?.promotion === 'not_promoted' &&
+    msg.finding.promotionReason === 'investigation_inconclusive';
   const findingPrefix = msg.finding
     ? msg.finding.promotion === 'trusted_assessment'
       ? 'Conclusion: '
@@ -90,9 +94,22 @@ function render(msg: OutboundMessage, link?: string | null): string {
           msg.finding.promotionReason === 'budget_exhausted' ||
           msg.finding.promotionReason === 'missing_capability'
         ? 'Blocked: '
-        : 'Update: '
+        : unverified
+          ? 'Unverified: '
+          : 'Update: '
     : '';
-  const raw = msg.recovery ? msg.content : `${findingPrefix}${takeaway ?? msg.content}`;
+  // Any inconclusive finding (engine-inconclusive, reviewer-rejected or review-incomplete) says
+  // what to check next. Model text is flattened so it cannot forge a line such as an incident link.
+  const gaps = unverified
+    ? (msg.finding?.gaps ?? []).slice(0, 3).map((g) => `• ${oneLine(g)}`)
+    : [];
+  const openChecks = [
+    ...(unverified && msg.finding?.nextStep ? [`Next step: ${oneLine(msg.finding.nextStep)}`] : []),
+    ...(gaps.length ? ['Still to verify:', ...gaps] : []),
+  ];
+  const raw = msg.recovery
+    ? msg.content
+    : [`${findingPrefix}${takeaway ?? msg.content}`, ...openChecks].join('\n');
   const body = msg.preformatted ? raw : escapeSlackText(raw);
   // Attribute a human reply synced from the dashboard when a label was resolved: the label is the
   // author's email local-part, never the full address. Falls back to the bare glyph when unresolved.
@@ -167,16 +184,46 @@ function recoveryBlocks(
     });
   }
 
-  if (recovery.unknowns.length > 0 || recovery.nextStep) {
-    const details = [
-      ...(recovery.unknowns.length > 0
-        ? [
-            `*Unknowns*\n${recovery.unknowns.map((item) => `• ${escapeSlackText(item)}`).join('\n')}`,
-          ]
-        : []),
-      ...(recovery.nextStep ? [`*Next*\n${escapeSlackText(recovery.nextStep)}`] : []),
-    ];
-    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: details.join('\n\n') } });
+  if (recovery.questions !== undefined) {
+    for (const relevance of ['blocking', 'follow_up'] as const) {
+      const questions = recovery.questions.filter(
+        (question) => question.resolutionRelevance === relevance,
+      );
+      if (questions.length === 0) continue;
+      const label = relevance === 'blocking' ? 'Blocks resolution' : 'Follow-up work';
+      for (const question of questions) {
+        const detail = `*${label}* (${escapeSlackText(question.category.replaceAll('_', ' '))})\n${escapeSlackText(question.question)}\n*Next action:* ${escapeSlackText(question.nextAction)}`;
+        for (const section of splitSectionText(detail))
+          blocks.push({ type: 'section', text: { type: 'mrkdwn', text: section } });
+        const attempts = question.attemptedEvidenceIds.map((id) => ({
+          type: 'mrkdwn',
+          text: link
+            ? deepLink(
+                `${link.split('#')[0]}#evidence-${encodeURIComponent(id)}`,
+                'Attempted check',
+              )
+            : escapeSlackText(id),
+        }));
+        if (attempts.length === 0)
+          attempts.push({ type: 'mrkdwn', text: 'No recorded check attempts' });
+        for (let offset = 0; offset < attempts.length; offset += 10)
+          blocks.push({ type: 'context', elements: attempts.slice(offset, offset + 10) });
+      }
+    }
+  } else if (recovery.unknowns.length > 0) {
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*Unclassified recovery questions*\n${recovery.unknowns.map((item) => `• ${escapeSlackText(item)}`).join('\n')}`,
+      },
+    });
+  }
+  if (recovery.nextStep) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*Next*\n${escapeSlackText(recovery.nextStep)}` },
+    });
   }
 
   if (link) {
@@ -305,16 +352,28 @@ async function slackApiPost(
  * @param token - Tenant Slack bot token.
  * @param channel - Slack channel that should own the incident thread.
  * @param text - Plain-text incident opener.
+ * @param intakeId - Durable native intake identity, when the caller owns one.
  */
 export async function slackChatPostAlertRoot(
   fetchImpl: FetchLike,
   token: string,
   channel: string,
   text: string,
+  intakeId?: string,
 ): Promise<string> {
+  const fallback = text.slice(0, SLACK_TEXT_MAX);
   const data = await slackApiPost(fetchImpl, 'chat.postMessage', token, {
     channel,
-    text: text.slice(0, SLACK_TEXT_MAX),
+    text: fallback,
+    ...(intakeId
+      ? {
+          blocks: Array.from({ length: Math.ceil(fallback.length / 3_000) }, (_, index) => ({
+            type: 'section',
+            ...(index === 0 ? { block_id: `sre-alert-root:${intakeId}` } : {}),
+            text: { type: 'plain_text', text: fallback.slice(index * 3_000, (index + 1) * 3_000) },
+          })),
+        }
+      : {}),
     mrkdwn: false,
     unfurl_links: false,
     unfurl_media: false,

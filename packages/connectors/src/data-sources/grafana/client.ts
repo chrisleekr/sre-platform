@@ -2,6 +2,7 @@ import type { ConnectorConfig } from '../../registry';
 import { assertSafeHttpOrHttpsUrl, type HostLookup } from '../../ssrf';
 import { resolveTimeMs } from '../../time';
 import { obj, str } from '../../values';
+import { boundedSignal } from '../../request-signal';
 
 /** Injectable so the REST calls are unit-testable without the network. */
 export type FetchLike = typeof fetch;
@@ -142,6 +143,8 @@ export interface GrafanaClient {
   base: string;
   token: string;
   serverTls: TlsOpts | undefined;
+  /** Caller cancellation for tool reads; absent on probe and first-pass paths. */
+  signal?: AbortSignal;
 }
 
 export async function connect(
@@ -160,7 +163,7 @@ export async function connect(
 export function gInit(client: GrafanaClient): FetchInit {
   return {
     headers: { Authorization: `Bearer ${client.token}`, Accept: 'application/json' },
-    signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    signal: boundedSignal(API_TIMEOUT_MS, client.signal),
     redirect: 'error',
     tls: client.serverTls,
   };

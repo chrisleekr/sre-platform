@@ -1,5 +1,4 @@
 import {
-  hasPendingSurfaceMessageClassification,
   isSurfaceInboundSuperseded,
   recordSurfaceInboundClassificationOutcome,
   withSurfaceInboundRoutingFence,
@@ -9,7 +8,7 @@ import type { ClassifyHandlerDeps, ClassifyOutcome } from './contracts';
 
 type IntakeStateDeps = Pick<
   ClassifyHandlerDeps,
-  'isIntakeSuperseded' | 'hasPendingClassification' | 'withIntakeRoutingFence' | 'onOutcome'
+  'isIntakeSuperseded' | 'withIntakeRoutingFence' | 'onOutcome'
 >;
 
 function logOutcome(outcome: ClassifyOutcome): void {
@@ -33,12 +32,6 @@ function logOutcome(outcome: ClassifyOutcome): void {
 export function makeSlackIntakeStateDeps(db: Db, coordinationDb: Db): IntakeStateDeps {
   return {
     isIntakeSuperseded: isSurfaceInboundSuperseded.bind(null, db),
-    hasPendingClassification: (tenantId, identity, excludeIntakeId) =>
-      hasPendingSurfaceMessageClassification(db, {
-        tenantId,
-        ...identity,
-        excludeIntakeId,
-      }),
     withIntakeRoutingFence: (tenantId, intakeId, eventAt, eventVersion, identity, fn) =>
       withSurfaceInboundRoutingFence(
         coordinationDb,

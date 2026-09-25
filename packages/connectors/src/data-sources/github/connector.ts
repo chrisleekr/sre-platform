@@ -39,6 +39,7 @@ import { issueReadTools } from '../../issue-read-tools';
 const GITHUB_CONNECTOR = {
   type: 'github',
   capabilities: {
+    alertLifecycle: 'none',
     topology: 'inventory',
     availability: 'ready',
     configuration: 'tenant',

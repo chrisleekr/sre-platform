@@ -2,6 +2,7 @@ import { describe, expect, it, test } from 'vitest';
 import type { ConnectorConfig } from '../../../registry';
 import type { ConnectorTool } from '../../../types';
 import { buildGetUrl, makeStatusCakeConnector } from '../connector';
+import { abortableFetch, expectCancelledInFlight } from '../../../__tests__/request-signal.fixture';
 
 interface Call {
   url: string;
@@ -147,7 +148,7 @@ describe('list_tests', () => {
     expect(u.pathname).toBe('/v1/uptime');
     expect(u.searchParams.get('tags')).toBe('prod');
     expect(u.searchParams.get('matchany')).toBe('true');
-    expect(u.searchParams.get('per_page')).toBe('100'); // clamped to MAX_PER_PAGE
+    expect(u.searchParams.get('limit')).toBe('100'); // clamped to MAX_PER_PAGE
   });
 
   test('defaults per_page to 25', async () => {
@@ -155,13 +156,13 @@ describe('list_tests', () => {
     await toolNamed(conn(impl), 'list_tests').run({ type: 'ssl' });
     const u = new URL(calls[0]!.url);
     expect(u.pathname).toBe('/v1/ssl');
-    expect(u.searchParams.get('per_page')).toBe('25');
+    expect(u.searchParams.get('limit')).toBe('25');
   });
 
   test('per_page lower bound is 1', async () => {
     const { impl, calls } = fakeFetch(() => ({ json: {} }));
     await toolNamed(conn(impl), 'list_tests').run({ type: 'heartbeat', per_page: 0 });
-    expect(new URL(calls[0]!.url).searchParams.get('per_page')).toBe('1');
+    expect(new URL(calls[0]!.url).searchParams.get('limit')).toBe('1');
   });
 });
 
@@ -340,12 +341,12 @@ describe('probe', () => {
     expect(r.authorized).toBe(true);
   });
 
-  test('uses a per_page=1 uptime probe', async () => {
+  test('uses the documented limit=1 uptime probe', async () => {
     const { impl, calls } = fakeFetch(() => ({ status: 200 }));
     await conn(impl).probe();
     const u = new URL(calls[0]!.url);
     expect(u.pathname).toBe('/v1/uptime');
-    expect(u.searchParams.get('per_page')).toBe('1');
+    expect(u.searchParams.get('limit')).toBe('1');
   });
 
   test('unhealthy and unauthorized on 401', async () => {
@@ -377,5 +378,13 @@ describe('probe', () => {
     expect(r.status).toBe('unhealthy');
     expect(r.reachable).toBe(false);
     expect(r.warnings.some((w) => /API token.*required/.test(w))).toBe(true);
+  });
+});
+
+describe('tool cancellation', () => {
+  it('aborts an in-flight StatusCake request when the calling investigation is cancelled', async () => {
+    const { impl, signals } = abortableFetch();
+    const tool = toolNamed(conn(impl), 'list_tests');
+    await expectCancelledInFlight((signal) => tool.run({ type: 'uptime' }, { signal }), signals);
   });
 });

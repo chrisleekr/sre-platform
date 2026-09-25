@@ -76,7 +76,7 @@ afterAll(async () => {
 });
 
 describe('grouped signal transaction', () => {
-  test('routes a one-member structured edit through the legacy plain signal', async () => {
+  test('preserves the legacy plain signal when a one-member structured edit claims recovery', async () => {
     const rootId = `legacy-root-${randomUUID()}`;
     const legacyIncident = await createIncident(app.db, tenantId, {
       fingerprint: `legacy-structured-edit-${randomUUID()}`,
@@ -151,13 +151,13 @@ describe('grouped signal transaction', () => {
       .select()
       .from(incidentSignals)
       .where(eq(incidentSignals.incidentId, legacyIncident.id));
-    expect(signal).toMatchObject({ externalMessageId: rootId, state: 'resolved', version: 2 });
+    expect(signal).toMatchObject({ externalMessageId: rootId, state: 'firing', version: 1 });
     expect(classifier).not.toHaveBeenCalled();
-    expect(insertRecoveryTx).toHaveBeenCalledTimes(1);
-    expect(publishJob).toHaveBeenCalledTimes(1);
+    expect(insertRecoveryTx).not.toHaveBeenCalled();
+    expect(publishJob).not.toHaveBeenCalled();
   });
 
-  test('rolls back every member when a later observation fails', async () => {
+  test('never enters grouped lifecycle writes for an unverified recovery', async () => {
     const realHub = new ConversationHub(app.db, redis);
     let observed = 0;
     const publishAppended = vi.fn(async () => undefined);
@@ -168,6 +168,8 @@ describe('grouped signal transaction', () => {
         if (observed === 2) throw new Error('second grouped observation failed');
         return result;
       },
+      // The advisory recovery report line is expected; lifecycle writes are not.
+      appendOnce: realHub.appendOnce.bind(realHub),
       publishAppended,
     };
     const insertRecoveryTx = vi.fn();
@@ -231,17 +233,19 @@ describe('grouped signal transaction', () => {
           ],
         },
       }),
-    ).rejects.toThrow('second grouped observation failed');
+    ).resolves.toBeUndefined();
+    expect(observed).toBe(0);
 
     expect(
       (await listIncidentSignals(app.db, tenantId, incidentId)).map((signal) => signal.state),
     ).toEqual(['firing', 'firing']);
+    // Only the advisory recovery report is appended; no lifecycle or signal line is written.
     expect(
       await admin.db
-        .select()
+        .select({ author: incidentMessages.author, kind: incidentMessages.kind })
         .from(incidentMessages)
         .where(eq(incidentMessages.incidentId, incidentId)),
-    ).toHaveLength(0);
+    ).toEqual([{ author: 'system', kind: 'status' }]);
     expect(insertRecoveryTx).not.toHaveBeenCalled();
     expect(insertReassessmentTx).not.toHaveBeenCalled();
     expect(publishAppended).not.toHaveBeenCalled();

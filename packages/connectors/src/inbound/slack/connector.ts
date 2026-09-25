@@ -1,3 +1,4 @@
+import { uptimeNotification, uptimeObservation } from './uptime';
 import { createHash } from 'node:crypto';
 import type {
   IInboundConnector,
@@ -111,7 +112,8 @@ function firingProviderShape(body: Record<string, unknown>, text: string): boole
     // makes the scan quadratic on untrusted Slack text full of newlines.
     /\[\s*firing(?:\s*:\s*\d+)?\s*\]|(?:^|\n)[^\S\n]*\*alert:\*/i.test(metadata) ||
     /\balertmanager\s*:[^\n]*\bfiring\b|(?:^|\n)[^\S\n]*firing alert\b/i.test(metadata) ||
-    /\bwebsite\s*\|[\s\S]*\bwent\s+down\s*\[http\s+\d{3}\]/i.test(metadata) ||
+    // Any bracketed reason counts: StatusCake reports timeouts as [Timeout / Connection Refused].
+    /\bwebsite\s*\|[\s\S]*\bwent\s+down\s*\[[^\]\n]+\]/i.test(metadata) ||
     /\bssl monitoring\b|\bexpiration reminder\b[\s\S]*\bcertificate\b|\bcertificate valid until\b/i.test(
       metadata,
     )
@@ -382,13 +384,8 @@ function slackTimestamp(value: string): { eventAt: string; eventVersion: string 
 }
 
 /**
- * Slack inbound connector. Receives the inner Slack event object and yields a
- * candidate only for top-level channel messages with usable top-level or attachment-derived alert text. Thread replies
- * (thread_ts present) are the resume path, handled elsewhere, so they are dropped here.
- *
- * Bot posts are kept as alert candidates, including a root message posted by an incoming webhook on
- * the connected app itself. The platform only projects messages as thread replies, and the thread gate
- * below rejects those before classification, so bot identity is not a sound root-message loop guard.
+ * Normalizes root messages and provider recovery replies. Other thread replies use the resume path.
+ * Same-app root posts remain valid because incoming webhooks can share the connected app identity.
  *
  * @param event - Untrusted inner Slack event.
  * @param ctx - Verified identity context for the connected Slack app.
@@ -432,11 +429,11 @@ function slackCandidate(event: unknown, ctx: InboundContext): InboundCandidate |
   const eventTs = editTs || trimmed(e.event_ts) || trimmed(e.ts) || ts;
   const observed = slackTimestamp(eventTs);
   if (!observed) return null;
-  const signalState = resolvedNotification(text)
-    ? 'resolved'
-    : authoredByBot
-      ? 'firing'
-      : 'unknown';
+  const providerText = [trimmed(nested.text), attachments].filter(Boolean).join('\n');
+  const uptime = authoredByBot ? uptimeNotification(providerText) : null;
+  const signalState =
+    uptime?.state ??
+    (resolvedNotification(text) ? 'resolved' : authoredByBot ? 'firing' : 'unknown');
   const alertKind =
     authoredByBot &&
     signalState === 'firing' &&
@@ -444,11 +441,7 @@ function slackCandidate(event: unknown, ctx: InboundContext): InboundCandidate |
       ? 'firing'
       : undefined;
 
-  // Human replies belong to the conversational resume path. A provider bot may, however, publish
-  // the terminal notification inside the original alert thread instead of editing the root or
-  // posting a second root. Admit only that exact provider-resolution shape. Platform replies cannot
-  // resolve an alert accidentally: they use a different producer identity and the downstream matcher
-  // still requires one unique Alertmanager signal identity.
+  // Only provider recoveries enter from threads. The downstream matcher checks producer identity.
   const isThreadReply =
     nested.thread_ts !== undefined && nested.thread_ts !== null && nested.thread_ts !== nested.ts;
   if (isThreadReply && !(authoredByBot && signalState === 'resolved')) return null;
@@ -471,15 +464,25 @@ function slackCandidate(event: unknown, ctx: InboundContext): InboundCandidate |
     eventAt: observed.eventAt,
     contentHash: createHash('sha256').update(text).digest('hex'),
     isEdit: subtype === 'message_changed',
-    observations: providerObservations({
-      text: [trimmed(nested.text), attachments].filter(Boolean).join('\n'),
-      channel,
-      externalId: ts,
-      state: signalState,
-      eventKey,
-      eventVersion: observed.eventVersion,
-      eventAt: observed.eventAt,
-    }),
+    observations: uptime
+      ? [
+          uptimeObservation(uptime, {
+            text: providerText,
+            channel,
+            externalId: ts,
+            eventKey,
+            ...observed,
+          }),
+        ]
+      : providerObservations({
+          text: providerText,
+          channel,
+          externalId: ts,
+          state: signalState,
+          eventKey,
+          eventVersion: observed.eventVersion,
+          eventAt: observed.eventAt,
+        }),
   };
 }
 

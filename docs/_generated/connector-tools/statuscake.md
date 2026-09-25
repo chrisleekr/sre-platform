@@ -4,9 +4,9 @@
 | --- | --- |
 | `list_tests` | List checks of a given type with their status (the "what is up/down" inventory). type is one of uptime, ssl, pagespeed, heartbeat. Optional tags (comma-separated) and matchany (true = any tag, false = all tags) to scope to a service. Paginated: optional page/per_page; the response metadata carries page_count/total_count. |
 | `get_test` | Get one check by type and id: full config and current status. type is uptime, ssl, pagespeed, or heartbeat. For ssl this carries the certificate expiry/validity fields (the "down because the cert expired" signal). |
-| `get_test_history` | Get the recent check-run history for a test (the raw pass/fail signal over time). type is uptime or pagespeed (ssl and heartbeat have no history endpoint). Paginated: optional page/per_page. |
-| `get_uptime_periods` | Get the up/down periods for an uptime test — the downtime windows ("since when down"), each with a start, end, and duration. Paginated: optional page/per_page. |
-| `get_uptime_alerts` | Get the alerts StatusCake sent for an uptime test. Paginated: optional page/per_page. |
+| `get_test_history` | Get the recent check-run history for a test (the raw pass/fail signal over time). type is uptime or pagespeed (ssl and heartbeat have no history endpoint). Cursor paginated: optional limit, before and after UNIX seconds. |
+| `get_uptime_periods` | Get the up/down periods for an uptime test — the downtime windows ("since when down"), each with a start, end, and duration. Cursor paginated: optional limit, before and after UNIX seconds. |
+| `get_uptime_alerts` | Get the alerts StatusCake sent for an uptime test. Cursor paginated: optional limit, before and after UNIX seconds. |
 | `list_maintenance_windows` | List maintenance windows — scheduled periods where alerts are paused (is this "down" expected?). Paginated: optional page/per_page. |
 | `list_contact_groups` | List contact groups — who gets alerted. Paginated: optional page/per_page. |
 | `api_get` | GET any StatusCake API endpoint by path (e.g. "v1/maintenance-windows/{id}", "v1/contact-groups/{id}", "v1/ssl/{id}"). Read-only. Use for anything the named tools do not cover. |

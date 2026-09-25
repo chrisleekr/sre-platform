@@ -1,7 +1,8 @@
 import * as z from 'zod';
 import type { ConnectorConfig } from '../../registry';
 import { assertSafeHttpsUrl, type HostLookup } from '../../ssrf';
-import type { ConnectorTool } from '../../types';
+import type { ConnectorTool, ToolRunOptions } from '../../types';
+import { boundedSignal } from '../../request-signal';
 import { obj, str } from '../../values';
 import type { InstallationTokenProvider } from './auth';
 import {
@@ -39,11 +40,12 @@ async function fetchJobLogs(
   repo: string,
   jobId: number,
   lookup: HostLookup,
+  signal?: AbortSignal,
 ): Promise<{ truncated: boolean; body: string }> {
   const url = buildGetUrl(GITHUB_API, `repos/${owner}/${repo}/actions/jobs/${jobId}/logs`);
   const res = await fetchImpl(url, {
     headers: ghHeaders(token),
-    signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    signal: boundedSignal(API_TIMEOUT_MS, signal),
     redirect: 'manual',
   });
   // Bun exposes the real 302 + Location under redirect:'manual' (a deliberate divergence from the
@@ -61,7 +63,7 @@ async function fetchJobLogs(
   await assertSafeHttpsUrl(location, lookup); // https + public only; rejects internal/metadata hosts
   const blob = await fetchImpl(location, {
     // No Authorization header: the signed blob URL needs none, and our token must not leak off-host.
-    signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    signal: boundedSignal(API_TIMEOUT_MS, signal),
     redirect: 'error',
   });
   if (!blob.ok) throw new Error(`github logs blob ${blob.status}`);
@@ -108,7 +110,7 @@ function gtool<S extends z.ZodType>(def: {
   name: string;
   description: string;
   inputSchema: S;
-  run: (input: z.infer<S>) => Promise<unknown>;
+  run: (input: z.infer<S>, options?: ToolRunOptions) => Promise<unknown>;
 }): ConnectorTool {
   return def as ConnectorTool;
 }
@@ -137,7 +139,9 @@ export function makeGitHubTools(
     repository: string,
     path: string,
     query?: Record<string, string | number>,
-  ): Promise<unknown> => ghGet(fetchImpl, await auth.token([repository]), path, query);
+    signal?: AbortSignal,
+  ): Promise<unknown> =>
+    ghGet(fetchImpl, await auth.token([repository]), path, query, undefined, signal);
 
   return [
     gtool({
@@ -150,7 +154,7 @@ export function makeGitHubTools(
         path: z.string(),
         query: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
       }),
-      run: ({ repo, path, query }) => {
+      run: ({ repo, path, query }, call) => {
         const parsed = parseRepo(repo);
         const normalized = path.replace(/^\/+/, '');
         const prefix = `repos/${parsed.owner}/${parsed.repo}`;
@@ -158,7 +162,7 @@ export function makeGitHubTools(
           throw new Error(
             'github connector: api_get path must stay inside the selected repository',
           );
-        return getForRepo(repo, normalized, query);
+        return getForRepo(repo, normalized, query, call?.signal);
       },
     }),
     gtool({
@@ -216,13 +220,14 @@ export function makeGitHubTools(
         until: z.string().optional(),
         per_page: z.number().optional(),
       }),
-      run: async ({ repo, sha, path, author, since, until, per_page }) => {
+      run: async ({ repo, sha, path, author, since, until, per_page }, call) => {
         const { owner, repo: name } = repoOf(repo);
         const repository = `${owner}/${name}`;
         return getForRepo(
           repository,
           `repos/${owner}/${name}/commits`,
           q({ sha, path, author, since, until, per_page: clampPerPage(per_page) }),
+          call?.signal,
         );
       },
     }),
@@ -231,9 +236,14 @@ export function makeGitHubTools(
       description:
         'Get one commit with its author, message, parent revisions, changed files, and patch metadata.',
       inputSchema: z.object({ repo: z.string(), ref: z.string() }),
-      run: async ({ repo, ref }) => {
+      run: async ({ repo, ref }, call) => {
         const { owner, repo: name } = parseRepo(repo);
-        return getForRepo(repo, `repos/${owner}/${name}/commits/${encodeURIComponent(ref)}`);
+        return getForRepo(
+          repo,
+          `repos/${owner}/${name}/commits/${encodeURIComponent(ref)}`,
+          undefined,
+          call?.signal,
+        );
       },
     }),
     gtool({
@@ -242,11 +252,13 @@ export function makeGitHubTools(
         'Compare two revisions in one repository to identify commits and files changed between the ' +
         'last known-good and incident revisions.',
       inputSchema: z.object({ repo: z.string(), base: z.string(), head: z.string() }),
-      run: async ({ repo, base, head }) => {
+      run: async ({ repo, base, head }, call) => {
         const { owner, repo: name } = parseRepo(repo);
         return getForRepo(
           repo,
           `repos/${owner}/${name}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`,
+          undefined,
+          call?.signal,
         );
       },
     }),
@@ -260,12 +272,17 @@ export function makeGitHubTools(
         query: z.string(),
         per_page: z.number().optional(),
       }),
-      run: async ({ repo, query, per_page }) => {
+      run: async ({ repo, query, per_page }, call) => {
         parseRepo(repo);
-        return getForRepo(repo, 'search/code', {
-          q: `${query} repo:${repo}`,
-          per_page: Math.min(Math.max(1, Math.floor(per_page ?? 20)), 50),
-        });
+        return getForRepo(
+          repo,
+          'search/code',
+          {
+            q: `${query} repo:${repo}`,
+            per_page: Math.min(Math.max(1, Math.floor(per_page ?? 20)), 50),
+          },
+          call?.signal,
+        );
       },
     }),
     gtool({
@@ -274,7 +291,7 @@ export function makeGitHubTools(
         'Read one file or directory at an optional revision from a resolved repository. File content ' +
         'is bounded to the provider response limits and remains read-only.',
       inputSchema: z.object({ repo: z.string(), path: z.string(), ref: z.string().optional() }),
-      run: async ({ repo, path, ref }) => {
+      run: async ({ repo, path, ref }, call) => {
         const { owner, repo: name } = parseRepo(repo);
         if (!path || path.startsWith('/') || path.split('/').includes('..'))
           throw new Error('github connector: invalid repository path');
@@ -282,6 +299,7 @@ export function makeGitHubTools(
           repo,
           `repos/${owner}/${name}/contents/${path.split('/').map(encodeURIComponent).join('/')}`,
           q({ ref }),
+          call?.signal,
         );
       },
     }),
@@ -299,13 +317,14 @@ export function makeGitHubTools(
         direction: z.string().optional(),
         per_page: z.number().optional(),
       }),
-      run: async ({ repo, state, base, head, sort, direction, per_page }) => {
+      run: async ({ repo, state, base, head, sort, direction, per_page }, call) => {
         const { owner, repo: name } = repoOf(repo);
         const repository = `${owner}/${name}`;
         return getForRepo(
           repository,
           `repos/${owner}/${name}/pulls`,
           q({ state, base, head, sort, direction, per_page: clampPerPage(per_page) }),
+          call?.signal,
         );
       },
     }),
@@ -314,10 +333,15 @@ export function makeGitHubTools(
       description:
         'Get a single pull request by number (title, state, merge status, head/base sha).',
       inputSchema: z.object({ repo: repoArg, number: z.number() }),
-      run: async ({ repo, number }) => {
+      run: async ({ repo, number }, call) => {
         const { owner, repo: name } = repoOf(repo);
         const repository = `${owner}/${name}`;
-        return getForRepo(repository, `repos/${owner}/${name}/pulls/${number}`);
+        return getForRepo(
+          repository,
+          `repos/${owner}/${name}/pulls/${number}`,
+          undefined,
+          call?.signal,
+        );
       },
     }),
     gtool({
@@ -334,13 +358,14 @@ export function makeGitHubTools(
         actor: z.string().optional(),
         per_page: z.number().optional(),
       }),
-      run: async ({ repo, branch, event, status, actor, per_page }) => {
+      run: async ({ repo, branch, event, status, actor, per_page }, call) => {
         const { owner, repo: name } = repoOf(repo);
         const repository = `${owner}/${name}`;
         return getForRepo(
           repository,
           `repos/${owner}/${name}/actions/runs`,
           q({ branch, event, status, actor, per_page: clampPerPage(per_page) }),
+          call?.signal,
         );
       },
     }),
@@ -353,13 +378,14 @@ export function makeGitHubTools(
         run_id: z.number(),
         per_page: z.number().optional(),
       }),
-      run: async ({ repo, run_id, per_page }) => {
+      run: async ({ repo, run_id, per_page }, call) => {
         const { owner, repo: name } = repoOf(repo);
         const repository = `${owner}/${name}`;
         return getForRepo(
           repository,
           `repos/${owner}/${name}/actions/runs/${run_id}/jobs`,
           q({ per_page: clampPerPage(per_page ?? JOBS_PER_PAGE) }),
+          call?.signal,
         );
       },
     }),
@@ -369,10 +395,18 @@ export function makeGitHubTools(
         'Fetch a workflow job log. Returns bounded plain text (last ~64K characters). Logs may ' +
         'contain secrets not masked by GitHub — treat as sensitive.',
       inputSchema: z.object({ repo: repoArg, job_id: z.number() }),
-      run: async ({ repo, job_id }) => {
+      run: async ({ repo, job_id }, call) => {
         const { owner, repo: name } = repoOf(repo);
         const repository = `${owner}/${name}`;
-        return fetchJobLogs(fetchImpl, await auth.token([repository]), owner, name, job_id, lookup);
+        return fetchJobLogs(
+          fetchImpl,
+          await auth.token([repository]),
+          owner,
+          name,
+          job_id,
+          lookup,
+          call?.signal,
+        );
       },
     }),
   ];

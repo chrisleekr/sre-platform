@@ -144,7 +144,7 @@ describe('makeClassifyHandler', () => {
         title: 'Certificate expiry warning',
         signals: [
           expect.objectContaining({
-            state: 'firing',
+            state: 'unknown',
             alertName: 'Certificate expiry warning',
             signalSource: expect.objectContaining({
               kind: 'connector',
@@ -297,7 +297,7 @@ describe('makeClassifyHandler', () => {
     expect(onOutcome).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'not_worthy' }));
   });
 
-  test('an explicit resolution retries candidate lookup transiently, then fails closed at the cap', async () => {
+  test('an unverified explicit resolution remains advisory without candidate lookup', async () => {
     const onOutcome = vi.fn();
     const handler = makeClassifyHandler({
       classify: makeFakeClassifier(() => {
@@ -317,14 +317,12 @@ describe('makeClassifyHandler', () => {
       signalState: 'resolved',
       text: '[RESOLVED] checkout latency',
     });
-    vi.mocked(listUnresolvedSignals).mockRejectedValueOnce(new Error('database unavailable'));
     await expect(
       handler(
         __fixture.makeJob({ payload: resolved, attempts: __fixture.FAIL_OPEN_THRESHOLD - 1 }),
       ),
-    ).rejects.toBeInstanceOf(RetryableError);
+    ).resolves.toBeUndefined();
 
-    vi.mocked(listUnresolvedSignals).mockRejectedValueOnce(new Error('database unavailable'));
     await expect(
       handler(__fixture.makeJob({ payload: resolved, attempts: __fixture.FAIL_OPEN_THRESHOLD })),
     ).resolves.toBeUndefined();

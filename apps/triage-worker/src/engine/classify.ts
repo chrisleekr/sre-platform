@@ -19,10 +19,17 @@ import {
   classifyProviderError,
   sanitizeHardError,
   observeClaudeUsage,
+  strictOutputTool,
   type AnthropicLike,
   type ClaudeEngineConfig,
 } from './claude';
-import { observeOpenAIUsage, openaiText, type OpenAILike, type OpenAIEngineConfig } from './openai';
+import {
+  observeOpenAIUsage,
+  openaiText,
+  sanitizeOpenAIHardError,
+  type OpenAILike,
+  type OpenAIEngineConfig,
+} from './openai';
 
 /**
  * The correlation verdict for an inbound message, re-exported from./correlation for
@@ -171,10 +178,13 @@ function defaultFakeRelevance(
 
 export const CLASSIFY_TOOL_NAME = 'report_relevance';
 
+const CLAUDE_CLASSIFY_SYSTEM_PROMPT = `${CLASSIFY_SYSTEM_PROMPT}\nRespond only by calling ${CLASSIFY_TOOL_NAME}.`;
+
 /**
- * Forced terminal tool for structured output, mirroring `report_findings`: `tool_choice` pins the
- * model to call it, so the verdict arrives as validated tool input rather than free-form text that
- * would have to be JSON-scraped. The handler is unreachable (we read the tool_use input directly).
+ * Terminal tool for structured output, mirroring `report_findings`: the Claude binding instructs the
+ * model to call it as a strict tool, so the verdict arrives as validated tool input rather than
+ * free-form text that would have to be JSON-scraped. The handler is unreachable (we read the
+ * tool_use input directly).
  */
 export const classifyRelevanceTool: ToolDefinition<
   z.infer<typeof classifyToolWireSchema>,
@@ -196,7 +206,7 @@ interface ClaudeToolBlock {
 }
 
 /**
- * Read the forced tool_use input. A schema miss THROWS (never returns not-worthy): an unparseable
+ * Read the tool_use input. A schema miss THROWS (never returns not-worthy): an unparseable
  * verdict must NOT be conflated with a confident drop — the consumer fails such a message open to a
  * degraded incident. Message is fixed and secret-free (no model output — CWE-209).
  */
@@ -208,9 +218,10 @@ function extractVerdict(content: ClaudeToolBlock[] | undefined): CorrelationVerd
 }
 
 /**
- * Claude relevance classifier: one `messages.create` with a forced tool call (structured
- * output). No temperature/top_p/thinking (claude-opus-4-8 rejects them). The OAuth path prepends the
- * Claude Code identifier as the exact first system block via `systemParam` (quota gate).
+ * Claude relevance classifier: one `messages.create` with one strict tool the model is instructed
+ * to call (structured output). No temperature/top_p/thinking (claude-opus-4-8 rejects them). The
+ * OAuth path prepends the Claude Code identifier as the exact first system block via `systemParam`
+ * (quota gate).
  * Transient failures become a provider-agnostic `ProviderUnavailableError`; a hard error is sanitized
  * before it can surface as `jobs.last_error` (CWE-209).
  */
@@ -221,11 +232,11 @@ export function makeClaudeClassifier(
 ): Classifier {
   const authMode = claudeAuthMode(config);
   const sdk = sdkOverride ?? buildAnthropic(config, authMode);
-  const toolSpec = {
-    name: CLASSIFY_TOOL_NAME,
-    description: classifyRelevanceTool.description,
-    input_schema: toJsonSchema(classifyRelevanceTool),
-  };
+  const toolSpec = strictOutputTool(
+    CLASSIFY_TOOL_NAME,
+    classifyRelevanceTool.description,
+    toJsonSchema(classifyRelevanceTool),
+  );
   return {
     async classify(
       candidate: InboundCandidate,
@@ -240,9 +251,11 @@ export function makeClaudeClassifier(
           {
             model: config.model,
             max_tokens: 1024,
-            system: systemParam(authMode, CLASSIFY_SYSTEM_PROMPT),
+            system: systemParam(authMode, CLAUDE_CLASSIFY_SYSTEM_PROMPT),
             tools: [toolSpec],
-            tool_choice: { type: 'tool', name: CLASSIFY_TOOL_NAME },
+            // Opus 5.5 rejects forced tool choice. The strict tool plus the instruction keep one valid
+            // call, and extractVerdict still fails closed when the call is missing.
+            tool_choice: { type: 'auto' },
             messages: [
               {
                 role: 'user',
@@ -277,14 +290,6 @@ function classifyOpenAIError(err: unknown): ProviderUnavailableError | null {
     }
   }
   return null;
-}
-
-/** OpenAI counterpart of `sanitizeHardError`: keep only the non-sensitive HTTP status (CWE-209). */
-function sanitizeOpenAIError(err: unknown): Error {
-  const status = err instanceof OpenAI.APIError ? err.status : undefined;
-  return new Error(
-    status ? `classify request failed with status ${status}` : 'classify request failed',
-  );
 }
 
 /**
@@ -347,7 +352,7 @@ export function makeOpenAIClassifier(
         if (options?.signal?.aborted) throw options.signal.reason;
         const unavailable = classifyOpenAIError(err);
         if (unavailable) throw unavailable;
-        throw sanitizeOpenAIError(err);
+        throw sanitizeOpenAIHardError(err, 'classify');
       }
       return parseVerdictJson(openaiText(raw));
     },

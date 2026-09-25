@@ -92,7 +92,14 @@ export class RelationReassessmentHandler {
                       summary: signal.summary,
                     })),
                   },
-                  context: `Investigate whether the numbered incident candidate shares a cause with this incident. Establish direction only with current cited evidence. Do not merge records.\n\n${context}\n\n${responder.text}`,
+                  context: [
+                    'Investigate whether the numbered incident candidate shares a cause with this incident. Establish direction only with current cited evidence. Do not merge records.',
+                    context,
+                    responder.text,
+                    runtime.platformIdentity,
+                  ]
+                    .filter(Boolean)
+                    .join('\n\n'),
                   evidence,
                 },
                 runtime,

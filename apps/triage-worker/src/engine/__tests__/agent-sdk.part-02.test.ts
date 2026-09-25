@@ -1,13 +1,9 @@
 import { describe, expect, test, vi } from 'vitest';
 import type { Options, Query, SDKMessage, SDKResultMessage } from '@anthropic-ai/claude-agent-sdk';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-
 import type { ToolContext, ToolDefinition } from '@sre/agent-tools';
-
 import * as z from 'zod';
-
 import { makeAgentSdkEngine, makeAgentSdkGenerator } from '../agent-sdk';
 
 import { createFixture } from './agent-sdk.fixture';
@@ -101,6 +97,7 @@ describe('Claude Agent SDK runtime', () => {
             evidence: [{ name: 'Readiness', before: 'Failing', now: 'Check succeeds' }],
             evidenceIds: ['11111111-1111-4111-8111-111111111111'],
             unknowns: [],
+            questions: [],
             nextStep: null,
           },
         });
@@ -152,6 +149,7 @@ describe('Claude Agent SDK runtime', () => {
             summary: 'Recovered.',
             evidence: [],
             unknowns: [],
+            questions: [],
             nextStep: null,
           },
         });
@@ -164,6 +162,7 @@ describe('Claude Agent SDK runtime', () => {
             evidence: [{ name: 'Readiness', before: 'Failing', now: 'Check succeeds' }],
             evidenceIds: ['11111111-1111-4111-8111-111111111111'],
             unknowns: [],
+            questions: [],
             nextStep: null,
           },
         });
@@ -367,6 +366,7 @@ describe('Claude Agent SDK runtime', () => {
           evidence: [{ name: 'Error rate', before: 'high', now: 'normal' }],
           evidenceIds: [evidenceId],
           unknowns: [],
+          questions: [],
           nextStep: null,
           recheckAfterMinutes: null,
           scheduleReason: null,
@@ -380,6 +380,7 @@ describe('Claude Agent SDK runtime', () => {
           evidence: [{ name: 'Error rate', before: 'high', now: 'normal' }],
           evidenceIds: [evidenceId],
           unknowns: [],
+          questions: [],
           nextStep: null,
           recheckAfterMinutes: null,
           scheduleReason: null,

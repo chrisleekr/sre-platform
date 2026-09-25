@@ -1,6 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { transformJSONSchema } from '@anthropic-ai/sdk/lib/transform-json-schema';
 import { toJsonSchema, type ToolDefinition } from '@sre/agent-tools';
-import { ProviderRateLimitError, ProviderUnavailableError } from './types';
+import {
+  isProviderConfigurationStatus,
+  ProviderConfigurationError,
+  ProviderRateLimitError,
+  ProviderUnavailableError,
+} from './types';
 import { providerFetch } from './provider-fetch';
 import type {
   RecoveryInput,
@@ -64,9 +70,37 @@ export function classifyProviderError(
  */
 export function sanitizeHardError(err: unknown): Error {
   const status = err instanceof Anthropic.APIError ? err.status : undefined;
+  if (status !== undefined && isProviderConfigurationStatus(status)) {
+    return new ProviderConfigurationError(status);
+  }
   return new Error(
     status ? `claude request failed with status ${status}` : 'claude request failed',
   );
+}
+
+/**
+ * Builds the single strict output tool for a structured Claude call. Opus 5.5 rejects forced
+ * `tool_choice`, so callers send `auto`. The SDK's transform keeps only type, properties, required,
+ * items, anyOf/allOf, supported string formats and minItems 0 or 1, forces
+ * `additionalProperties: false`, and moves every other keyword (enum, const, lengths, ranges, item
+ * counts) into the description as text. Strict mode therefore enforces structure only; the caller's
+ * zod parse is what enforces allowed values and limits.
+ *
+ * @param name - Tool name the model is told to call.
+ * @param description - Tool description shown to the model.
+ * @param schema - JSON Schema generated from the caller's zod schema; its root must be an object.
+ */
+export function strictOutputTool(
+  name: string,
+  description: string,
+  schema: Record<string, unknown>,
+): Anthropic.Tool {
+  return {
+    name,
+    description,
+    input_schema: { ...transformJSONSchema(schema), type: 'object' },
+    strict: true,
+  };
 }
 
 /** The slice of the Anthropic SDK used here — fully stubbable in tests. */
@@ -178,7 +212,9 @@ export function makeClaudeProvider(
     userMsg(text: string) {
       return { role: 'user', content: text };
     },
-    async call(system, messages, specs, forceTool, signal): Promise<ModelTurn> {
+    // Named tool choice is not sent: Opus 5.5 rejects forced tool_choice with a 400, and the loop's
+    // finalizer already validates that exactly one terminal tool was called.
+    async call(system, messages, specs, _forceTool, signal): Promise<ModelTurn> {
       let response: ClaudeResponse;
       try {
         response = (await sdk.messages.create(
@@ -187,7 +223,6 @@ export function makeClaudeProvider(
             max_tokens: 2048,
             system: systemParam(authMode, system),
             tools: specs,
-            ...(forceTool ? { tool_choice: { type: 'tool', name: forceTool } } : {}),
             messages,
           },
           { signal },

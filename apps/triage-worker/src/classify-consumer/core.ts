@@ -25,16 +25,8 @@ import type {
   ResolutionCandidates,
   RouteFn,
 } from './contracts';
-import {
-  ACTIVE_WINDOW_MS,
-  CAP_N,
-  CLASSIFY_FAIL_OPEN_ATTEMPTS,
-  INBOUND_DEDUP_TTL_SEC,
-  RETRIEVE_K,
-} from './contracts';
-
+import { ACTIVE_WINDOW_MS, CAP_N, INBOUND_DEDUP_TTL_SEC, RETRIEVE_K } from './contracts';
 export const serviceForChannel = (channel: string): string => `slack:${channel}`;
-
 /**
  * Selects a concise incident title from normalized provider evidence.
  * @param text - Scrubbed inbound message text used when the adapter supplied no alert name.
@@ -232,25 +224,6 @@ export class ClassifyCore {
   }
 
   /**
-   * Checks whether another durable classify job still owns this stable surface message.
-   * @param tenantId - Tenant that owns the classify job.
-   * @param candidate - Edit candidate whose own receipt must be excluded.
-   */
-  async hasPendingPredecessor(tenantId: string, candidate: InboundCandidate): Promise<boolean> {
-    return (
-      (await this.deps.hasPendingClassification?.(
-        tenantId,
-        {
-          surface: 'slack',
-          channel: candidate.channel,
-          externalMessageId: candidate.externalId,
-        },
-        candidate.intakeId,
-      )) ?? false
-    );
-  }
-
-  /**
    * Fences incident-writing work against the adapter's durable stable-message decision.
    * @param tenantId - Tenant that owns the classify job.
    * @param candidate - Candidate carrying the durable receipt and provider event time.
@@ -326,7 +299,6 @@ export class ClassifyCore {
   async buildResolutionCandidates(
     tenantId: string,
     candidate: InboundCandidate,
-    attempts: number,
   ): Promise<ResolutionCandidates> {
     if (candidate.author !== 'bot' || !candidate.producerId)
       return { all: [], forModel: [], lookupFailed: false };
@@ -346,8 +318,6 @@ export class ClassifyCore {
           tenantId,
         }),
       );
-      if (candidate.signalState === 'resolved' && attempts < CLASSIFY_FAIL_OPEN_ATTEMPTS)
-        throw new RetryableError('resolution candidates unavailable');
       return { all: [], forModel: [], lookupFailed: true };
     }
     const exactEdit = candidate.isEdit
@@ -480,6 +450,13 @@ export class ClassifyCore {
         surface: 'slack',
         channel: candidate.channel,
         ...observation,
+        state: 'unknown' as InboundCandidate['signalState'],
+        advisory: true,
+        dataSourceId: undefined,
+        providerFingerprint: undefined,
+        startsAt: undefined,
+        endsAt: undefined,
+        clearProvenance: undefined,
         ...(monitorKey ? { monitorKey } : {}),
         eventAt: new Date(observation.eventAt),
         signalSource: {
@@ -492,9 +469,5 @@ export class ClassifyCore {
         },
       };
     });
-  }
-
-  signalFor(candidate: InboundCandidate) {
-    return this.signalsFor(candidate)[0]!;
   }
 }

@@ -5,7 +5,13 @@ import * as z from 'zod';
 import { createDataSourceConnector, defineConnector, type ConnectorConfig } from '../../registry';
 import { staticEntityCoverage } from '../../entity-coverage';
 import { dnsLookup, isBlockedIp, type HostLookup } from '../../ssrf';
-import type { ConnectorTool, IDataSourceConnector, ProbeResult, TriageContext } from '../../types';
+import type {
+  ConnectorTool,
+  IDataSourceConnector,
+  ProbeResult,
+  ToolRunOptions,
+  TriageContext,
+} from '../../types';
 import type { PeerCertLike, ProbeSocketDeps, RawTlsResult } from './types';
 
 export type { ProbeSocketDeps } from './types';
@@ -29,6 +35,7 @@ const DEFAULT_PORT = 443;
 const NETWORK_PROBE_CONNECTOR = {
   type: 'networkprobe',
   capabilities: {
+    alertLifecycle: 'none',
     topology: 'on_demand',
     availability: 'ready',
     configuration: 'builtin',
@@ -297,7 +304,28 @@ function stool<S extends z.ZodType>(def: {
   inputSchema: S;
   run: (input: z.infer<S>) => Promise<unknown>;
 }): ConnectorTool {
-  return def as ConnectorTool;
+  return {
+    ...def,
+    run: (input: z.infer<S>, options?: ToolRunOptions) =>
+      untilAborted(() => def.run(input), options?.signal),
+  } as ConnectorTool;
+}
+
+/**
+ * Refuse to start once the caller is cancelled, and stop waiting when it cancels mid-probe. The
+ * socket is not threaded through the injected socket layer, so it still ends at its own short
+ * timeout; only the caller is released early.
+ */
+async function untilAborted<T>(start: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return start();
+  signal.throwIfAborted();
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => reject(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+    start()
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener('abort', onAbort));
+  });
 }
 
 const portSchema = z.number().int().min(1).max(65535).optional();

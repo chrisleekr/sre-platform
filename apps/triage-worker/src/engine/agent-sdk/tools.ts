@@ -69,6 +69,7 @@ export function terminalResult(
         evidence: recovery.evidence,
         evidenceIds: recovery.evidenceIds,
         unknowns: recovery.unknowns,
+        ...(recovery.questions !== undefined ? { questions: recovery.questions } : {}),
         nextStep: recovery.nextStep,
         recheckAfterMinutes: recovery.recheckAfterMinutes,
         scheduleReason: recovery.scheduleReason,

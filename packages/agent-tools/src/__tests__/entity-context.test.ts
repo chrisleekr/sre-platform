@@ -196,6 +196,7 @@ describe('entity capability gaps', () => {
       {
         type: 'github',
         capabilities: {
+          alertLifecycle: 'none',
           availability: 'ready',
           configuration: 'tenant',
           instances: 'multiple',

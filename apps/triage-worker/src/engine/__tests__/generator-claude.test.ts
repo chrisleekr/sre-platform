@@ -4,9 +4,9 @@ import { makeClaudeGenerator } from '../generator-claude';
 import type { AnthropicLike } from '../claude';
 
 // the Claude binding of the generic StructuredGenerator primitive. `generate<T>(prompt,
-// schema)` produces ONE structured object by forcing a single-tool tool_use turn (Anthropic's
-// structured-output pattern), then zod-validates the tool input. RED now: makeClaudeGenerator does
-// not exist. The provider stays domain-agnostic — the runbook prompts/schemas live in the consumer.
+// schema)` produces ONE structured object from a single strict tool the model is told to call, then
+// zod-validates the tool input. The provider stays domain-agnostic; the runbook prompts and schemas
+// live in the consumer.
 const Schema = z.object({ outcome: z.string(), title: z.string() });
 
 // A real discriminated union — the shape the runbook consumer actually passes. Zod renders a union as
@@ -18,7 +18,7 @@ const UnionSchema = z.discriminatedUnion('outcome', [
 ]);
 
 /**
- * A scripted forced-tool-use response. The generator wraps the caller schema under `result`, so the
+ * A scripted tool-use response. The generator wraps the caller schema under `result`, so the
  * model's tool input is `{ result: <value> }`; this helper wraps to match that contract.
  */
 function toolUseResponse(value: unknown) {
@@ -28,8 +28,8 @@ function toolUseResponse(value: unknown) {
   };
 }
 
-describe('makeClaudeGenerator (forced tool-use structured output)', () => {
-  test('returns the schema-validated tool input and forces exactly one tool', async () => {
+describe('makeClaudeGenerator (strict tool-use structured output)', () => {
+  test('returns the schema-validated tool input from one strict tool under auto choice', async () => {
     const payload = { outcome: 'resolution_found', title: 'DB pool exhaustion' };
     const create = vi.fn().mockResolvedValueOnce(toolUseResponse(payload));
     const sdk: AnthropicLike = { messages: { create } };
@@ -38,17 +38,58 @@ describe('makeClaudeGenerator (forced tool-use structured output)', () => {
     const out = await gen.generate('distil this incident', Schema);
     expect(out).toEqual(payload);
 
-    // The request bound a single tool and forced it via tool_choice, with a JSON input_schema derived
-    // from the zod schema, and the 4096 token ceiling (a distilled runbook is larger than triage).
+    // One strict tool under auto choice: Opus 5.5 returns 400 for a forced tool_choice. The system
+    // prompt names the tool instead, and the 4096 token ceiling fits a distilled runbook.
     const req = create.mock.calls[0]![0] as {
-      tools: Array<{ name: string; input_schema: unknown }>;
-      tool_choice: { type: string; name: string };
+      tools: Array<{ name: string; input_schema: unknown; strict?: boolean }>;
+      tool_choice: { type: string; name?: string };
+      system: string;
       max_tokens: number;
     };
     expect(req.tools).toHaveLength(1);
     expect(req.tools[0]!.input_schema).toBeDefined();
-    expect(req.tool_choice).toMatchObject({ type: 'tool', name: req.tools[0]!.name });
+    expect(req.tools[0]!.strict).toBe(true);
+    expect(req.tool_choice).toEqual({ type: 'auto' });
+    expect(req.system).toContain(`Respond only by calling ${req.tools[0]!.name}`);
     expect(req.max_tokens).toBe(4096);
+  });
+
+  test('strips strict-unsupported limits from the wire schema while zod still enforces them', async () => {
+    const limited = z.object({ note: z.string().max(5), items: z.array(z.string()).max(1) });
+    const create = vi
+      .fn()
+      .mockResolvedValue(toolUseResponse({ note: 'too long for five', items: ['a'] }));
+    const sdk: AnthropicLike = { messages: { create } };
+    const gen = makeClaudeGenerator({ apiKey: 'k', model: 'claude-opus-5-5' }, sdk);
+
+    await expect(gen.generate('p', limited)).rejects.toThrow();
+    const req = create.mock.calls[0]![0] as { tools: Array<{ input_schema: unknown }> };
+    const wire = JSON.stringify(req.tools[0]!.input_schema);
+    expect(wire).not.toContain('"maxLength"');
+    expect(wire).not.toContain('"maxItems"');
+    expect(wire).toContain('"additionalProperties":false');
+  });
+
+  test('trims over-length output only when the caller opts into length repair', async () => {
+    const limited = z.object({ note: z.string().max(5) });
+    const create = vi.fn().mockResolvedValue(toolUseResponse({ note: 'far too long' }));
+    const gen = makeClaudeGenerator(
+      { apiKey: 'k', model: 'claude-opus-5-5' },
+      { messages: { create } },
+    );
+    await expect(gen.generate('p', limited)).rejects.toThrow();
+    await expect(gen.generate('p', limited, { repairOverlength: true })).resolves.toEqual({
+      note: 'far …',
+    });
+  });
+
+  test('fails closed when the model answers in prose instead of calling the tool', async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValueOnce({ stop_reason: 'end_turn', content: [{ type: 'text', text: '{}' }] });
+    const sdk: AnthropicLike = { messages: { create } };
+    const gen = makeClaudeGenerator({ apiKey: 'k', model: 'claude-opus-5-5' }, sdk);
+    await expect(gen.generate('p', Schema)).rejects.toThrow('claude returned no structured output');
   });
 
   test('rejects when the tool input violates the schema (structured contract enforced)', async () => {
@@ -65,7 +106,7 @@ describe('makeClaudeGenerator (forced tool-use structured output)', () => {
   });
 
   // FIX 1 (regression): a discriminated union must still yield an OBJECT input_schema (wrapped under
-  // `result`) so Anthropic accepts the forced tool; the inner union value is unwrapped on return.
+  // `result`) so Anthropic accepts the tool; the inner union value is unwrapped on return.
   test('wraps a discriminated-union schema so input_schema.type is object, and unwraps the result', async () => {
     const value = { outcome: 'nothing', reason: 'x' };
     const create = vi.fn().mockResolvedValueOnce(toolUseResponse(value));

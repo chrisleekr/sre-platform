@@ -221,6 +221,7 @@ describe('the sli capability on the connector surface', () => {
       {
         type: 'prometheus',
         capabilities: {
+          alertLifecycle: 'none',
           availability: 'ready',
           configuration: 'tenant',
           instances: 'multiple',

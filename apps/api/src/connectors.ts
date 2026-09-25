@@ -1,3 +1,4 @@
+import { registerConnectorLifecycleRoutes } from './connectors/routes/lifecycle';
 import { alertmanagerSmeeUrl, gitLabSmeeUrl, githubSmeeUrl } from '@sre/connectors';
 import { connectorConfigs, withTenant } from '@sre/db';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -22,6 +23,7 @@ import { registerConnectorSaveRoutes } from './connectors/routes/save';
 import { registerConnectorTestRoutes } from './connectors/routes/test';
 import { registerPrepareDeliveryRoutes } from './connectors/routes/prepare-delivery';
 import { registerGitLabManagementRoutes } from './connectors/routes/gitlab-management';
+import { registerStatusCakeSetupRoutes } from './connectors/routes/statuscake-setup';
 
 export function connectorRoutes(
   deps: ConnectorRoutesDeps,
@@ -155,7 +157,9 @@ export function connectorRoutes(
     legacyConnectorId,
   };
   registerConnectorListRoutes(r, context);
+  registerConnectorLifecycleRoutes(r, context);
   registerGitLabManagementRoutes(r, context);
+  registerStatusCakeSetupRoutes(r, context);
   registerPrepareDeliveryRoutes(r);
   registerGitHubManifestRoutes(r, context);
   registerConnectorSaveRoutes(r, context);

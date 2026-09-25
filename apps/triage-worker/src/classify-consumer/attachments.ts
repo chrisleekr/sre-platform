@@ -2,9 +2,12 @@ import type { InboundCandidate } from '@sre/connectors';
 import {
   activateSurfaceBinding,
   bumpIncidentOccurrenceOnce,
+  incidents,
+  lockResponseGroupWorkTx,
   recordSurfaceBinding,
   withTenant,
 } from '@sre/db';
+import { eq } from 'drizzle-orm';
 import type { HubMessage, NewMessage } from '@sre/hub';
 import type { ClassifyCore } from './core';
 
@@ -17,13 +20,27 @@ export class ClassifyAttachments {
     candidate: InboundCandidate,
     content: string,
     enqueueReassessment = true,
-  ): Promise<void> {
+    options: { requireActive?: boolean } = {},
+  ): Promise<{ attached: boolean }> {
     const { deps } = this.core;
     const { hub } = deps;
     if (!hub) throw new Error('classify correlation path is not wired (hub)');
     const jobIds = new Set<string>();
     const published: HubMessage[] = [];
     const applied = await withTenant(deps.appDb, tenantId, async (tx) => {
+      if (options.requireActive) {
+        // The caller matched an open incident outside this transaction, so it can have closed since.
+        // Same lock order as signal writers and lifecycle transitions: group work, then incident row.
+        await lockResponseGroupWorkTx(tx, tenantId, incidentId);
+        const [incident] = await tx
+          .select({ status: incidents.status, archivedAt: incidents.archivedAt })
+          .from(incidents)
+          .where(eq(incidents.id, incidentId))
+          .limit(1)
+          .for('update');
+        if (!incident || incident.archivedAt || !['open', 'mitigated'].includes(incident.status))
+          return null;
+      }
       let anyApplied = false;
       const sourceBinding = await recordSurfaceBinding(tx, tenantId, {
         incidentId,
@@ -75,8 +92,10 @@ export class ClassifyAttachments {
         );
       return anyApplied;
     });
+    if (applied === null) return { attached: false };
     for (const message of published) await this.core.publishAppended(message);
     if (applied) for (const jobId of jobIds) await this.core.publishJob(jobId);
+    return { attached: true };
   }
 
   async attachHuman(

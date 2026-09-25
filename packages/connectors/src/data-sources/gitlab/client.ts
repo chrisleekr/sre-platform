@@ -1,5 +1,6 @@
 import { assertSafeHttpsUrl, type HostLookup } from '../../ssrf';
 import { str } from '../../values';
+import { boundedSignal } from '../../request-signal';
 
 export type FetchLike = typeof fetch;
 
@@ -221,15 +222,16 @@ export function buildApiUrl(
   return u.toString();
 }
 
-/** GET a GitLab URL. Returns parsed JSON when the response is JSON, else raw text (e.g. job traces). */
+/** GET a GitLab URL. Returns parsed JSON when the response is JSON, else raw text (e.g. job traces). `signal` is the tool caller's cancellation. */
 export async function apiFetch(
   fetchImpl: FetchLike,
   url: string,
   token: string,
+  signal?: AbortSignal,
 ): Promise<{ json?: unknown; text: string; truncated?: boolean }> {
   const res = await fetchImpl(url, {
     headers: { 'PRIVATE-TOKEN': token },
-    signal: AbortSignal.timeout(API_TIMEOUT_MS),
+    signal: boundedSignal(API_TIMEOUT_MS, signal),
     redirect: 'error',
   });
   if (!res.ok) throw new Error(`gitlab api ${res.status}`);

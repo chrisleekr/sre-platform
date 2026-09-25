@@ -1,3 +1,4 @@
+import { registerProviderLifecycleRoutes } from './provider-lifecycle-routes';
 import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { sql } from 'drizzle-orm';
@@ -31,10 +32,11 @@ import { mcpRoutes } from './mcp';
 import type { GitHubSmeeManager } from './github-smee';
 import type { GitLabSmeeManager } from './gitlab-smee';
 import type { AlertmanagerSmeeManager } from './alertmanager-smee';
-import { alertmanagerWebhookRoutes, type AlertmanagerWebhookDeps } from './alertmanager-webhook';
+import type { AlertmanagerWebhookDeps } from './alertmanager-webhook';
 import type { RouteDeps } from '@sre/alerts';
 import { signalRoutes } from './signals';
 import { reliabilityRoutes } from './reliability';
+import { queueHealthRoutes } from './queue-health';
 import { sloRoutes } from './slos';
 import { incidentTagRoutes } from './incident-tags';
 import { authDiscoveryRoutes } from './onboarding/auth-discover';
@@ -126,7 +128,7 @@ export interface AppDeps {
   /** Direct Alertmanager intake runtime. Omitted only by route-isolated tests. */
   alertmanager?: Pick<
     AlertmanagerWebhookDeps,
-    'route' | 'hub' | 'postAlertRoot' | 'dashboardBaseUrl'
+    'route' | 'hub' | 'postAlertRoot' | 'dashboardBaseUrl' | 'enqueueLifecycle'
   >;
   /** System-scoped store for the opt-in platform operator settings routes. */
   settings: Pick<PlatformSettings, 'list' | 'set'> &
@@ -349,7 +351,6 @@ export function makeApp(deps: AppDeps): Hono<{ Variables: AuthVariables }> {
     }),
   );
 
-  // Public ingress authenticated by the GitHub App webhook HMAC, not a dashboard bearer token.
   if (deps.adminDb)
     app.route(
       '/webhooks/github',
@@ -360,18 +361,7 @@ export function makeApp(deps: AppDeps): Hono<{ Variables: AuthVariables }> {
         log: deps.log,
       }),
     );
-
-  if (deps.adminDb && deps.alertmanager)
-    app.route(
-      '/webhooks/alertmanager',
-      alertmanagerWebhookRoutes({
-        adminDb: deps.adminDb,
-        appDb: deps.appDb,
-        secrets: deps.secrets,
-        ...deps.alertmanager,
-        log: deps.log,
-      }),
-    );
+  registerProviderLifecycleRoutes(app, deps);
 
   if (deps.adminDb)
     app.route(
@@ -411,6 +401,17 @@ export function makeApp(deps: AppDeps): Hono<{ Variables: AuthVariables }> {
       githubSmee: deps.githubSmee,
       gitlabSmee: deps.gitlabSmee,
       alertmanagerSmee: deps.alertmanagerSmee,
+      ...(deps.adminDb && deps.alertmanager
+        ? {
+            lifecycle: {
+              adminDb: deps.adminDb,
+              appDb: deps.appDb,
+              secrets: deps.secrets,
+              ...deps.alertmanager,
+              log: deps.log,
+            },
+          }
+        : {}),
     }),
   );
 
@@ -459,9 +460,7 @@ export function makeApp(deps: AppDeps): Hono<{ Variables: AuthVariables }> {
     attachmentRoutes({ auth: deps.auth, db: deps.appDb, fetchAttachment: deps.fetchAttachment }),
   );
   app.route('/incidents', incidentTagRoutes({ auth: deps.auth, db: deps.appDb }));
-
   app.route('/topology', topologyRoutes({ auth: deps.auth, db: deps.appDb, cache: deps.cache }));
-
   app.route('/changes', changeRoutes({ auth: deps.auth, db: deps.appDb }));
 
   if (deps.signalRoute && deps.signalEvaluationQueue && deps.signalRuntimeFingerprint)
@@ -477,6 +476,7 @@ export function makeApp(deps: AppDeps): Hono<{ Variables: AuthVariables }> {
     );
   app.route('/reliability', reliabilityRoutes({ auth: deps.auth, db: deps.appDb }));
   app.route('/slos', sloRoutes({ auth: deps.auth, db: deps.appDb }));
+  app.route('/queue', queueHealthRoutes({ auth: deps.auth, db: deps.appDb }));
 
   app.route(
     '/platform-settings',

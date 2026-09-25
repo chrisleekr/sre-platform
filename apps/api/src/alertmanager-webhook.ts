@@ -1,4 +1,4 @@
-import { type RouteDeps } from '@sre/alerts';
+import { processAlert, type RouteDeps } from '@sre/alerts';
 import { alertmanagerEventToken } from '@sre/connectors';
 import { connectorConfigs, connectorEventCredentialKey, type Db, type SecretStore } from '@sre/db';
 import { type ConversationHub } from '@sre/hub';
@@ -9,12 +9,26 @@ import type { Logger } from './logger';
 import { WebhookPayloadTooLargeError, readBoundedWebhookBody } from './webhook-body';
 
 export interface AlertmanagerWebhookDeps {
+  enqueueLifecycle?: (
+    tenantId: string,
+    payload: {
+      connectorId: string;
+      monitorId: string;
+      observedAt: string;
+      lifecycleVersion: number;
+    },
+  ) => Promise<unknown>;
   adminDb: Db;
   appDb: Db;
   secrets: SecretStore;
   route: RouteDeps;
   hub: ConversationHub;
-  postAlertRoot: (tenantId: string, channel: string, text: string) => Promise<string>;
+  postAlertRoot: (
+    tenantId: string,
+    channel: string,
+    text: string,
+    intakeId: string,
+  ) => Promise<string>;
   dashboardBaseUrl?: string;
   log?: Logger;
 }
@@ -33,7 +47,6 @@ import {
   type NormalizedAlert,
 } from './alertmanager-webhook/normalize';
 import { eventHealth } from './alertmanager-webhook/health';
-import { processAlert } from './alertmanager-webhook/processor';
 
 export function alertmanagerWebhookRoutes(deps: AlertmanagerWebhookDeps): Hono {
   const router = new Hono();
@@ -46,6 +59,7 @@ export function alertmanagerWebhookRoutes(deps: AlertmanagerWebhookDeps): Hono {
         tenantId: connectorConfigs.tenantId,
         settings: connectorConfigs.settings,
         enabled: connectorConfigs.enabled,
+        lifecycleVersion: connectorConfigs.lifecycleVersion,
       })
       .from(connectorConfigs)
       .where(
@@ -151,6 +165,16 @@ export function alertmanagerWebhookRoutes(deps: AlertmanagerWebhookDeps): Hono {
         outcomes.push(
           await processAlert(deps, connector, groupKey, externalUrl, alert, attemptedAt),
         );
+      }
+      if (outcomes.includes('unsubscribed')) {
+        await eventHealth(
+          deps,
+          connector.tenantId,
+          connector.id,
+          attemptedAt,
+          'channel_unsubscribed',
+        );
+        return c.json({ error: 'Alertmanager destination channel is not subscribed' }, 503);
       }
       const retry = outcomes.filter((outcome) => outcome === 'retry').length;
       if (retry > 0) {

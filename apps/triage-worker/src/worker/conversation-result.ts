@@ -198,6 +198,9 @@ function persistNewerContext(
       disposition: undefined,
       summary:
         'New responder context is pending. This earlier draft was not published as the current answer.',
+      // The superseded draft's open checks and next step no longer apply.
+      reviewGaps: undefined,
+      nextStep: null,
     },
     completion: investigationRunCompletion,
     investigationStatus: options.priorInvestigationStatus === 'assessed' ? 'assessed' : 'degraded',

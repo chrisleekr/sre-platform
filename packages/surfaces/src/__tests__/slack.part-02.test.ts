@@ -294,6 +294,7 @@ describe('makeSlackPoster', () => {
       ]),
     });
     expect(JSON.stringify(blocks)).toContain('Whether &lt;checkout&gt; is healthy');
+    expect(JSON.stringify(blocks)).toContain('Unclassified recovery questions');
     expect(JSON.stringify(blocks)).toContain('Query logs &amp; metrics.');
     expect(blocks.some((block) => block.type === 'context')).toBe(false);
   });

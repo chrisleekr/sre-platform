@@ -164,6 +164,7 @@ describe('makePollHandler', () => {
     const connector: IDataSourceConnector = {
       ...__fixture.fakeConnector('prometheus', snapshot),
       capabilities: {
+        alertLifecycle: 'none',
         availability: 'ready',
         configuration: 'tenant',
         instances: 'multiple',
@@ -367,6 +368,7 @@ describe('PollScheduler', () => {
     const prometheus: IDataSourceConnector = {
       ...__fixture.fakeConnector('prometheus', async () => []),
       capabilities: {
+        alertLifecycle: 'none',
         availability: 'ready',
         configuration: 'tenant',
         instances: 'multiple',

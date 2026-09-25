@@ -144,7 +144,11 @@ interface EngineFailureInput {
   service: string;
   toolRuntime: EngineToolRuntime;
   completion: CompleteInvestigationRunInput;
-  reason: 'provider unavailable' | 'engine error' | 'AI provider rate limit reached';
+  reason:
+    | 'provider unavailable'
+    | 'engine error'
+    | 'AI provider rate limit reached'
+    | 'AI provider rejected the configured request';
   originBase?: string;
   preserveProgress?: InvestigationStatus;
   restoreRecovery?: boolean;

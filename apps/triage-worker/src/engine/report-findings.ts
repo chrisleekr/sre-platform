@@ -10,8 +10,9 @@ import {
  * The engine-local terminal tool. The model calls it exactly once to conclude the
  * investigation with a structured, Zod-validated report. It is bound like any other tool, but the
  * loop intercepts it before dispatch (so the handler below never runs) and turns its input into the
- * final `TriageResult`. A forced terminal tool call is the robust structured-output path: parsing
- * JSON out of free-form assistant text is brittle and leaves rankedHypotheses unpopulated.
+ * final `TriageResult`. A terminal tool call is the robust structured-output path: parsing JSON out
+ * of free-form assistant text is brittle and leaves rankedHypotheses unpopulated. Claude is not forced
+ * to call it, because Opus 5.5 rejects forced tool choice; OpenAI still names it as the tool choice.
  */
 export const REPORT_FINDINGS_NAME = 'report_findings';
 

@@ -1,6 +1,7 @@
 import type { IncidentSignal, RouteResult } from '@sre/alerts';
 import type { InboundCandidate } from '@sre/connectors';
 import type {
+  SignalClearProvenance,
   AffectedEntityCandidate,
   InvestigationTriggerReason,
   SignalSource,
@@ -55,6 +56,7 @@ export interface HubLike {
       channel: string;
       externalMessageId: string;
       state: 'firing' | 'unknown' | 'resolved';
+      clearProvenance?: SignalClearProvenance;
       summary: string;
       contentHash: string;
       eventKey: string;
@@ -109,12 +111,15 @@ export type ClassifyOutcome = {
     | 'fail_open'
     | 'mention_belongs_to'
     | 'mention_new_incident'
+    | 'resolution_unmatched'
+    | 'resolution_reported'
+    // Legacy: no longer produced. Kept so older stored inbound receipts still type-check; the
+    // dashboard labels edited_untracked only.
     | 'resolved_signal'
     | 'resolution_duplicate'
     | 'resolution_stale'
     | 'edited_signal'
     | 'edited_untracked'
-    | 'resolution_unmatched'
     | 'provider_alert_opened'
     | 'ticket'
     | 'log'
@@ -147,12 +152,6 @@ export interface ClassifyHandlerDeps {
     intakeId: string,
     eventAt: Date,
     eventVersion?: string,
-  ) => Promise<boolean>;
-  /** Durable predecessor lookup used when an edit reaches the worker before its root signal exists. */
-  hasPendingClassification?: (
-    tenantId: string,
-    identity: { surface: string; channel: string; externalMessageId: string },
-    excludeIntakeId?: string,
   ) => Promise<boolean>;
   /** Serializes all incident-writing effects against the adapter's stable-message decision. */
   withIntakeRoutingFence?: <T>(

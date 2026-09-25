@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+import { alertmanagerEventCredential, alertmanagerEventToken } from '@sre/connectors';
 import { connectorCapabilities, issueManagement, type ConnectorType } from '@sre/connectors';
 import {
   connectorConfigs,
@@ -15,6 +17,7 @@ import type {
 } from './contracts';
 import { saveKubernetes } from './kubernetes';
 import { saveDatadog, saveGrafana, savePrometheus, saveStatusCake } from './observability';
+import { statusCakeBindingSettings } from './statuscake-binding';
 import { saveGitHub, saveGitLab } from './source-control';
 
 const providerSaveHandlers: Partial<Record<ConnectorType, ProviderSaveHandler>> = {
@@ -73,7 +76,7 @@ async function persistRecord(
       type,
       settings: result.settings,
       enabled,
-      ...(type === 'github' || type === 'gitlab' || type === 'prometheus'
+      ...(['github', 'gitlab', 'prometheus', 'datadog', 'grafana', 'statuscake'].includes(type)
         ? { webhookKey: connectorId }
         : {}),
     });
@@ -85,7 +88,8 @@ async function persistRecord(
         settings: result.settings,
         enabled,
         webhookKey:
-          (type === 'github' || type === 'gitlab' || type === 'prometheus') && !current!.webhookKey
+          ['github', 'gitlab', 'prometheus', 'datadog', 'grafana', 'statuscake'].includes(type) &&
+          !current!.webhookKey
             ? connectorId
             : undefined,
         lifecycleVersion: sql`${connectorConfigs.lifecycleVersion} + 1`,
@@ -151,6 +155,45 @@ export async function persistConnectorConfiguration(
     ? await providerSaveHandlers[input.type]!(input, current, initial)
     : initial;
   if (typeof outcome === 'string') return outcome;
+  if (input.type === 'datadog' || input.type === 'grafana' || input.type === 'statuscake') {
+    const raw = requestObject(input.body.settings) ?? {};
+    const old = requestObject(current?.settings) ?? {};
+    const eventTransport = raw.eventTransport ?? old.eventTransport ?? 'none';
+    const alertChannel = raw.alertChannel ?? old.alertChannel;
+    if (eventTransport !== 'none' && eventTransport !== 'direct') return 'invalid event transport';
+    if (
+      eventTransport === 'direct' &&
+      (typeof alertChannel !== 'string' || !/^[CGD][A-Z0-9]{1,255}$/.test(alertChannel))
+    )
+      return 'a subscribed Slack alert channel is required';
+    const saved = await input.deps.secrets.get(
+      input.tenantId,
+      connectorEventCredentialKey(input.connectorId),
+      input.tx,
+    );
+    // StatusCake authenticates with a secret the platform writes into each contact group, so the
+    // operator never supplies one. Keep the saved secret so provisioned ping URLs stay valid.
+    const token =
+      input.type === 'statuscake'
+        ? (alertmanagerEventToken(saved) ??
+          (eventTransport === 'direct' ? randomBytes(16).toString('hex') : undefined))
+        : (input.submittedEventToken ?? alertmanagerEventToken(saved));
+    if (eventTransport === 'direct' && !token) return 'an event bearer token is required';
+    outcome.settings = {
+      ...outcome.settings,
+      eventTransport,
+      ...(alertChannel ? { alertChannel } : {}),
+    };
+    if (input.type === 'statuscake') {
+      const binding = statusCakeBindingSettings(raw, old, eventTransport);
+      if (typeof binding === 'string') return binding;
+      outcome.settings = { ...outcome.settings, ...binding };
+    }
+    if (old.lifecycleBindings) outcome.settings.lifecycleBindings = old.lifecycleBindings;
+    if (eventTransport === 'none') outcome.revokeEventCredential = true;
+    else if (token) outcome.eventCredentialToSave = alertmanagerEventCredential(token);
+  }
+
   if (input.type === 'gitlab') {
     const token = input.body.issueCredential;
     if (
