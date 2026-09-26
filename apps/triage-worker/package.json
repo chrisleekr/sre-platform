@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.280",
-    "@anthropic-ai/sdk": "^0.125.0",
+    "@anthropic-ai/sdk": "^0.128.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@sre/agent-tools": "workspace:*",
     "@sre/alerts": "workspace:*",
@@ -24,10 +24,10 @@
     "@sre/slo": "workspace:*",
     "@sre/surfaces": "workspace:*",
     "@sre/topology": "workspace:*",
-    "@toon-format/toon": "^2.3.1",
-    "drizzle-orm": "^0.45.2",
+    "@toon-format/toon": "^4.1.1",
+    "drizzle-orm": "^0.45.3",
     "ioredis": "^6.0.0",
-    "openai": "^7.15.0",
-    "zod": "^4.0.0"
+    "openai": "^7.22.0",
+    "zod": "~4.4.3"
   }
 }

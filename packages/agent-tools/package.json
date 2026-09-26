@@ -12,8 +12,8 @@
     "@sre/hub": "workspace:*",
     "@sre/slo": "workspace:*",
     "@sre/topology": "workspace:*",
-    "drizzle-orm": "^0.45.2",
-    "zod": "^4.0.0"
+    "drizzle-orm": "^0.45.3",
+    "zod": "~4.4.3"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
