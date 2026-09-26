@@ -71,7 +71,8 @@ not establish these bindings. Ownership, routing and monitoring links remain sep
 The built-in network probe adds stored investigation evidence to exact HTTP endpoints. DNS matches
 the hostname; TCP and TLS also match the port; HTTP matches the full URL. Topology does not send new
 probes. Failures, timestamps and source investigations remain visible, but response headers and
-certificate identity fields are not copied. Shared infrastructure does not establish service ownership.
+certificate identity fields are not copied. An HTTP status from an `https` check keeps its certificate
+verdict, so a status from an untrusted peer is shown as such. Shared infrastructure does not establish service ownership.
 
 ### Coverage and retention
 

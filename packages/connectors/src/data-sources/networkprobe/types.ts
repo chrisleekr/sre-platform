@@ -18,6 +18,16 @@ export interface RawTlsResult {
   cert: PeerCertLike;
 }
 
+/** HEAD outcome. The tls* fields are null for plain http, where there is no peer to verify. */
+export interface HttpHeadResult {
+  status: number;
+  headers: Record<string, string>;
+  tlsAuthorized: boolean | null;
+  tlsAuthorizationError: string | null;
+  /** True when the query string was dropped because the TLS peer failed verification. */
+  queryWithheld: boolean;
+}
+
 /** Injectable socket boundary for hermetic resolver, TCP, TLS, and HTTP tests. */
 export interface ProbeSocketDeps {
   lookup: HostLookup;
@@ -37,5 +47,5 @@ export interface ProbeSocketDeps {
     scheme: 'http' | 'https',
     path: string,
     timeoutMs: number,
-  ) => Promise<{ status: number; headers: Record<string, string> }>;
+  ) => Promise<HttpHeadResult>;
 }

@@ -85,8 +85,11 @@ export function networkProbeTopologyEvidence(
       Number.isInteger(output.status) &&
       output.status >= 100 &&
       output.status <= 599
-    )
+    ) {
       facts.status = output.status;
+      // An https status from an unverified peer is unproven; keep the verdict beside it.
+      if (typeof output.tlsAuthorized === 'boolean') facts.authorized = output.tlsAuthorized;
+    }
   }
   return {
     kind: operations[operation],
