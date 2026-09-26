@@ -26,7 +26,7 @@ import { removeContainerChecked, settleOrThrow } from './alertmanager-slack-live
 const timeoutMs = Number(process.env.ALERTMANAGER_E2E_TIMEOUT_MS || 600_000);
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const alertmanagerImage =
-  'ghcr.io/prometheus/alertmanager:v0.34.0@sha256:690c7b525f4367aa91f73e2f91c632206d32e97c6384bdbf2fb7a861b420340d';
+  'ghcr.io/prometheus/alertmanager:v0.34.1@sha256:e9733bafb1bdef9b00e25a21f8f99dc26a22224bf16641ad754d1649f4c3357a';
 const postgresImage = 'pgvector/pgvector:pg16';
 const valkeyImage = 'valkey/valkey:9';
 const activeContainers = new Set();

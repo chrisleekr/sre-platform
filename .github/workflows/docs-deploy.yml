@@ -19,7 +19,7 @@ jobs:
   # which deploy-pages refuses with "Multiple artifacts named 'github-pages'".
   build:
     name: build
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       # A job-level block replaces the workflow-level one outright, so every scope needed here must
@@ -35,7 +35,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
 
@@ -61,7 +61,7 @@ jobs:
     # to main, but that is a repository setting that can be removed without touching this file, so
     # the rule is kept in code as well. The build above still runs, acting as a branch build check.
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # deploy-pages polls for up to its default 600000 ms. A 10 minute job budget would let GitHub
     # kill the job mid-deploy and report a timeout instead of the actual failure.
     timeout-minutes: 20

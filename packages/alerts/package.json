@@ -13,7 +13,7 @@
     "@sre/connectors": "workspace:*",
     "@sre/hub": "workspace:*",
     "@sre/surfaces": "workspace:*",
-    "drizzle-orm": "^0.45.2"
+    "drizzle-orm": "^0.45.3"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

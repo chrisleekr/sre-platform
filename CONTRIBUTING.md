@@ -50,10 +50,12 @@ While installing the app, turn on Dependabot alerts for that repository. Renovat
 known-vulnerable dependency reads those alerts, and without them a security fix waits for the weekly
 schedule like any other update.
 
-Every minor, patch and digest update lands in one weekly `all non-major dependencies` branch, so the
-routine churn is one review. Majors keep one branch each, or one per named group, because each can
-need a code or runtime migration and one broken major would otherwise block every other update. The
-named groups below still keep coupled packages together for majors.
+Renovate opens at most two pull requests at a time. Every minor, patch and digest update lands in
+one weekly `all non-major dependencies` branch, and every major in one weekly `all major
+dependencies` branch. Majors stay apart because one can need a code or runtime migration, and that
+should never hold back routine bumps. The cost is that one broken major blocks the other majors
+until it is fixed or capped with `allowedVersions`. `prConcurrentLimit` enforces the ceiling of two;
+vulnerability fixes bypass it, so a security update never waits behind the weekly branches.
 
 Nothing automerges. Every update waits for a human, and the dependency dashboard issue lists what is
 outstanding. A `replacement` update, which swaps one package name for a different one rather than
@@ -69,10 +71,31 @@ Dependency commits are forced to `chore` by the last entry in `packageRules`. Wi
 patch release, and the release workflow publishes a Docker Hub tag for every release it cuts. It is
 last because `packageRules` apply in order and the last match wins.
 
-Bun is grouped so its five pins move in one branch: `.tool-versions`, the `packageManager` field,
-the `@types/bun` devDependency, the `ARG BUN_IMAGE` default in `Dockerfile`, and the pipeline image
-in `.gitlab-ci.yml`. The last two carry the same tag and digest, so separate updates would leave the
-container build and the pipeline runtime on different Bun versions.
+The two catch-all groups are also what keeps coupled packages in one branch. That holds for sets
+that share a version line, because every member then gets the same update type: `vitest` with
+`@vitest/coverage-v8`, the MCP client with the MCP server, and Bun's five pins: `.tool-versions`,
+the `packageManager` field, the `@types/bun` devDependency, the `ARG BUN_IMAGE` default in
+`Dockerfile`, and the pipeline image in `.gitlab-ci.yml`. The last two carry the same tag and
+digest, so separate updates would leave the container build and the pipeline runtime on different
+Bun versions. `drizzle-orm` and `drizzle-kit` version independently, so a major on one and a minor
+on the other land in different branches; review them together. A named group does not fix that on
+its own: while `separateMajorMinor` is on, Renovate moves a group's majors to a separate
+`major-` branch. Splitting either catch-all needs a named group for each coupled set.
+
+`@slack/socket-mode` is capped below 3. Version 3 sends heartbeats through `undici.ping`, which Bun
+does not expose, so the API would lose its Slack connection; `bun run test:slack-socket-compat`
+fails on it. Lift the cap in the change that makes that check pass on the pinned Bun.
+
+`zod` is capped below 4.5 and declared with a tilde range. The Claude Agent SDK validates MCP tool
+input with its own inlined copy of the zod 4.4 core. From 4.5, zod marks a `.default()` field as
+`defaulted` rather than `optional`, the inlined core reads that as required, and every terminal tool
+call that omits a defaulted field is rejected before it reaches the engine. The Agent SDK runtime
+tests fail on it. Lift the cap in the change that moves to an Agent SDK release that bundles zod 4.5
+or later.
+
+`jsdom` is capped below 27. From 27 the selector engine and user-agent stylesheet changed, and
+dashboard `getByRole` queries by accessible name stop matching. Uncapped, it would keep the major
+branch failing and block every other major. Lift the cap in the change that migrates those tests.
 
 The kind node image is capped below Kubernetes 1.36. The Argo CD live test pins `ARGOCD_VERSION` by
 hand, and Argo CD 3.4 is tested only up to Kubernetes 1.35, so raise the cap in the same change that
