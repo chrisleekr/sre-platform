@@ -30,4 +30,13 @@ describe('networkProbeTopologyEvidence http_meta', () => {
     );
     expect(probe?.facts).toEqual({ status: 200 });
   });
+
+  test('drops the status when the target was withheld, since it was measured on /', () => {
+    const probe = networkProbeTopologyEvidence(
+      target,
+      row({ status: 403, tlsAuthorized: false, targetWithheld: true }),
+      new Date(1000),
+    );
+    expect(probe?.facts).toEqual({ authorized: false });
+  });
 });

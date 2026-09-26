@@ -86,10 +86,11 @@ verify may belong to something intercepting the connection rather than the host,
 status and headers prove nothing. Read them as unconfirmed whenever the verdict says the certificate
 was not trusted.
 
-The query string is never sent to a peer whose certificate did not verify. A URL copied from an
-incident can carry a credential there, such as a signed download link or a `token` parameter. The
-check drops the query, requests the bare path, and says so in its result, so the status you see may
-differ from what the full URL would return.
+The path and query are never sent to a peer whose certificate did not verify. A URL copied from an
+incident can carry a credential in either place, such as a signed download link, a `token`
+parameter, or a webhook address with the secret in its path. The check requests `/` instead and says
+so in its result. The status it returns is for `/`, not for the URL you gave, so the topology view
+does not show it against that URL.
 
 A plain `http` address has no certificate to check. It sends the full URL as given, the same as any
 client would.

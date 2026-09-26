@@ -24,8 +24,8 @@ export interface HttpHeadResult {
   headers: Record<string, string>;
   tlsAuthorized: boolean | null;
   tlsAuthorizationError: string | null;
-  /** True when the query string was dropped because the TLS peer failed verification. */
-  queryWithheld: boolean;
+  /** True when only `/` was requested because the TLS peer failed verification. */
+  targetWithheld: boolean;
 }
 
 /** Injectable socket boundary for hermetic resolver, TCP, TLS, and HTTP tests. */

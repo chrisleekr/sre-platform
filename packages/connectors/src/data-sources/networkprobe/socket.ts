@@ -49,18 +49,17 @@ export function parseHttpHead(text: string): { status: number; headers: Record<s
 /**
  * Choose the request target for a HEAD over TLS.
  *
- * @remarks Incident URLs can carry credentials in the query (presigned URLs, `?token=`), so the query
- * is never sent to a peer whose certificate did not verify.
+ * @remarks Incident URLs can carry credentials in the query (presigned URLs, `?token=`) or in the
+ * path (webhook URLs, `/bot<token>/`), so a peer whose certificate did not verify gets only `/`.
  * @param path - Path plus query string from the probed URL.
  * @param tlsAuthorized - Whether the peer certificate verified.
  */
 export function headRequestTarget(
   path: string,
   tlsAuthorized: boolean,
-): { target: string; queryWithheld: boolean } {
-  const q = path.indexOf('?');
-  if (tlsAuthorized || q === -1) return { target: path, queryWithheld: false };
-  return { target: path.slice(0, q) || '/', queryWithheld: true };
+): { target: string; targetWithheld: boolean } {
+  if (tlsAuthorized || path === '/') return { target: path, targetWithheld: false };
+  return { target: '/', targetWithheld: true };
 }
 
 export const defaultTcpConnect: ProbeSocketDeps['tcpConnect'] = (ip, port, timeoutMs) =>
@@ -136,12 +135,12 @@ export const defaultHttpHead: ProbeSocketDeps['httpHead'] = (
     socket.setTimeout(timeoutMs);
     let tlsAuthorized: boolean | null = null;
     let tlsAuthorizationError: string | null = null;
-    let queryWithheld = false;
+    let targetWithheld = false;
     const finish = (head: string): HttpHeadResult => ({
       ...parseHttpHead(head),
       tlsAuthorized,
       tlsAuthorizationError,
-      queryWithheld,
+      targetWithheld,
     });
     const onReady = () => {
       let target = path;
@@ -150,7 +149,7 @@ export const defaultHttpHead: ProbeSocketDeps['httpHead'] = (
         const err = (socket as unknown as { authorizationError?: Error | string })
           .authorizationError;
         tlsAuthorizationError = err ? String(err) : null;
-        ({ target, queryWithheld } = headRequestTarget(path, tlsAuthorized));
+        ({ target, targetWithheld } = headRequestTarget(path, tlsAuthorized));
       }
       const req =
         `HEAD ${target} HTTP/1.1\r\nHost: ${hostHeader}\r\n` +

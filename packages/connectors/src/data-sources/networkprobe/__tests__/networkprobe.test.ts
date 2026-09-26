@@ -86,7 +86,7 @@ function fakeDeps(over: Partial<ProbeSocketDeps> = {}): {
           headers: { server: 'nginx' },
           tlsAuthorized: scheme === 'https' ? true : null,
           tlsAuthorizationError: null,
-          queryWithheld: false,
+          targetWithheld: false,
         };
       }),
   };
@@ -387,7 +387,7 @@ describe('http_meta', () => {
         headers: { location: 'https://elsewhere.example/' },
         tlsAuthorized: null,
         tlsAuthorizationError: null,
-        queryWithheld: false,
+        targetWithheld: false,
       }),
     });
     const r = (await toolNamed(deps, 'http_meta').run({ url: 'http://example.com' })) as {
@@ -425,7 +425,7 @@ describe('http_meta', () => {
         headers: {},
         tlsAuthorized: false,
         tlsAuthorizationError: 'CERT_HAS_EXPIRED',
-        queryWithheld: true,
+        targetWithheld: true,
       }),
     });
     const r = await toolNamed(deps, 'http_meta').run({ url: 'https://example.com/?token=s' });
@@ -433,7 +433,7 @@ describe('http_meta', () => {
       status: 200,
       tlsAuthorized: false,
       tlsAuthorizationError: 'CERT_HAS_EXPIRED',
-      queryWithheld: true,
+      targetWithheld: true,
     });
   });
 

@@ -45,28 +45,28 @@ describe('headSliceIfComplete', () => {
   });
 });
 
-// ---------------- headRequestTarget (query withheld from an unverified peer) ----------------
+// ---------------- headRequestTarget (target withheld from an unverified peer) ----------------
 
 describe('headRequestTarget', () => {
   test('sends the full path and query to a verified peer', () => {
     expect(headRequestTarget('/health?token=s', true)).toEqual({
       target: '/health?token=s',
-      queryWithheld: false,
+      targetWithheld: false,
     });
   });
 
-  test('withholds the query from an unverified peer', () => {
+  test('sends only / to an unverified peer, since path and query can both carry a credential', () => {
     expect(headRequestTarget('/health?token=s', false)).toEqual({
-      target: '/health',
-      queryWithheld: true,
+      target: '/',
+      targetWithheld: true,
     });
-    expect(headRequestTarget('?token=s', false)).toEqual({ target: '/', queryWithheld: true });
+    expect(headRequestTarget('/services/T0/B0/secret', false)).toEqual({
+      target: '/',
+      targetWithheld: true,
+    });
   });
 
-  test('reports nothing withheld when there is no query', () => {
-    expect(headRequestTarget('/health', false)).toEqual({
-      target: '/health',
-      queryWithheld: false,
-    });
+  test('reports nothing withheld when the target is already /', () => {
+    expect(headRequestTarget('/', false)).toEqual({ target: '/', targetWithheld: false });
   });
 });

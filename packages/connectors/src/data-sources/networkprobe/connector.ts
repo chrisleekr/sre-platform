@@ -269,7 +269,7 @@ function makeNetworkProbeTools(deps: ProbeSocketDeps): ConnectorTool[] {
         'ever read). Redirects are NOT followed: a 3xx returns its status + Location for the model to probe ' +
         'as a fresh call. url must be http or https; the host may be a public IP literal. For https, ' +
         'tlsAuthorized:false means the certificate did not verify, so status and headers may come from an ' +
-        'interceptor rather than the host, and queryWithheld:true means the query string was not sent.',
+        'interceptor rather than the host, and targetWithheld:true means only / was requested, so the status is for / and not the given path.',
       inputSchema: z.object({ url: z.string() }),
       run: async ({ url }) => {
         let u: URL;

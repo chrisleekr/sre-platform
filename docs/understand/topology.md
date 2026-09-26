@@ -72,7 +72,8 @@ The built-in network probe adds stored investigation evidence to exact HTTP endp
 the hostname; TCP and TLS also match the port; HTTP matches the full URL. Topology does not send new
 probes. Failures, timestamps and source investigations remain visible, but response headers and
 certificate identity fields are not copied. An HTTP status from an `https` check keeps its certificate
-verdict, so a status from an untrusted peer is shown as such. Shared infrastructure does not establish service ownership.
+verdict, so a status from an untrusted peer is shown as such. When that check withheld the URL's path from
+an untrusted peer, only the verdict is kept, because the status was measured on a different path. Shared infrastructure does not establish service ownership.
 
 ### Coverage and retention
 
