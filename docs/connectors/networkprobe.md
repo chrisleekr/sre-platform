@@ -75,6 +75,26 @@ So the handshake completes regardless, and the verdict is reported as data: whet
 and if not, why. Nothing is sent over that connection, no credential and no request body, so
 completing it exposes nothing.
 
+## Why the HTTP check also accepts a bad certificate
+
+An HTTP check against an `https` address has the same need: it should still return a status when
+the certificate is expired or self-signed. So it completes the handshake either way, and returns the
+certificate verdict next to the status and headers.
+
+That verdict matters here, because this check does send a request. A certificate that does not
+verify may belong to something intercepting the connection rather than the host, and then the
+status and headers prove nothing. Read them as unconfirmed whenever the verdict says the certificate
+was not trusted.
+
+The path and query are never sent to a peer whose certificate did not verify. A URL copied from an
+incident can carry a credential in either place, such as a signed download link, a `token`
+parameter, or a webhook address with the secret in its path. The check requests `/` instead and says
+so in its result. The status it returns is for `/`, not for the URL you gave, so the topology view
+does not show it against that URL.
+
+A plain `http` address has no certificate to check. It sends the full URL as given, the same as any
+client would.
+
 ## Secrets in results
 
 There is nothing to redact. The connector calls no authenticated API and returns no response body.

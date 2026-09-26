@@ -234,7 +234,13 @@ try {
           }),
           httpHead: async () => {
             probeCalls++;
-            return { status: 503, headers: { 'set-cookie': 'private-cookie' } };
+            return {
+              status: 503,
+              headers: { 'set-cookie': 'private-cookie' },
+              tlsAuthorized: true,
+              tlsAuthorizationError: null,
+              targetWithheld: false,
+            };
           },
         },
       );

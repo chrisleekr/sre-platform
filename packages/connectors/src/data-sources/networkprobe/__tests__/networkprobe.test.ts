@@ -3,10 +3,8 @@ import type { ConnectorConfig } from '../../../registry';
 import type { HostLookup } from '../../../ssrf';
 import type { ConnectorTool } from '../../../types';
 import {
-  headSliceIfComplete,
   makeNetworkProbeConnector,
   mapCert,
-  parseHttpHead,
   resolvePublicTarget,
   type ProbeSocketDeps,
 } from '../connector';
@@ -83,7 +81,13 @@ function fakeDeps(over: Partial<ProbeSocketDeps> = {}): {
       over.httpHead ??
       (async (ip, hostHeader, servername, port, scheme, path) => {
         http.push({ ip, hostHeader, servername, port, scheme, path });
-        return { status: 200, headers: { server: 'nginx' } };
+        return {
+          status: 200,
+          headers: { server: 'nginx' },
+          tlsAuthorized: scheme === 'https' ? true : null,
+          tlsAuthorizationError: null,
+          targetWithheld: false,
+        };
       }),
   };
   return { deps, tcp, tls, http };
@@ -161,50 +165,6 @@ describe('resolvePublicTarget', () => {
   test('rejects a malformed IP literal rather than dialing it', async () => {
     await expect(resolvePublicTarget('999.999.999.999', pub)).rejects.toThrow(/invalid host/);
     await expect(resolvePublicTarget('foo:bar', pub)).rejects.toThrow(/invalid host/);
-  });
-});
-
-// ---------------- parseHttpHead ----------------
-
-describe('parseHttpHead', () => {
-  test('parses status and headers, stops at the blank line (no body)', () => {
-    const r = parseHttpHead(
-      'HTTP/1.1 301 Moved Permanently\r\nLocation: https://x.example/\r\nServer: nginx\r\n\r\n<html>body',
-    );
-    expect(r.status).toBe(301);
-    expect(r.headers.location).toBe('https://x.example/');
-    expect(r.headers.server).toBe('nginx');
-    expect(JSON.stringify(r)).not.toContain('body');
-  });
-
-  test('accumulates repeated headers rather than clobbering', () => {
-    const r = parseHttpHead('HTTP/1.1 200 OK\r\nSet-Cookie: a=1\r\nSet-Cookie: b=2\r\n\r\n');
-    expect(r.headers['set-cookie']).toBe('a=1, b=2');
-  });
-
-  test('returns status 0 when the status line has no code', () => {
-    expect(parseHttpHead('garbage\r\n\r\n').status).toBe(0);
-  });
-});
-
-// ---------------- headSliceIfComplete (the 64 KB cap guard) ----------------
-
-describe('headSliceIfComplete', () => {
-  test('returns the slice up to the blank-line boundary', () => {
-    expect(headSliceIfComplete('HTTP/1.1 200 OK\r\nA: b\r\n\r\nBODY')).toBe(
-      'HTTP/1.1 200 OK\r\nA: b',
-    );
-  });
-
-  test('returns null while the head is still incomplete', () => {
-    expect(headSliceIfComplete('HTTP/1.1 200 OK\r\nA: b\r\n')).toBeNull();
-  });
-
-  test('caps at 64 KB when a hostile host never sends the blank line', () => {
-    const flood = 'X'.repeat(70 * 1024); // no CRLFCRLF ever
-    const head = headSliceIfComplete(flood);
-    expect(head).not.toBeNull();
-    expect(head!.length).toBe(64 * 1024);
   });
 });
 
@@ -422,7 +382,13 @@ describe('http_meta', () => {
 
   test('does not follow redirects — returns 3xx + Location', async () => {
     const { deps } = fakeDeps({
-      httpHead: async () => ({ status: 302, headers: { location: 'https://elsewhere.example/' } }),
+      httpHead: async () => ({
+        status: 302,
+        headers: { location: 'https://elsewhere.example/' },
+        tlsAuthorized: null,
+        tlsAuthorizationError: null,
+        targetWithheld: false,
+      }),
     });
     const r = (await toolNamed(deps, 'http_meta').run({ url: 'http://example.com' })) as {
       status: number;
@@ -450,6 +416,25 @@ describe('http_meta', () => {
     await expect(toolNamed(deps, 'http_meta').run({ url: 'not a url' })).rejects.toThrow(
       /invalid url/,
     );
+  });
+
+  test('returns the TLS verdict beside the status', async () => {
+    const { deps } = fakeDeps({
+      httpHead: async () => ({
+        status: 200,
+        headers: {},
+        tlsAuthorized: false,
+        tlsAuthorizationError: 'CERT_HAS_EXPIRED',
+        targetWithheld: true,
+      }),
+    });
+    const r = await toolNamed(deps, 'http_meta').run({ url: 'https://example.com/?token=s' });
+    expect(r).toMatchObject({
+      status: 200,
+      tlsAuthorized: false,
+      tlsAuthorizationError: 'CERT_HAS_EXPIRED',
+      targetWithheld: true,
+    });
   });
 
   test('never connects to a url whose host resolves private', async () => {

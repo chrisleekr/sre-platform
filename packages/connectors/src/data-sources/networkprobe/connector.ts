@@ -1,6 +1,5 @@
 import { resolveCname as dnsResolveCname } from 'node:dns/promises';
 import net from 'node:net';
-import tls from 'node:tls';
 import * as z from 'zod';
 import { createDataSourceConnector, defineConnector, type ConnectorConfig } from '../../registry';
 import { staticEntityCoverage } from '../../entity-coverage';
@@ -12,9 +11,11 @@ import type {
   ToolRunOptions,
   TriageContext,
 } from '../../types';
-import type { PeerCertLike, ProbeSocketDeps, RawTlsResult } from './types';
+import type { ProbeSocketDeps, RawTlsResult } from './types';
+import { defaultHttpHead, defaultTcpConnect, defaultTlsConnect } from './socket';
 
 export type { ProbeSocketDeps } from './types';
+export { headRequestTarget, headSliceIfComplete, parseHttpHead } from './socket';
 
 // On-demand network reachability probe. Unlike every other connector this has no
 // backend, credential, or settings: its inputs are arbitrary incident-discovered hostnames, so it is
@@ -29,7 +30,6 @@ const TCP_TIMEOUT_MS = 5000;
 const TLS_TIMEOUT_MS = 5000;
 const HTTP_TIMEOUT_MS = 8000;
 const DNS_TIMEOUT_MS = 3000;
-const MAX_HEAD_BYTES = 64 * 1024; // hostile host cannot stream unbounded response headers
 const DEFAULT_PORT = 443;
 
 const NETWORK_PROBE_CONNECTOR = {
@@ -74,16 +74,6 @@ function canonicalizeLiteral(h: string): string {
   }
 }
 
-/** A one-shot settle guard: the first call wins, later socket events are ignored. */
-function settleOnce(): (fn: () => void) => void {
-  let settled = false;
-  return (fn) => {
-    if (settled) return;
-    settled = true;
-    fn();
-  };
-}
-
 /** Reject a rejection that outlives its deadline; the dangling op is harmless. */
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
@@ -126,35 +116,6 @@ export async function resolvePublicTarget(
   return { host: h, ips };
 }
 
-/**
- * The response head is complete once the blank-line boundary arrives, or is capped at MAX_HEAD_BYTES so a
- * hostile host cannot stream unbounded headers. Returns the header slice, or null if more data is needed.
- */
-export function headSliceIfComplete(buf: string): string | null {
-  const boundary = buf.indexOf('\r\n\r\n');
-  if (boundary !== -1) return buf.slice(0, boundary);
-  if (buf.length >= MAX_HEAD_BYTES) return buf.slice(0, MAX_HEAD_BYTES);
-  return null;
-}
-
-/** Parse the response head (status line + headers) up to the blank line. Body is never included. */
-export function parseHttpHead(text: string): { status: number; headers: Record<string, string> } {
-  const head = text.split('\r\n\r\n')[0] ?? text;
-  const lines = head.split('\r\n');
-  const statusLine = lines.shift() ?? '';
-  const status = Number.parseInt(statusLine.split(/\s+/)[1] ?? '', 10);
-  const headers: Record<string, string> = {};
-  for (const line of lines) {
-    const idx = line.indexOf(':');
-    if (idx <= 0) continue;
-    const key = line.slice(0, idx).trim().toLowerCase();
-    const value = line.slice(idx + 1).trim();
-    // Repeated headers (e.g. set-cookie) accumulate rather than clobber.
-    headers[key] = key in headers ? `${headers[key]}, ${value}` : value;
-  }
-  return { status: Number.isFinite(status) ? status : 0, headers };
-}
-
 /** Shape a peer cert into the triage payload: leaf fields + trust verdict + computed expiry. */
 export function mapCert(raw: RawTlsResult, nowMs: number): Record<string, unknown> {
   const c = raw.cert;
@@ -178,113 +139,6 @@ export function mapCert(raw: RawTlsResult, nowMs: number): Record<string, unknow
     expired: Number.isFinite(validToMs) ? validToMs < nowMs : null,
   };
 }
-
-// -------- default socket layer (thin node:net/tls wiring) --------
-
-const defaultTcpConnect: ProbeSocketDeps['tcpConnect'] = (ip, port, timeoutMs) =>
-  new Promise<number>((resolve, reject) => {
-    const start = performance.now();
-    const settle = settleOnce();
-    const socket = net.connect({ host: ip, port });
-    socket.setTimeout(timeoutMs);
-    socket.on('connect', () => {
-      const latencyMs = Math.round(performance.now() - start);
-      socket.destroy();
-      settle(() => resolve(latencyMs));
-    });
-    socket.on('timeout', () => {
-      socket.destroy();
-      settle(() => reject(new Error('networkprobe: tcp connect timed out')));
-    });
-    socket.on('error', (e) => {
-      socket.destroy();
-      settle(() => reject(e));
-    });
-  });
-
-const defaultTlsConnect: ProbeSocketDeps['tlsConnect'] = (ip, servername, port, timeoutMs) =>
-  new Promise<RawTlsResult>((resolve, reject) => {
-    const settle = settleOnce();
-    // rejectUnauthorized:false is the point: complete the handshake on an expired/self-signed/wrong-host
-    // cert and REPORT the verdict as data, rather than failing the tool on exactly the certs we diagnose.
-    const socket = tls.connect({ host: ip, port, servername, rejectUnauthorized: false });
-    socket.setTimeout(timeoutMs);
-    socket.on('secureConnect', () => {
-      const cert = socket.getPeerCertificate(true) as unknown as PeerCertLike;
-      const err = (socket as unknown as { authorizationError?: Error | string }).authorizationError;
-      const result: RawTlsResult = {
-        authorized: socket.authorized,
-        authorizationError: err ? String(err) : null,
-        protocol: socket.getProtocol(),
-        cipher: socket.getCipher()?.name ?? null,
-        cert,
-      };
-      socket.destroy();
-      settle(() => resolve(result));
-    });
-    socket.on('timeout', () => {
-      socket.destroy();
-      settle(() => reject(new Error('networkprobe: tls handshake timed out')));
-    });
-    socket.on('error', (e) => {
-      socket.destroy();
-      settle(() => reject(e));
-    });
-  });
-
-const defaultHttpHead: ProbeSocketDeps['httpHead'] = (
-  ip,
-  hostHeader,
-  servername,
-  port,
-  scheme,
-  path,
-  timeoutMs,
-) =>
-  new Promise<{ status: number; headers: Record<string, string> }>((resolve, reject) => {
-    const settle = settleOnce();
-    // rejectUnauthorized:false for the same reason as the TLS probe above: a HEAD reachability
-    // check must still report the status of a host whose certificate is expired or self-signed.
-    // Nothing authenticating is sent, so a peer that fails validation learns only the request line.
-    const socket =
-      scheme === 'https'
-        ? tls.connect({ host: ip, port, servername, rejectUnauthorized: false })
-        : net.connect({ host: ip, port });
-    socket.setTimeout(timeoutMs);
-    const onReady = () => {
-      const req =
-        `HEAD ${path} HTTP/1.1\r\nHost: ${hostHeader}\r\n` +
-        `User-Agent: sre-platform-networkprobe\r\nAccept: */*\r\nConnection: close\r\n\r\n`;
-      socket.write(req);
-    };
-    socket.on(scheme === 'https' ? 'secureConnect' : 'connect', onReady);
-    let buf = '';
-    socket.on('data', (chunk: Buffer) => {
-      buf += chunk.toString('latin1');
-      const head = headSliceIfComplete(buf);
-      if (head !== null) {
-        socket.destroy();
-        settle(() => resolve(parseHttpHead(head)));
-      }
-    });
-    socket.on('timeout', () => {
-      socket.destroy();
-      settle(() => reject(new Error('networkprobe: http head timed out')));
-    });
-    socket.on('error', (e) => {
-      socket.destroy();
-      settle(() => reject(e));
-    });
-    socket.on('close', () => {
-      // A zero-byte close is a connection failure, not a response; surface it as an error rather than a
-      // bogus status 0. A partial head (server closed after a short 1xx/4xx) is still a real reply.
-      if (buf.length === 0) {
-        settle(() => reject(new Error('networkprobe: connection closed with no response')));
-        return;
-      }
-      settle(() => resolve(parseHttpHead(buf)));
-    });
-  });
 
 function withDefaults(deps: Partial<ProbeSocketDeps>): ProbeSocketDeps {
   return {
@@ -413,7 +267,9 @@ function makeNetworkProbeTools(deps: ProbeSocketDeps): ConnectorTool[] {
       description:
         'Send a single HTTP HEAD to a URL and return only the status code and response headers (no body is ' +
         'ever read). Redirects are NOT followed: a 3xx returns its status + Location for the model to probe ' +
-        'as a fresh call. url must be http or https; the host may be a public IP literal.',
+        'as a fresh call. url must be http or https; the host may be a public IP literal. For https, ' +
+        'tlsAuthorized:false means the certificate did not verify, so status and headers may come from an ' +
+        'interceptor rather than the host, and targetWithheld:true means only / was requested, so the status is for / and not the given path.',
       inputSchema: z.object({ url: z.string() }),
       run: async ({ url }) => {
         let u: URL;
@@ -429,7 +285,7 @@ function makeNetworkProbeTools(deps: ProbeSocketDeps): ConnectorTool[] {
         const targetIp = ips[0]!;
         const port = u.port ? Number(u.port) : scheme === 'https' ? 443 : 80;
         const path = `${u.pathname}${u.search}` || '/';
-        const { status, headers } = await deps.httpHead(
+        const result = await deps.httpHead(
           targetIp,
           u.host,
           h,
@@ -438,7 +294,7 @@ function makeNetworkProbeTools(deps: ProbeSocketDeps): ConnectorTool[] {
           path,
           HTTP_TIMEOUT_MS,
         );
-        return { url: u.toString(), targetIp, status, headers };
+        return { url: u.toString(), targetIp, ...result };
       },
     }),
   ];
