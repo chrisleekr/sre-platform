@@ -24,7 +24,7 @@
     "@sre/slo": "workspace:*",
     "@sre/surfaces": "workspace:*",
     "@sre/topology": "workspace:*",
-    "@toon-format/toon": "^2.3.1",
+    "@toon-format/toon": "^4.0.0",
     "drizzle-orm": "^0.45.2",
     "ioredis": "^6.0.0",
     "openai": "^7.15.0",
