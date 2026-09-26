@@ -147,6 +147,38 @@ test('changing a provider monitor discards the earlier preview', async () => {
   fireEvent.change(screen.getByLabelText('Provider monitor ID'), { target: { value: '74' } });
   await waitFor(() => expect(screen.queryByText('Bind this episode')).toBeNull());
 });
+test('a preview that returns after its monitor changed is not shown', async () => {
+  let answer = (_response: Response) => {};
+  vi.mocked(authenticatedFetch)
+    .mockReset()
+    .mockResolvedValueOnce(
+      Response.json({
+        signals: [{ id: 'signal-internal', summary: 'Checkout timed out', state: 'unknown' }],
+      }),
+    )
+    .mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+  render(
+    <ConnectorLifecyclePanel connector={connector} getCredentials={getCredentials} canConfigure />,
+  );
+  fireEvent.change(screen.getByLabelText('Open incident'), {
+    target: { value: 'incident-internal' },
+  });
+  await screen.findByText('Notification: Checkout timed out (unknown)');
+  fireEvent.change(screen.getByLabelText('Provider signal'), {
+    target: { value: 'signal-internal' },
+  });
+  fireEvent.change(screen.getByLabelText('Provider monitor ID'), { target: { value: '73' } });
+  fireEvent.click(screen.getByText('Preview provider evidence'));
+  fireEvent.change(screen.getByLabelText('Provider monitor ID'), { target: { value: '74' } });
+  answer(Response.json({ verified: true, startsAt: '2026-09-21T00:00:00Z', status: 'firing' }));
+  await waitFor(() =>
+    expect((screen.getByText('Reconcile bound episodes') as HTMLButtonElement).disabled).toBe(
+      false,
+    ),
+  );
+  expect(screen.queryByText(/Verified episode:/)).toBeNull();
+  expect(screen.queryByText('Bind this episode')).toBeNull();
+});
 test('an unverified preview shows an operator sentence, never the provider reason code', async () => {
   vi.mocked(authenticatedFetch)
     .mockReset()

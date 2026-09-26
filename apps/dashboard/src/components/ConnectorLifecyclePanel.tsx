@@ -15,6 +15,8 @@ interface EpisodePreview {
   signalVersion: number;
   lifecycleVersion: number;
   connectorVersion: number;
+  /** The inputs this preview was requested for; a response for older inputs is never shown. */
+  request: string;
 }
 
 // The route returns provider readEpisode codes verbatim; operators need the action, not the code.
@@ -101,6 +103,14 @@ function LifecycleBindingForm({
   const [message, setMessage] = useState('');
   const [failure, setFailure] = useState('');
   const [busy, setBusy] = useState(false);
+  // Inputs stay editable while a preview is in flight, so a late response must match what is typed now.
+  const request = JSON.stringify([
+    signalId.trim(),
+    monitorId.trim(),
+    scope.trim(),
+    cycleKey.trim(),
+  ]);
+  const currentPreview = preview?.request === request ? preview : null;
   async function run(mode: 'preview' | 'bind' | 'reconcile') {
     setBusy(true);
     setMessage('');
@@ -114,11 +124,11 @@ function LifecycleBindingForm({
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
-            ...(mode === 'bind' && preview
+            ...(mode === 'bind' && currentPreview
               ? {
-                  signalVersion: preview.signalVersion,
-                  lifecycleVersion: preview.lifecycleVersion,
-                  connectorVersion: preview.connectorVersion,
+                  signalVersion: currentPreview.signalVersion,
+                  lifecycleVersion: currentPreview.lifecycleVersion,
+                  connectorVersion: currentPreview.connectorVersion,
                 }
               : {}),
             mode,
@@ -153,7 +163,7 @@ function LifecycleBindingForm({
           response.status,
         );
       }
-      if (mode === 'preview') setPreview(result as unknown as EpisodePreview);
+      if (mode === 'preview') setPreview({ ...(result as unknown as EpisodePreview), request });
       else {
         setPreview(null);
         setMessage(
@@ -300,14 +310,15 @@ function LifecycleBindingForm({
             Reconcile bound episodes
           </button>
         </div>
-        {preview && (
+        {currentPreview && (
           <>
             <p className="text-sm">
-              Verified episode: {preview.startsAt}. Current provider result: {preview.status}.
+              Verified episode: {currentPreview.startsAt}. Current provider result:{' '}
+              {currentPreview.status}.
             </p>
-            {preview.nativeAssociation && (
+            {currentPreview.nativeAssociation && (
               <p className="text-sm text-warning">
-                {preview.nativeAssociation === 'cycle_key_required'
+                {currentPreview.nativeAssociation === 'cycle_key_required'
                   ? 'API evidence verified. Native association requires an explicit cycle key.'
                   : 'Native association pending an authenticated delivery matching this exact cycle and start.'}
               </p>
