@@ -25,6 +25,8 @@ export async function startIncidentTriageFixture() {
     },
   });
   let updates = 0;
+  let policy = { resolutionPolicy: 'verified_recovery', lifecycleVersion: 0 };
+  let policyRequest = null;
   const history = [
     {
       id: 'opening',
@@ -47,6 +49,35 @@ export async function startIncidentTriageFixture() {
             try {
               const url = new URL(request.url ?? '/', 'http://fixture');
               response.setHeader('content-type', 'application/json');
+              if (url.pathname === '/policy') {
+                response.end(JSON.stringify({ ...policy, policyRequest }));
+                return;
+              }
+              if (url.pathname === '/policy-conflict') {
+                policy = { ...policy, lifecycleVersion: policy.lifecycleVersion + 1 };
+                response.end('{}');
+                return;
+              }
+              if (url.pathname.endsWith('/resolution-policy')) {
+                let body = '';
+                request.on('data', (chunk) => {
+                  body += chunk;
+                });
+                request.on('end', () => {
+                  policyRequest = JSON.parse(body);
+                  if (policyRequest.expectedVersion !== policy.lifecycleVersion) {
+                    response.statusCode = 409;
+                    response.end(JSON.stringify({ error: 'stale' }));
+                    return;
+                  }
+                  policy = {
+                    resolutionPolicy: policyRequest.policy,
+                    lifecycleVersion: policy.lifecycleVersion + 1,
+                  };
+                  response.end(JSON.stringify({ outcome: 'applied' }));
+                });
+                return;
+              }
               if (url.pathname === '/disconnect') {
                 for (const client of sockets) client.close();
                 response.end('{}');

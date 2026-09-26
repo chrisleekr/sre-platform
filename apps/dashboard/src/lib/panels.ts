@@ -13,5 +13,6 @@ export const PANELS: PanelDef[] = [
   { path: '/w/connectors', label: 'Connections', group: 'Configure' },
   { path: '/w/surfaces', label: 'Inbound', group: 'Configure' },
   { path: '/w/usage', label: 'Usage & Cost', group: 'Configure' },
+  { path: '/w/work-queue', label: 'Work queue', group: 'Configure' },
   { path: '/w/settings', label: 'Settings', group: 'Configure' },
 ];

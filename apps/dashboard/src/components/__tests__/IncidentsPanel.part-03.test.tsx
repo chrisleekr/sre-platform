@@ -52,7 +52,7 @@ let hookState: {
 // cursor-aware page source; renderPanel resets it to the default so the other tests are unaffected.
 let useIncidentsMock: (opts: {
   state?: 'open' | 'closed' | 'all';
-  attention?: 'human' | 'automation';
+  sort?: string;
   cursor?: string;
   query?: string;
   severity?: string;

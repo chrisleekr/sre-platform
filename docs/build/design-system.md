@@ -57,7 +57,9 @@ Shared actions are at least
 36px tall and grow to 44px on coarse pointers. Touch form fields use 16px text. These choices
 preserve usability rather than reproducing a marketing-page reference literally.
 
-Token tests check normal text at 4.5:1 contrast and focus/control boundaries at 3:1. They do not
+Token tests check normal text at 4.5:1 contrast and focus/control boundaries at 3:1. Selected text
+uses its own highlight token, which must keep text at 4.5:1 and differ from every surface and
+status background by at least 1.4:1, so a selection is never invisible on a card. Token tests do not
 replace checking composed pages. Review light and dark themes at desktop, tablet, and mobile
 sizes; check keyboard focus, wrapping, errors, disabled controls, and long content.
 

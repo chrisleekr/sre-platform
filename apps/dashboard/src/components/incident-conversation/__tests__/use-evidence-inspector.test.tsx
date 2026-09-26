@@ -42,3 +42,15 @@ test('closing a deep-linked inspector rewrites the entry instead of leaving the 
   expect(window.location.hash).toBe('');
   expect(hook.result.current.inspectorOpen).toBe(false);
 });
+
+test('an inspector effect that runs after All evidence leaves the list open', () => {
+  window.history.replaceState(null, '', '/incidents/one');
+  const hook = renderHook(({ loadDetail }) => useEvidenceInspector('one', loadDetail), {
+    initialProps: { loadDetail: vi.fn() },
+  });
+  act(() => hook.result.current.showAllEvidence());
+  // A new loadDetail re-runs the effect, as a mount effect does when React flushes it after a click.
+  hook.rerender({ loadDetail: vi.fn() });
+  expect(hook.result.current.inspectorOpen).toBe(true);
+  expect(hook.result.current.inspectorId).toBeNull();
+});

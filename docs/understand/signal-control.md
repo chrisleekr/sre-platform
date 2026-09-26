@@ -44,8 +44,10 @@ the promotion figures.
 
 **Under enforcement** the classifier's disposition is what happens: a ticket goes to the ticket
 queue, a log entry is retained, and only investigate spends an investigation run. Correlation still
-wins where it applies: a message the classifier links to an existing incident, or that resolves an
-open alert, follows that link regardless of its disposition.
+wins where it applies: a message the classifier links to an existing incident follows that link
+regardless of its disposition. A classifier suggestion that a message resolves an open alert is only
+logged; it never clears the alert, because only connector-verified or native provider evidence
+changes alert lifecycle.
 
 Enforcement is approved against a specific model, endpoint, prompt contract, and reviewed test
 corpus. If any of those change, the approval is stale and routing drops back to shadow mode on its

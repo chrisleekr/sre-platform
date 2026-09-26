@@ -1,3 +1,4 @@
+import { NativeWebhookInstructions } from './connector-setup/NativeWebhookInstructions';
 import { Link } from 'react-router-dom';
 import { productPath } from '../lib/routes';
 import type { CredentialGetter } from '../lib/request-credentials';
@@ -13,12 +14,28 @@ import {
   connectorState,
   disconnectLabel,
   disconnectMessage,
+  eventTransport,
   evidenceTime,
   isManagedConnector,
   safeConnectorSummary,
   showsEventSync,
   textSetting,
 } from './connectorPresentation';
+
+function statusCakeCoverage(settings: Record<string, unknown> | undefined): string {
+  const count = (key: string) =>
+    Array.isArray(settings?.[key]) ? (settings[key] as unknown[]).length : 0;
+  // Matches the server: a row saved before setup modes existed is custom when it lists tests.
+  if (
+    settings?.setupMode === 'auto' ||
+    (settings?.setupMode === undefined && count('uptimeMonitorIds') === 0)
+  ) {
+    const excluded = count('excludedMonitorIds');
+    return `Alerts from all uptime tests open incidents${excluded ? `, except ${excluded} left out` : ''}.`;
+  }
+  const selected = count('uptimeMonitorIds');
+  return `Alerts from ${selected} chosen uptime ${selected === 1 ? 'test' : 'tests'} open incidents.`;
+}
 
 export interface ConnectorBusyAction {
   connectorId: string;
@@ -161,7 +178,7 @@ export function SavedConnectors({
                         <dt className="font-medium text-ink-secondary">
                           {c.type === 'prometheus' ? 'Alert lifecycle' : 'Event sync'}
                         </dt>
-                        {textSetting(c.settings, 'eventTransport') === 'none' ? (
+                        {eventTransport(c) === 'none' ? (
                           <>
                             <dd className="text-warning">Not configured</dd>
                             {c.type === 'prometheus' && (
@@ -261,6 +278,17 @@ export function SavedConnectors({
                       )}
                     />
                   )}
+                {textSetting(c.settings, 'eventTransport') === 'direct' &&
+                  c.webhookPath &&
+                  (c.type === 'datadog' || c.type === 'grafana') && (
+                    <NativeWebhookInstructions type={c.type} webhookPath={c.webhookPath} />
+                  )}
+                {c.type === 'statuscake' && eventTransport(c) === 'direct' && (
+                  <p className="text-sm text-ink-muted">
+                    {statusCakeCoverage(c.settings)} Contact groups in StatusCake are managed by the
+                    platform; choose Manage to change which tests are included.
+                  </p>
+                )}
                 {isManagedConnector(c.type) && (
                   <div className="flex flex-wrap gap-2">
                     {state.label === 'Verification failed' ? (

@@ -397,6 +397,9 @@ describe('incident response workspace', () => {
     const brief = (await screen.findByText('Responder brief')).closest('section')!;
     expect(within(brief).getByRole('heading', { name: 'Recovery verified' })).toBeDefined();
     expect(
+      within(brief).getByRole('heading', { name: 'Unclassified recovery questions' }),
+    ).toBeDefined();
+    expect(
       within(brief).getByText('Current metrics confirm the pool has recovered.'),
     ).toBeDefined();
     expect(within(brief).getByRole('link', { name: `Open evidence ${recoveryId}` })).toBeDefined();
@@ -417,4 +420,49 @@ describe('incident response workspace', () => {
     await waitFor(() => expect(loadDetail).toHaveBeenCalledWith(recoveryId));
     unmount();
   });
+});
+
+test('distinguishes recovery blockers and follow-up work with actionable evidence links', async () => {
+  const attempt = '33333333-3333-4333-8333-333333333333';
+  globalThis.fetch = vi.fn(async () =>
+    response({
+      incident: detail({
+        recoveryState: 'not_verified',
+        recoverySummary: 'One health check remains.',
+        recoveryUpdatedAt: '2026-08-21T01:00:00Z',
+        recoveryUnknowns: ['Stale legacy copy'],
+        recoveryQuestions: [
+          {
+            question: 'Is the deployment ready?',
+            category: 'missing_capability',
+            evidenceKind: 'runtime_state',
+            resolutionRelevance: 'blocking',
+            nextAction: 'Restore read access and check readiness.',
+            attemptedEvidenceIds: [attempt],
+          },
+          {
+            question: 'What caused the earlier outage?',
+            category: 'historical_gap',
+            evidenceKind: null,
+            resolutionRelevance: 'follow_up',
+            nextAction: 'Review retained events for prevention.',
+            attemptedEvidenceIds: [],
+          },
+        ],
+      } as never),
+      viewerUserId: null,
+      signals: [],
+      progress: { total: 1, successful: 0, failed: 1, lastRecordedAt: null },
+    }),
+  );
+  const { unmount } = renderIncident();
+  const brief = (await screen.findByText('Responder brief')).closest('section')!;
+  expect(within(brief).getByRole('heading', { name: 'Blocks resolution' })).toBeDefined();
+  expect(within(brief).getByRole('heading', { name: 'Follow-up work' })).toBeDefined();
+  expect(within(brief).getByText('Connector or metadata needed')).toBeDefined();
+  expect(within(brief).getByText('Restore read access and check readiness.')).toBeDefined();
+  expect(within(brief).getByRole('link', { name: `Open evidence ${attempt}` })).toBeDefined();
+  expect(within(brief).getByText('No recorded check attempts')).toBeDefined();
+  expect(within(brief).queryByText('Stale legacy copy')).toBeNull();
+  unmount();
 });

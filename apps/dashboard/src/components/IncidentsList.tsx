@@ -1,3 +1,4 @@
+import { InvestigationResult } from './InvestigationResult';
 import { Link } from 'react-router-dom';
 import type { Incident } from '../lib/types';
 import { incidentDisplayTitle } from '../lib/incidentTitle';
@@ -31,12 +32,16 @@ function lifecycleLabel(incident: Incident): string {
   if (incident.status === 'open')
     return incident.requiresHumanAttention ? 'Needs human' : 'SRE Platform handling';
   if (incident.status === 'mitigated') return 'Mitigated';
+  if (incident.status === 'resolved' && incident.resolutionBasis === 'provider_clear')
+    return 'Resolved from provider signals';
   if (incident.status === 'resolved') return 'Resolved';
   if (incident.status === 'closed') return 'Closed';
   return incident.status;
 }
 
 const attentionReasonLabel: Record<NonNullable<Incident['attentionReason']>, string> = {
+  operator_decision: 'Decision needed',
+  automation_missing: 'No automation recorded',
   approval_pending: 'Approval requested',
   investigation_degraded: 'Investigation blocked',
   recovery_not_verified: 'Recovery uncertain',
@@ -52,6 +57,7 @@ const attentionReasonLabel: Record<NonNullable<Incident['attentionReason']>, str
 };
 
 function signalLabel(incident: Incident): string | null {
+  if (incident.resolutionBasis === 'provider_clear') return 'Health not independently verified';
   if (incident.signalCount === undefined) return null;
   if (incident.alertSource === 'manual' && incident.signalCount === 0) return null;
   if (incident.signalCount === 0) return 'Signal tracking unavailable';
@@ -97,7 +103,11 @@ function responseOrderedIncidents(
   return ordered;
 }
 
-/** Decision-focused incident queue. The API supplies SRE priority order; channel is provenance, not grouping. */
+/**
+ * Decision-focused incident queue. Rows arrive in the chosen sort order; a causal symptom is nested
+ * under its direct cause whatever the sort, so the causal chain stays readable. Channel is provenance,
+ * not grouping.
+ */
 export function IncidentsList({ incidents }: { incidents: Incident[] }) {
   const visibleIncidents = incidents.filter((incident) => !incident.archivedAt);
   const incidentById = new Map(visibleIncidents.map((incident) => [incident.id, incident]));
@@ -310,9 +320,10 @@ export function IncidentsList({ incidents }: { incidents: Incident[] }) {
                     </p>
                   </div>
                 ) : (
-                  <p className="text-sm text-ink-muted">No assessment yet.</p>
+                  <p className="text-sm text-ink-muted">No trusted assessment yet.</p>
                 )}
 
+                <InvestigationResult run={incident.latestInvestigationRun} compact />
                 {incident.latestInvestigationRun && (
                   <div className="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
                     <span className="font-semibold">Latest investigation run</span>

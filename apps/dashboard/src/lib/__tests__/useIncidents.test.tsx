@@ -68,21 +68,17 @@ describe('useIncidents', () => {
     });
   });
 
-  test('includes the active attention lane in the request path', async () => {
+  test('includes the requested sort in the request path', async () => {
     const fetchMock = vi.fn(
       async (_input: string | URL | Request) =>
         ({ ok: true, json: async () => ({ incidents: [incident] }) }) as Response,
     );
     globalThis.fetch = fetchMock;
 
-    const { result } = renderHook(() =>
-      useIncidents({ ...opts, state: 'open', attention: 'automation' }),
-    );
+    const { result } = renderHook(() => useIncidents({ ...opts, state: 'closed', sort: 'oldest' }));
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
-      '/incidents?state=open&attention=automation',
-    );
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/incidents?state=closed&sort=oldest');
   });
 
   test('includes incident search and severity filters in the request path', async () => {

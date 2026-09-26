@@ -1,3 +1,4 @@
+import { ConnectorLifecyclePanel } from '../ConnectorLifecyclePanel';
 import { useEffect, useRef, useState, type ComponentProps } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { config } from '../../config';
@@ -128,16 +129,23 @@ export function ConnectionsContent({
       ) : selectedId === 'slack' ? (
         <InboundPanel embedded onChange={chat.refetch} />
       ) : selected ? (
-        <SavedConnectors
-          {...saved}
-          canConfigure={canConfigure}
-          connectors={[selected]}
-          onDisconnect={async (connector) => {
-            const removed = await saved.onDisconnect(connector);
-            if (removed) navigate();
-            return removed;
-          }}
-        />
+        <>
+          <SavedConnectors
+            {...saved}
+            canConfigure={canConfigure}
+            connectors={[selected]}
+            onDisconnect={async (connector) => {
+              const removed = await saved.onDisconnect(connector);
+              if (removed) navigate();
+              return removed;
+            }}
+          />
+          <ConnectorLifecyclePanel
+            connector={selected}
+            getCredentials={saved.getCredentials}
+            canConfigure={canConfigure}
+          />
+        </>
       ) : selectedId ? (
         loading ? (
           <StatePanel state="loading" title="Loading connection…" />

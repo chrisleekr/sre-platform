@@ -194,6 +194,26 @@ function SignalCard({
           {signal.state}
         </span>
       </div>
+      {signal.lifecycleCoverage === 'verified' && signal.verifiedProviderState && (
+        <p className="mt-2 text-xs text-ink-secondary">
+          Current provider verification: {signal.verifiedProviderState}. Notification history is
+          preserved.
+        </p>
+      )}
+      {signal.lifecycleCoverage === 'reverification_required' && (
+        <p className="mt-2 rounded border border-warning-line bg-warning-muted p-2 text-xs text-warning">
+          Provider verification must be refreshed for the current connector configuration. Reconcile
+          the bound episode in Connections or replay its authenticated event. Historical status is
+          preserved until current evidence is verified.
+        </p>
+      )}
+      {signal.lifecycleCoverage === 'binding_required' && (
+        <p className="mt-2 rounded border border-warning-line bg-warning-muted p-2 text-xs text-warning">
+          Automatic provider recovery is unavailable for this notification. Bind its exact monitor
+          and episode in Connections, or verify recovery manually. Historical status remains
+          unchanged.
+        </p>
+      )}
       {targets.length > 0 && (
         <p className="mt-2 flex flex-wrap gap-1" aria-label="Affected targets">
           {targets.map((target) => (

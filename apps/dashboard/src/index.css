@@ -84,6 +84,7 @@
   --sre-line-strong: #7f7f80;
   --sre-accent: #141516;
   --sre-accent-soft: #e4e5e9;
+  --sre-selection: #9fc3f5;
   --sre-strong: #23252a;
   --sre-strong-hover: #34343a;
   --sre-on-strong: #ffffff;
@@ -138,6 +139,7 @@
   --sre-line-strong: #7f7f80;
   --sre-accent: #f7f8f8;
   --sre-accent-soft: #23252a;
+  --sre-selection: #3b6bb5;
   --sre-strong: #23252a;
   --sre-strong-hover: #2d2e31;
   --sre-on-strong: #f7f8f8;
@@ -235,8 +237,9 @@
     letter-spacing: normal;
   }
 
+  /* Own token: accent-soft equals surface-strong, which made selected text on cards invisible. */
   ::selection {
-    background: var(--sre-accent-soft);
+    background: var(--sre-selection);
     color: var(--sre-ink);
   }
 }

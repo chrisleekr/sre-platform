@@ -1,4 +1,17 @@
-import type { IncidentWorkspaceData } from '../../lib/types';
+import type { Incident, IncidentWorkspaceData } from '../../lib/types';
+
+/** Whether the recovery check, not the assessment, is the incident's latest word on its state. */
+export function isRecoveryCurrent(incident: Incident): boolean {
+  return (
+    incident.resolutionBasis !== 'provider_clear' &&
+    incident.purpose !== 'health_check' &&
+    incident.recoveryState != null &&
+    (incident.recoveryUpdatedAt != null
+      ? Date.parse(incident.recoveryUpdatedAt) >=
+        (incident.assessmentUpdatedAt ? Date.parse(incident.assessmentUpdatedAt) : 0)
+      : incident.assessmentUpdatedAt == null)
+  );
+}
 
 export function deriveIncidentState(workspace: IncidentWorkspaceData) {
   const incident = workspace.incident;
@@ -54,13 +67,7 @@ export function deriveIncidentState(workspace: IncidentWorkspaceData) {
             text: 'text-critical',
             label: `${activeSignalCount} unresolved record${activeSignalCount === 1 ? '' : 's'}`,
           };
-  const recoveryIsCurrent =
-    incident.purpose !== 'health_check' &&
-    incident.recoveryState != null &&
-    (incident.recoveryUpdatedAt != null
-      ? Date.parse(incident.recoveryUpdatedAt) >=
-        (incident.assessmentUpdatedAt ? Date.parse(incident.assessmentUpdatedAt) : 0)
-      : incident.assessmentUpdatedAt == null);
+  const recoveryIsCurrent = isRecoveryCurrent(incident);
 
   return {
     activeLifecycle,

@@ -26,4 +26,5 @@
 | [Connections](connectors.md) | Which of my systems can it read? |
 | [Inbound](inbound.md) | Which Slack channels does it listen to, and what did it do with them? |
 | [Usage & Cost](usage.md) | What has the model cost me? |
+| [Work queue](work-queue.md) | Is background work keeping up, and which jobs failed for good? |
 | [Settings](settings.md) | What is the workspace called, how do people sign in, and who belongs to it? |

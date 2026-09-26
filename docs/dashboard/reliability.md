@@ -16,7 +16,7 @@ Ticket flow reports the cohort created in the selected UTC period: promotion rat
 Toil created and toil removed are shown together. The product reports durable proxies, not unobservable external work:
 
 - created: approval demands, typed clarification requests, degraded exact re-asks, and finding corrections;
-- removed: creation-to-first-ranked-hypothesis latency, responder turns per provider Incident, cited `search_runbooks` evidence adoption, and provider Incidents resolved without responder turns or approved actions.
+- removed: creation-to-first-ranked-hypothesis latency, responder turns per provider Incident, cited `search_runbooks` evidence adoption, and provider Incidents resolved without responder turns or approved actions. This last measure counts operational resolution under the recorded policy, including authoritative provider clearance. It does not measure independently verified service health.
 
 Select **Weekly report** from the Reliability workspace to render the same weekly DTO in report mode. It does not run a second analytics computation.
 

@@ -396,14 +396,13 @@ export const WIZARDS: Wizard[] = [
   },
   {
     open: 'Add StatusCake',
-    names: ['API token', 'Review', 'Verify'],
+    // Save and continue verifies against StatusCake, so the walk stops on the token step.
+    names: ['API token', 'Notifications', 'Done'],
     steps: [
       {
         file: 'add-statuscake-1-token',
         fill: [['API token', 'statuscake-example-api-token']],
-        advance: 'Review',
       },
-      { file: 'add-statuscake-2-review' },
     ],
   },
   {

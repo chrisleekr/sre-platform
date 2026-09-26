@@ -10,6 +10,7 @@ import { TopologyPanel } from './components/TopologyPanel';
 import { ConnectorsPanel } from './components/ConnectorsPanel';
 import { InboundPanel } from './components/InboundPanel';
 import { UsagePanel } from './components/UsagePanel';
+import { WorkQueuePanel } from './components/WorkQueuePanel';
 import { IncidentConversation } from './components/IncidentConversation';
 import { PostmortemPage } from './components/PostmortemPage';
 import { LoginPage } from './components/LoginPage';
@@ -142,6 +143,7 @@ export const router = createBrowserRouter([
       { path: 'connectors', element: <ConnectorsPanel /> },
       { path: 'surfaces', element: <InboundPanel /> },
       { path: 'usage', element: <UsagePanel /> },
+      { path: 'work-queue', element: <WorkQueuePanel /> },
       { path: 'settings', element: <Navigate to="/w/settings/workspace" replace /> },
       { path: 'settings/workspace', element: <WorkspaceSettingsPage /> },
       { path: 'settings/authentication', element: <AuthenticationSettingsPage /> },

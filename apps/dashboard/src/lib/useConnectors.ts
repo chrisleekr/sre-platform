@@ -173,7 +173,13 @@ export async function savePrometheusConnector(
 export async function saveStatusCakeConnector(
   apiBaseUrl: string,
   getCredentials: CredentialGetter,
-  body: { id?: string; name: string; credential?: string },
+  body: {
+    id?: string;
+    name: string;
+    credential?: string;
+    settings?: Record<string, unknown>;
+    eventToken?: string;
+  },
 ): Promise<{ connectorId: string }> {
   const res = await authenticatedFetch(
     connectorMutationUrl(apiBaseUrl, 'statuscake', body.id),
@@ -226,10 +232,11 @@ export async function saveObservabilityConnector(
     name: string;
     settings: Record<string, unknown>;
     credential?: string;
+    eventToken?: string;
     insecureTlsAcknowledged?: boolean;
     insecureHttpAcknowledged?: boolean;
   },
-): Promise<{ connectorId: string }> {
+): Promise<{ connectorId: string; webhookPath?: string }> {
   const res = await authenticatedFetch(
     connectorMutationUrl(apiBaseUrl, type, body.id),
     getCredentials,
@@ -242,7 +249,7 @@ export async function saveObservabilityConnector(
     },
   );
   await checkResponse(res, 'The connection could not be saved. Review its status and retry.');
-  return (await res.json()) as { connectorId: string };
+  return (await res.json()) as { connectorId: string; webhookPath?: string };
 }
 
 export const testObservabilityConnector = (

@@ -75,6 +75,8 @@ export function disconnectMessage(type: ManagedConnectorType): string {
     return 'Disconnecting removes the dashboard configuration and every stored project token, and stops polling. It cannot revoke provider-side tokens. To remove each AppProject role too, cancel now, open Manage, and copy its uninstall command before disconnecting.';
   if (type === 'datadog' || type === 'grafana')
     return 'Remove this connection and its encrypted credential? Provider-side keys are not revoked automatically.';
+  if (type === 'statuscake')
+    return 'Remove this connection and its encrypted API token? Contact groups the platform created in StatusCake stay there. To remove them first, cancel now, open Manage, and turn uptime alerts Off.';
   if (type === 'prometheus')
     return 'Remove Prometheus investigation access, Alertmanager event delivery, and their encrypted credentials? The provider-side receiver remains until you remove it from Alertmanager.';
   return 'Permanently remove this connector configuration and stored credential? Provider-side tokens and certificates are not revoked automatically.';
@@ -212,6 +214,17 @@ export function showsEventSync(connector: ConnectorSummary): boolean {
       : 'none');
   if (events !== 'authenticated') return false;
   return connector.type !== 'gitlab' || Boolean(textSetting(connector.settings, 'groupPath'));
+}
+
+/**
+ * The saved event transport. Datadog, Grafana and StatusCake rows saved before delivery existed
+ * have none stored, and the server treats a missing value as off.
+ */
+export function eventTransport(connector: ConnectorSummary): string | null {
+  return (
+    textSetting(connector.settings, 'eventTransport') ??
+    (['datadog', 'grafana', 'statuscake'].includes(connector.type) ? 'none' : null)
+  );
 }
 
 export function evidenceTime(value: string | null | undefined): string {

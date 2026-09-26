@@ -62,3 +62,38 @@ explained in [Connect your tools](../connectors/index.md#connector-against-data-
 every connector can and cannot do in
 [What every connector has in common](../connectors/index.md#what-every-connector-has-in-common).
 For how connectors reach your network safely, see [Network policy](../operate/network-policy.md).
+
+## Alert lifecycle and existing incidents
+
+Each connection declares alert lifecycle coverage independently of investigation tools or generic
+repository events. Evidence-only and incomplete connectors cannot authorize automatic recovery.
+Unknown notifications remain visible, with strict recovery policy and an unresolved signal state.
+AI may suggest a recovery, but wording and model output do not change provider lifecycle.
+
+For an existing incident, open its connection's **Alert lifecycle coverage** panel:
+
+1. Select the open incident by title, then its provider signal by summary. The list holds up to the
+   100 highest-priority open incidents and says when more are open.
+2. Enter the exact provider monitor ID and, for Datadog, the exact group scope.
+3. Preview the provider episode and check its timing and current result.
+4. Enter a reason and bind the verified episode. A concurrent signal, lifecycle, or connector change
+   invalidates the preview and requires a fresh check.
+5. Select **Provider signals clear** in the incident's existing resolution policy control, then
+   reconcile the connection. Original notification evidence remains in the audit trail.
+
+StatusCake uptime and exact Datadog group reads support bounded reconciliation. Native Alertmanager
+and Grafana recovery uses authenticated event replay. Unsupported families, missing permissions,
+missing history, conflicts and stale generations produce a visible reason instead of inferred
+health. Existing regex-derived provider labels alone do not establish verified recovery.
+
+Route the provider webhook paths directly to the API behind your reverse proxy, without an
+interactive browser-login challenge. Provider authentication remains required. The application
+supports `/webhooks/alertmanager/`, `/webhooks/datadog/`, `/webhooks/grafana/`, and the per-test
+StatusCake endpoints the platform creates; deployment-specific proxy allowlists must include the routes you enable.
+
+Current provider verification and accepted recovery evidence are separate. A verified firing read
+shows the current provider state while preserving the historical notification. It does not authorize
+closure. The additive `provider_clear_generation` signal field records only an accepted exact
+provider clear under the current connector generation. Existing records start without this proof;
+reconciliation must obtain fresh exact recovery evidence before queued automatic closure can proceed.
+Changing credentials or connector settings requires re-verification under the new generation.

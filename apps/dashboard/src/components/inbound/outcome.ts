@@ -93,8 +93,15 @@ export function inboundOutcomePresentation(
     },
     resolution_unmatched: {
       label: 'Resolution not matched',
-      detail: 'The resolution could not be linked to an active provider signal.',
+      detail:
+        'Logged without changing any alert. Only connector-verified or native provider evidence clears an alert.',
       tone: 'warning',
+    },
+    resolution_reported: {
+      label: 'Recovery reported',
+      detail:
+        'Linked to its incident without changing any alert. An operator confirms resolution from the incident.',
+      tone: 'neutral',
     },
     resume_enqueued: {
       label: 'Responder request queued',

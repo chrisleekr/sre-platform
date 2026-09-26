@@ -14,8 +14,16 @@ export interface ConnectorSummary {
     investigation: 'tools' | 'none';
     polling: 'snapshots' | 'none';
     events: 'authenticated' | 'none';
+    alertLifecycle?: 'events' | 'read' | 'events_and_read' | 'structured_snapshot' | 'none';
     instances: 'multiple' | 'singleton';
     topology?: 'inventory' | 'on_demand';
+  };
+  lifecycle?: {
+    pendingEpisodes?: number;
+    mode: string;
+    lastReconciledAt: string | null;
+    failureCategory: string | null;
+    boundEpisodes: number;
   };
   credentialConfigured?: boolean;
   verification?: {

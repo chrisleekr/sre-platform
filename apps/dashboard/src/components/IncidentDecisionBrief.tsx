@@ -1,29 +1,19 @@
+import { IncidentRecoveryQuestions, GAP_LABELS } from './IncidentRecoveryQuestions';
+import { InvestigationResult } from './InvestigationResult';
 import type { CredentialGetter } from '../lib/request-credentials';
 import { formatAbsoluteTime } from '../lib/time';
 import type { IncidentWorkspaceData } from '../lib/types';
-import type { InvestigationGap, InvestigationGapCategory } from '@sre/contracts';
+import type { InvestigationGap } from '@sre/contracts';
 import { FindingFeedback, latestFindingFeedback } from './FindingFeedback';
 import { EvidenceCitation } from './IncidentEvidenceCitation';
-
-const GAP_LABELS: Record<InvestigationGapCategory, string> = {
-  observable: 'Automatic check incomplete',
-  partial_evidence: 'Partial evidence',
-  missing_capability: 'Connector or metadata needed',
-  historical_gap: 'Historical evidence unavailable',
-  contradictory_evidence: 'Evidence conflicts',
-  operator_decision: 'Decision needed',
-};
-
+import { isRecoveryCurrent } from './incident-conversation/state';
 function boundedTakeaway(value: string, maxCharacters = 240): string {
   const normalized = value.replace(/\s+/g, ' ').trim();
   const characters = [...normalized];
   if (characters.length <= maxCharacters) return normalized;
-  return `${characters
-    .slice(0, maxCharacters - 1)
-    .join('')
-    .trimEnd()}…`;
+  const prefix = characters.slice(0, maxCharacters - 1);
+  return `${prefix.join('').trimEnd()}…`;
 }
-
 export function IncidentDecisionBrief({
   workspace,
   onSelectEvidence,
@@ -38,18 +28,8 @@ export function IncidentDecisionBrief({
   const { incident, progress } = workspace;
   const hypotheses = incident.rankedHypotheses ?? [];
   const leading = hypotheses.find((hypothesis) => hypothesis.state === 'leading') ?? hypotheses[0];
-  const assessmentUpdatedAt = incident.assessmentUpdatedAt
-    ? Date.parse(incident.assessmentUpdatedAt)
-    : Number.NEGATIVE_INFINITY;
-  const recoveryUpdatedAt = incident.recoveryUpdatedAt
-    ? Date.parse(incident.recoveryUpdatedAt)
-    : Number.NEGATIVE_INFINITY;
-  const recoveryIsCurrent =
-    incident.purpose !== 'health_check' &&
-    incident.recoveryState != null &&
-    (incident.recoveryUpdatedAt != null
-      ? recoveryUpdatedAt >= assessmentUpdatedAt
-      : incident.assessmentUpdatedAt == null);
+  const providerResolved = incident.resolutionBasis === 'provider_clear';
+  const recoveryIsCurrent = isRecoveryCurrent(incident);
   const cited = (
     recoveryIsCurrent
       ? (incident.recoveryEvidenceIds ?? [])
@@ -59,17 +39,14 @@ export function IncidentDecisionBrief({
           ...(leading?.contradictingEvidenceIds ?? []),
         ]
   ).filter((id, index, all) => all.indexOf(id) === index);
-  const currentStateFull =
-    incident.purpose === 'health_check' && ['closed', 'resolved'].includes(incident.status)
+  const currentStateFull = providerResolved
+    ? 'Resolved from provider signals'
+    : incident.purpose === 'health_check' && ['closed', 'resolved'].includes(incident.status)
       ? 'Health check completed'
       : ((recoveryIsCurrent
           ? incident.recoveryState === 'verified'
             ? 'Recovery verified'
-            : incident.recoveryState === 'verifying'
-              ? 'Recovery not verified'
-              : incident.recoveryState === 'monitoring'
-                ? 'Recovery not verified'
-                : 'Recovery not verified'
+            : 'Recovery not verified'
           : incident.currentState) ?? 'Recovery not verified');
   const currentState = boundedTakeaway(currentStateFull, 120);
   const decisionUpdatedAt = recoveryIsCurrent
@@ -90,9 +67,11 @@ export function IncidentDecisionBrief({
     ? incident.recoveryNextStep
     : (incident.nextStep ?? incident.latestInvestigationRun?.nextStep);
   const nextStep = nextStepFull ? boundedTakeaway(nextStepFull) : null;
-  const recoveryUnknowns = recoveryIsCurrent
-    ? (incident.recoveryUnknowns ?? []).filter(Boolean)
-    : [];
+  const recoveryQuestions = recoveryIsCurrent ? incident.recoveryQuestions : null;
+  const recoveryUnknowns =
+    recoveryIsCurrent && recoveryQuestions == null
+      ? (incident.recoveryUnknowns ?? []).filter(Boolean)
+      : [];
   const gaps: InvestigationGap[] = recoveryIsCurrent
     ? []
     : ((incident.unknowns ?? []) as unknown[]).flatMap((value) => {
@@ -127,12 +106,13 @@ export function IncidentDecisionBrief({
         : incident.recoveryState === 'verifying' || incident.recoveryState === 'monitoring'
           ? 'border-info-line bg-info-soft text-info'
           : 'border-warning-line bg-warning-soft text-warning';
-  const briefContext = recoveryIsCurrent
-    ? 'Recovery status'
-    : incident.trustedAssessmentRunId || incident.rcaSummary
-      ? 'Last trusted assessment'
-      : 'No trusted assessment yet';
-
+  const briefContext = providerResolved
+    ? 'Health not independently verified'
+    : recoveryIsCurrent
+      ? 'Recovery status'
+      : incident.trustedAssessmentRunId || incident.rcaSummary
+        ? 'Last trusted assessment'
+        : 'No trusted assessment yet';
   return (
     <section
       className="rounded-lg border border-line-strong bg-surface p-4"
@@ -178,10 +158,29 @@ export function IncidentDecisionBrief({
             )}
         </div>
       )}
+      <InvestigationResult run={incident.latestInvestigationRun} />
       <dl className="mt-4 grid gap-3 md:grid-cols-2">
         <div className="rounded-md bg-surface-subtle p-3">
-          <dt className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Impact</dt>
+          <dt className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+            {recoveryIsCurrent || providerResolved ? 'Impact at last assessment' : 'Impact'}
+          </dt>
           <dd className="mt-1 break-words text-sm font-medium text-ink">{impact}</dd>
+          {(recoveryIsCurrent || providerResolved) && (
+            <p className="mt-1 text-xs text-ink-muted">
+              Historical assessment evidence
+              {incident.assessmentUpdatedAt ? (
+                <>
+                  {' '}
+                  ·{' '}
+                  <time dateTime={incident.assessmentUpdatedAt}>
+                    {formatAbsoluteTime(incident.assessmentUpdatedAt)}
+                  </time>
+                </>
+              ) : (
+                '. Assessment time not recorded.'
+              )}
+            </p>
+          )}
           {impact !== impactFull.replace(/\s+/g, ' ').trim() && (
             <details className="mt-2 text-xs text-ink-muted">
               <summary className="cursor-pointer font-semibold">Full impact</summary>
@@ -266,10 +265,14 @@ export function IncidentDecisionBrief({
         getCredentials={getCredentials}
         onChanged={onChanged}
       />
+      <IncidentRecoveryQuestions
+        questions={recoveryQuestions}
+        onSelectEvidence={onSelectEvidence}
+      />
       {recoveryUnknowns.length > 0 && (
         <div className="mt-3 rounded-md bg-warning-soft p-3">
           <h3 className="text-xs font-medium uppercase tracking-wide text-warning">
-            Recovery questions
+            Unclassified recovery questions
           </h3>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-warning">
             {recoveryUnknowns.map((unknown, index) => (

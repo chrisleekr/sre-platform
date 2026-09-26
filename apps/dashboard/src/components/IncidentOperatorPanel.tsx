@@ -1,3 +1,8 @@
+import { useState } from 'react';
+import { config } from '../config';
+import { authenticatedFetch } from '../lib/authenticatedFetch';
+import type { CredentialGetter } from '../lib/request-credentials';
+import { checkResponse, RequestError, requestErrorMessage } from '../lib/request-error';
 import { formatAbsoluteTime } from '../lib/time';
 import type { IncidentWorkspaceData } from '../lib/types';
 
@@ -51,13 +56,150 @@ function AutomationValue({
   );
 }
 
+const RETRYABLE_ATTENTION = new Set(['investigation_degraded', 'investigation_failed']);
+const ACTIVE_STATUSES = new Set(['open', 'mitigated']);
+
+// 409 outcome codes from the retry and lifecycle routes. The server re-checks every gate, so these
+// explain a refusal that raced a state change the workspace had not shown yet.
+const CONFLICT_MESSAGES: Record<string, string> = {
+  stale: 'Incident state changed. Review it and try again.',
+  not_retryable:
+    'This investigation can no longer be retried. The incident is closed or its investigation is no longer failed or degraded.',
+  automation_pending:
+    'Investigation work is already queued. Wait for it to finish before retrying.',
+  invalid: 'The incident cannot be resolved from its current state.',
+};
+const DEFAULT_CONFLICT = CONFLICT_MESSAGES.stale!;
+
+type OperatorAction = 'confirm' | 'retry';
+
+/** The two one-click responder actions: confirm a Slack-reported recovery, or retry the run. */
+function OperatorActions({
+  workspace,
+  getCredentials,
+  onChanged,
+}: {
+  workspace: IncidentWorkspaceData;
+  getCredentials: CredentialGetter;
+  onChanged: () => void;
+}) {
+  const { incident } = workspace;
+  const [pending, setPending] = useState<OperatorAction | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const reports = workspace.providerRecoveryReports ?? [];
+  const latestReport = reports.at(-1);
+  const active = ACTIVE_STATUSES.has(incident.status);
+  // The server lists a grouped report once per signal it covers, so coverage is a set check.
+  const reported = new Set(reports.map((report) => report.signalId));
+  const activeSignals = workspace.signals.filter((signal) => signal.state !== 'resolved');
+  const canConfirm =
+    Boolean(latestReport) &&
+    active &&
+    activeSignals.length > 0 &&
+    activeSignals.every((signal) => reported.has(signal.id));
+  const canRetry =
+    active &&
+    RETRYABLE_ATTENTION.has(incident.attentionReason ?? '') &&
+    !incident.pendingAutomation;
+  if (!canConfirm && !canRetry) return null;
+
+  async function submit(action: OperatorAction) {
+    if (pending) return;
+    const request =
+      action === 'confirm'
+        ? {
+            path: 'lifecycle',
+            fallback: 'Resolution could not be confirmed.',
+            // Slack text is advisory, so the audit reason names the operator as the resolution basis.
+            fields: {
+              to: 'resolved',
+              reason: `Provider reported recovery in Slack at ${latestReport?.reportedAt}; confirmed by an operator.`,
+            },
+          }
+        : { path: 'investigation/retry', fallback: 'Retry could not be started.', fields: {} };
+    const { fallback } = request;
+    setPending(action);
+    setError(null);
+    try {
+      const response = await authenticatedFetch(
+        `${config.apiBaseUrl}/incidents/${incident.id}/${request.path}`,
+        getCredentials,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            ...request.fields,
+            requestId: crypto.randomUUID(),
+            expectedVersion: incident.lifecycleVersion,
+          }),
+        },
+      );
+      if (response.status === 409) {
+        onChanged();
+        const body: unknown = await response.json().catch(() => null);
+        const code =
+          body && typeof body === 'object' ? (body as Record<string, unknown>).error : undefined;
+        throw new RequestError(
+          typeof code === 'string' && Object.hasOwn(CONFLICT_MESSAGES, code)
+            ? CONFLICT_MESSAGES[code]!
+            : DEFAULT_CONFLICT,
+          409,
+        );
+      }
+      await checkResponse(response, fallback);
+      onChanged();
+    } catch (caught) {
+      setError(requestErrorMessage(caught, fallback));
+    } finally {
+      setPending(null);
+    }
+  }
+
+  return (
+    <div className="mt-3">
+      <div className="flex flex-wrap gap-2">
+        {canConfirm && (
+          <button
+            type="button"
+            className="sre-action sre-action-primary"
+            disabled={pending !== null}
+            onClick={() => void submit('confirm')}
+          >
+            {pending === 'confirm' ? 'Confirming…' : 'Confirm resolved'}
+          </button>
+        )}
+        {canRetry && (
+          <button
+            type="button"
+            className="sre-action"
+            disabled={pending !== null}
+            onClick={() => void submit('retry')}
+          >
+            {pending === 'retry' ? 'Retrying…' : 'Retry investigation'}
+          </button>
+        )}
+      </div>
+      {error && (
+        <p role="alert" className="mt-2 text-sm text-critical">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** Explicit responder handoff and the policy that governs the platform's next action. */
 export function IncidentOperatorPanel({
   workspace,
   showTeam = true,
+  getCredentials,
+  onChanged,
 }: {
   workspace: IncidentWorkspaceData;
   showTeam?: boolean;
+  /** Enables the responder actions; omitted where the panel is read-only. */
+  getCredentials?: CredentialGetter;
+  onChanged?: () => void;
 }) {
   const { attention, automation } = workspace;
   const budget = automation?.currentBudget;
@@ -100,6 +242,13 @@ export function IncidentOperatorPanel({
           <p className="mt-2 text-sm text-success">
             <AutomationValue action={automation?.nextAction ?? null} />
           </p>
+        )}
+        {getCredentials && onChanged && (
+          <OperatorActions
+            workspace={workspace}
+            getCredentials={getCredentials}
+            onChanged={onChanged}
+          />
         )}
       </div>
 

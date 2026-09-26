@@ -6,6 +6,7 @@ import { config } from '../config';
 import { requestErrorMessage } from '../lib/request-error';
 import { prepareConnectorDelivery } from '../lib/connector-delivery';
 import { gitLabManagementApi } from '../lib/connector-api/gitlab-management';
+import { listStatusCakeUptimeTests, runStatusCakeSetup } from '../lib/connector-api/statuscake';
 import type {
   ArgoCdSettings,
   ConnectorSummary,
@@ -417,11 +418,19 @@ export function ConnectorsPanel() {
           mode={wizardMode === 'statuscake-connect' ? 'connect' : 'edit'}
           connectorId={selectedConnector?.id}
           initialName={selectedConnector?.name}
+          initialSettings={selectedConnector?.settings}
           credentialConfigured={selectedConnector?.credentialConfigured === true}
           onSave={(body) =>
             recordSave(saveStatusCakeConnector(config.apiBaseUrl, getCredentials, body))
           }
           onRunTest={(id) => testStatusCakeConnector(config.apiBaseUrl, getCredentials, id)}
+          loadChannels={() =>
+            listAvailableChannels(config.apiBaseUrl, getCredentials).then(
+              (result) => result.channels,
+            )
+          }
+          onListTests={(id) => listStatusCakeUptimeTests(config.apiBaseUrl, getCredentials, id)}
+          onSetup={(id) => runStatusCakeSetup(config.apiBaseUrl, getCredentials, id)}
           returnFocusTo={wizardTriggerRef.current}
           onClose={closeWizard}
         />

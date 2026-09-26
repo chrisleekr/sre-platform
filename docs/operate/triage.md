@@ -54,8 +54,59 @@ context.
 
 ## When an investigation runs too long
 
-If an investigation exceeds its deadline, the run fails, the incident shows degraded or keeps its last assessment, and the job is retried once. If the worker cannot cancel the stuck run, it restarts itself and logs `job handler stuck past deadline; recycling process`.
+If an investigation exceeds its deadline, the run fails, the incident shows degraded or keeps its last assessment, and the job is retried once. Data source tool requests still in flight are cancelled at the same moment rather than running to their own timeout, and no further tool calls start. If the worker cannot cancel the stuck run, it restarts itself and logs `job handler stuck past deadline; recycling process`.
 Runbook, postmortem, grading, and classification calls are cancelled at the same deadline as the main triage engine loop. The API restarts itself the same way, through process exit and restart, if a founding or Slack-inbound background job ignores the deadline.
+
+A job that fails its last allowed attempt is dead-lettered. The [Work queue](../dashboard/work-queue.md) page lists every dead job in your workspace with a link to its incident, where you can retry it.
+
+## When evidence review rejects a conclusion
+
+A rejected conclusion is recorded as inconclusive and never replaces the trusted assessment. Its
+causes, hypotheses, impact, and recommended action are withheld. The summary keeps only the facts the
+evidence supports, each missing proof becomes an open check, and the next step is the reviewer's
+safest diagnostic step when it names one. Without a reviewer step, the next step asks the responder
+to review the preserved evidence before relying on the conclusion.
+
+Any inconclusive finding posts to Slack as **Unverified**, followed by its next step and, when the
+evidence review named them, up to three open checks under **Still to verify**.
+
+Reviewer text longer than its limit is cut at the last complete sentence for short fields, such as
+the summary, an open check, or the next step, when that keeps most of the text. Otherwise, and for
+long fields, it is cut and marked with an ellipsis.
+
+## When evidence review cannot complete
+
+An incomplete review means the platform could not verify the assessment. It does not prove that
+the service is still unhealthy or that the evidence contradicts recovery. The incident stays open,
+retains the prior trusted assessment, and shows the current review blocker with a next action. The
+summary starts with "Evidence review did not complete" and states the blocker.
+
+Large evidence records are reviewed in bounded slices before a final assessment. Slice notes retain
+observation times, units, uncertainty, and conflicting facts. A slice that cannot retain its material
+findings within the limits stops that review; partial coverage cannot authorize resolution.
+
+When review of an assessment or reply stops on its own size limits, the platform reviews once more
+using only the records the conclusion cites, including records its hypotheses name as contradicting
+it. The reviewer is told that uncited output was not reviewed and that its absence proves nothing. If
+the conclusion cites no records, or cites every record, the original blocker stands. Recovery
+verification never takes this cited-records review: a recovery check that stops on size limits needs
+a human, because partial coverage cannot authorize resolution. A reviewer note or corrected field
+that is longer than its limit is shortened rather than treated as a failed review. A list with more
+entries than its limit is never shortened, because dropping entries would drop findings; it fails
+validation instead.
+
+Validation blockers identify whether the failure happened in a single review, a slice, or final
+synthesis, with bounded schema details. They do not include raw provider responses or evidence.
+Request a focused recovery check. If validation keeps failing, inspect the review service logs.
+For a budget blocker, narrow the service or evidence window in the follow-up request. For an
+availability blocker, restore the review service before requesting another check. These requests
+use the existing incident conversation; apart from the one cited-records review above, the platform
+does not retry an incomplete review automatically.
+
+The full review summary remains in the investigation history and recovery assessment when a shorter
+blocker preview is shown. A recovery review can schedule another observation only with a bounded
+recheck outcome and an explicit delay and reason. Recovered and human-action outcomes carry no
+recheck schedule. A malformed combination stays unverified until a valid review completes.
 
 ## What the model is allowed to do
 

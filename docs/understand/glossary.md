@@ -38,6 +38,13 @@ vocabulary for behaviour that is not built yet.
   lifecycle. Each member keeps its own evidence, conversation, and thread, and rejecting a causal
   link takes that incident back out.
 
+**Clear provenance**
+: Why a signal is recorded as resolved: **provider** (connector-verified or native provider
+  recovery), **operator** (an operator correction), or **unknown** (no recorded origin). Only
+  provider provenance satisfies provider-clear policy. Suppressing a Slack notification never changes
+  a signal; **suppression** appears only on signals cleared by an earlier release. Legacy records
+  have no fabricated origin.
+
 **Connector**
 : An integration with one kind of external system, such as Kubernetes or Prometheus. Every connector
   is read-only. See [Connectors](../connectors/index.md).
@@ -86,9 +93,10 @@ vocabulary for behaviour that is not built yet.
   lifecycle.
 
 **Incident lifecycle**
-: What a human decided: **open**, **mitigated**, **resolved**, or **closed**. Resolved means recovery
-  was verified. Closed means the case was filed without claiming recovery. Every change is explicit
-  and recorded. Nothing else stands in for it.
+: The recorded operational decision: **open**, **mitigated**, **resolved**, or **closed**. Resolution
+  records its basis: authoritative provider signals, independently verified health, or an explicit
+  operator decision. Provider resolution does not claim independently verified health. Closed means
+  the case was filed without claiming recovery. Every lifecycle change is recorded.
 
 **Incident relation**
 : A recorded statement about how two incidents relate: a recurrence, a possible link, an
@@ -158,10 +166,23 @@ vocabulary for behaviour that is not built yet.
 : A concrete next step the platform proposes once it has a cause, with the exact command or rollback
   reference and Approve and Deny buttons. Advisory only.
 
+**Recovery question**
+: An unresolved question in a current recovery assessment, classified by evidence gap and resolution
+  relevance. A **blocking** question needs a concrete check or decision before resolution. A
+  **follow-up** question concerns remaining investigation or prevention work and does not prevent
+  supported recovery. Attempted evidence links record checks performed, including unavailable reads;
+  they do not independently establish health. Historical string questions remain unclassified.
+
 **Recovery verification**
 : The check that runs once every alert on an incident has cleared. It reaches one of three
   conclusions: recovered, check again later, or a human is needed. The model never changes the
   lifecycle itself.
+
+**Resolution policy**
+: The incident's automatic resolution criterion. **Provider signals clear** requires authoritative
+  recovery for every signal and no pending approval. **Verified recovery** requires every signal to
+  be clear, fresh cited service-health evidence, and no pending approval. Provider provenance is not
+  required under this policy. Existing cases and health checks keep verified recovery by default.
 
 **Response root**
 : The incident at the top of a causal response group, found by following direct causes. It

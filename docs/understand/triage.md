@@ -66,6 +66,8 @@ The platform is built to be wrong out loud rather than confident and unsupported
   answer.
 - Every remaining open question is classified, so you can tell "we did not look" from "we looked and
   could not tell" from "you need to decide this".
+- Connections that can name their own login (currently Grafana) tell the investigation which
+  provider-side requests are the platform's own, so its traffic is never mistaken for an unknown client.
 
 If the first draft leaves an answerable question unattempted and there is budget left, the platform
 rejects its own draft once and goes back for the missing evidence.
@@ -156,15 +158,48 @@ Conflating these is the usual source of confusion, so the platform keeps them ap
 | --- | --- | --- |
 | **Signal** | firing, unknown, resolved | What your monitoring says right now. |
 | **Investigation** | queued, gathering, assessed, degraded | How far the platform has got. |
-| **Incident** | open, mitigated, resolved, closed | What a human has decided. |
+| **Incident** | open, mitigated, resolved, closed | The operational lifecycle decision, made by a responder or the recorded resolution policy. |
 
-An alert clearing is evidence that the problem stopped. It is not proof, and it never decides
-ownership. The platform verifies before it resolves anything.
+An alert clearing records what its provider reported. It does not independently prove service health
+or decide ownership. Each incident records the criterion required for operational resolution:
+
+- **Provider signals clear** accepts authoritative provider recovery for every signal in the response
+  group. It resolves without an AI investigation and records **Resolved from provider signals** and
+  **Health not independently verified**.
+- **Verified recovery** requires every signal to be clear, fresh cited health evidence, and no
+  pending approval. It can verify operator-corrected or legacy clears. A strict member makes the
+  complete response group follow this criterion.
+
+A new provider episode delivered through an authenticated native webhook (Alertmanager, Grafana,
+Datadog or StatusCake) selects provider-clear policy. That path records its disposition directly and
+does not run AI classification. Every incident opened from a Slack message selects verified recovery,
+including a provider alert opened while classification is unavailable and the investigation is
+degraded. For Slack messages, classification still controls whether a signal opens an incident,
+becomes a ticket or is logged, and provider failures retain bounded retries. An active provider firing
+cannot be silently logged; it requires at least a reviewable ticket. Manual reports and health checks
+also retain verified recovery. Existing cases retain their recorded policy, and reusing an incident
+never silently changes it. An operator can change the policy explicitly.
+
+A Slack recovery notice, an edited alert message or a model suggestion that a message resolves an
+alert is logged and never changes a signal. Suppressing a Slack notification never changes a signal
+either. A recovery notice from the same bot in the same channel is linked to the one open incident
+whose alert it names, found by the edited message's thread root or by the alert's monitor identity.
+The incident conversation then records that the provider reported recovery in Slack, and the
+workspace asks a responder to confirm resolution. A notice that matches no open incident, or more
+than one, is only logged. Only connector-verified or native provider recovery counts as provider recovery evidence;
+legacy clears and operator corrections do not. Under provider-clear policy, missing authority keeps
+the case open with an explicit blocker.
+Pending approvals prevent automatic resolution under either policy.
+
+Provider-clear resolution preserves the investigation history. Root-cause analysis and prevention work
+can continue as follow-up without delaying source-driven resolution. A later, separately identified
+provider episode can carry recurrence context while retaining the earlier recovery evidence. Refiring
+or delayed messages for the same episode still follow its identity and event-order checks.
 
 ## Recovery verification
 
-Once every alert attached to an incident has cleared, the platform checks whether recovery is real.
-It reaches one of three conclusions:
+For verified-recovery incidents, once every alert has cleared the platform checks current service
+health. It reaches one of three conclusions:
 
 ```mermaid
 flowchart TD
@@ -184,9 +219,26 @@ flowchart TD
 Rechecks are capped, three by default, and configurable from 1 to 10. On the last permitted check a
 further recheck becomes "needs a human" rather than looping.
 
-The model never changes an incident's status directly. Its conclusion feeds a fixed policy that
-resolves an incident only when every alert is still clear, the cited evidence actually supports
-recovery, and no approval is still pending.
+The model never changes an incident's status directly. Under verified-recovery policy, the platform
+requires current cited health evidence, unchanged lifecycle and signal state, and no pending approval.
+A bounded review can correct the complete recovery report, removing unsupported cause or advice.
+An unknown original cause or possible recurrence alone does not disprove supported current recovery.
+
+New recovery reports separate **Blocks resolution** from **Follow-up work**. Each question names
+its evidence category, attempted checks and a concrete next action. A human handoff requires a
+blocking question; verified recovery cannot retain one. The first blocker supplies the next action
+shown in the queue and the current run, so a reviewer failure does not leave a generic handoff. Unavailable checks count as attempts,
+never as proof that a service is healthy. Follow-up work remains visible after resolution.
+Historical string questions remain **Unclassified recovery questions**, without invented categories.
+
+A responder can request a fresh recovery check in the incident conversation, including after
+an earlier verification exhausted its automatic checks. A failed evidence review records its
+current blocker without resolving the incident or replacing the trusted cause assessment.
+An unavailable review is not evidence that the service remains unhealthy.
+
+Missing, unavailable or invalid evidence keeps the case open or permits a supported bounded recheck.
+Refiring signals, reopening, policy changes and causal membership changes invalidate stale recovery
+decisions.
 
 ## Recurring and related alerts
 
@@ -194,6 +246,14 @@ Every new provider episode or Slack source root opens an independent incident an
 exact redelivery or edit of the same source updates its existing signal; a later firing never inherits
 an old response workspace merely because the monitor name matches. Stable monitor identity records
 immutable recurrence history.
+
+One exception covers repeat Slack notifications. When a bot posts a new firing message in the same
+channel, every alert in it carries a monitor identity, every one of those monitors is already tracked
+by an open alert, and all of them belong to exactly one open incident seen in the last 24 hours, the
+message is attached to that incident as another occurrence. It opens no incident and starts no new
+investigation run, and is recorded as a log entry. A message that also carries an alert no open
+incident tracks, or that matches no open incident or more than one, is classified as usual, as is a
+repeat whose incident closes before it is attached.
 
 Alerts that arrive close together enter a fixed, provider-scoped comparison cohort. The cohort is
 sealed before one budget-admitted model call sees at most five incidents. It can suggest that a pair

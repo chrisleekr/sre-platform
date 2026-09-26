@@ -1,3 +1,5 @@
+import { ObservabilityVerificationResult } from './ObservabilityVerificationResult';
+import { NativeAlertEventFields, nativeEventFieldsError } from './NativeAlertEventFields';
 import { requestErrorMessage } from '../lib/request-error';
 import { SetupActions } from './SetupDialogSlots';
 import { useState } from 'react';
@@ -44,16 +46,17 @@ export function ObservabilityConnectWizard({
     name: string;
     settings: Record<string, unknown>;
     credential?: string;
+    eventToken?: string;
     insecureTlsAcknowledged?: boolean;
     insecureHttpAcknowledged?: boolean;
-  }) => Promise<{ connectorId: string }>;
+  }) => Promise<{ connectorId: string; webhookPath?: string }>;
   onRunTest: (id: string) => Promise<ConnectorTestResult>;
   returnFocusTo?: HTMLElement | null;
   onClose: () => void;
 }) {
   const label = type === 'datadog' ? 'Datadog' : 'Grafana';
   const [step, setStep] = useState(1);
-  const [savedConnectorId, setSavedConnectorId] = useState(connectorId);
+  const [persisted, setPersisted] = useState({ connectorId, webhookPath: '' });
   const [name, setName] = useState(initialName ?? label);
   const [site, setSite] = useState(
     typeof initialSettings?.site === 'string' ? initialSettings.site : 'datadoghq.com',
@@ -79,6 +82,9 @@ export function ObservabilityConnectWizard({
   const [apiKey, setApiKey] = useState('');
   const [appKey, setAppKey] = useState('');
   const [token, setToken] = useState('');
+  const [eventDelivery, setEventDelivery] = useState(initialSettings?.eventTransport === 'direct');
+  const [alertChannel, setAlertChannel] = useState(String(initialSettings?.alertChannel ?? ''));
+  const [eventToken, setEventToken] = useState('');
   const [busy, setBusy] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
@@ -95,10 +101,14 @@ export function ObservabilityConnectWizard({
   const showTls = !baseUrl.trim() || usesHttps;
 
   const reviewConnection = (): void => {
-    if (!name.trim()) {
-      setError('Data source name is required.');
-      return;
-    }
+    if (!name.trim()) return setError('Data source name is required.');
+    const eventError = nativeEventFieldsError({
+      eventDelivery,
+      alertChannel,
+      eventToken,
+      credentialConfigured: Boolean(initialSettings?.eventCredentialConfigured),
+    });
+    if (eventError) return setError(eventError);
     if (type === 'grafana') {
       try {
         const url = new URL(baseUrl.trim());
@@ -114,18 +124,14 @@ export function ObservabilityConnectWizard({
         setError('Enter a Grafana HTTP or HTTPS URL without credentials, query, or fragment.');
         return;
       }
-      if (usesHttp && !httpAcknowledged) {
-        setError('Acknowledge the unencrypted HTTP transport before continuing.');
-        return;
-      }
+      if (usesHttp && !httpAcknowledged)
+        return setError('Acknowledge the unencrypted HTTP transport before continuing.');
       if (usesHttps && trust === 'ca' && !caCert.trim() && !initialSettings?.caConfigured) {
         setError('Paste the Grafana CA certificate or use system trust.');
         return;
       }
-      if (usesHttps && trust === 'insecure' && !insecureAcknowledged) {
-        setError('Acknowledge the insecure TLS risk before continuing.');
-        return;
-      }
+      if (usesHttps && trust === 'insecure' && !insecureAcknowledged)
+        return setError('Acknowledge the insecure TLS risk before continuing.');
     }
     setError('');
     setStep(2);
@@ -162,13 +168,21 @@ export function ObservabilityConnectWizard({
               : undefined
             : token.trim() || undefined;
         const saved = await onSave({
-          ...(savedConnectorId ? { id: savedConnectorId } : {}),
+          ...(persisted.connectorId ? { id: persisted.connectorId } : {}),
           name: name.trim(),
           settings:
             type === 'datadog'
-              ? { site, collectApm, collectLogs }
+              ? {
+                  site,
+                  collectApm,
+                  collectLogs,
+                  eventTransport: eventDelivery ? 'direct' : 'none',
+                  alertChannel: alertChannel.trim(),
+                }
               : {
                   baseUrl: baseUrl.trim(),
+                  eventTransport: eventDelivery ? 'direct' : 'none',
+                  alertChannel: alertChannel.trim(),
                   ...(usesHttps && trust === 'ca'
                     ? caCert.trim()
                       ? { caCert: caCert.trim() }
@@ -177,10 +191,11 @@ export function ObservabilityConnectWizard({
                   insecureSkipTLSVerify: usesHttps && trust === 'insecure',
                 },
           ...(credential ? { credential } : {}),
+          ...(eventToken.trim() ? { eventToken: eventToken.trim() } : {}),
           ...(usesHttps && trust === 'insecure' ? { insecureTlsAcknowledged: true } : {}),
           ...(usesHttp && httpAcknowledged ? { insecureHttpAcknowledged: true } : {}),
         });
-        setSavedConnectorId(saved.connectorId);
+        setPersisted({ ...saved, webhookPath: saved.webhookPath ?? '' });
         setResult(await onRunTest(saved.connectorId));
         setStep(4);
       } catch (cause) {
@@ -338,6 +353,15 @@ export function ObservabilityConnectWizard({
               )}
             </>
           )}
+          <NativeAlertEventFields
+            eventDelivery={eventDelivery}
+            setEventDelivery={setEventDelivery}
+            alertChannel={alertChannel}
+            setAlertChannel={setAlertChannel}
+            eventToken={eventToken}
+            setEventToken={setEventToken}
+            credentialConfigured={Boolean(initialSettings?.eventCredentialConfigured)}
+          />
           {error && (
             <p role="alert" className="text-sm text-critical">
               {error}
@@ -463,31 +487,13 @@ export function ObservabilityConnectWizard({
         </div>
       )}
       {step === 4 && result && (
-        <div className="flex flex-col gap-4">
-          <h2
-            className={`font-medium ${result.status === 'healthy' ? 'text-success' : 'text-critical'}`}
-          >
-            {result.status === 'healthy'
-              ? `${name} enabled.`
-              : 'Verification failed; this connection remains disabled.'}
-          </h2>
-          <ul className="list-disc space-y-1 pl-5 text-sm">
-            <li>Endpoint reachable: {result.reachable ? 'yes' : 'no'}</li>
-            <li>Credential authorized: {result.authorized ? 'yes' : 'no'}</li>
-            {result.warnings.map((warning) => (
-              <li key={warning}>{warning}</li>
-            ))}
-          </ul>
-          <SetupActions>
-            <button
-              type="button"
-              onClick={onClose}
-              className="sre-action sre-action-primary self-start"
-            >
-              Finish
-            </button>
-          </SetupActions>
-        </div>
+        <ObservabilityVerificationResult
+          result={result}
+          name={name}
+          onClose={onClose}
+          type={type}
+          webhookPath={eventDelivery ? persisted.webhookPath : undefined}
+        />
       )}
     </SetupDialog>
   );

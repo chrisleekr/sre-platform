@@ -19,6 +19,17 @@ evidence and shared conversation stay on one page.
 The decision names the recorded next action. Service team is ownership context, not an assigned
 incident commander. Missing team or impact stays explicit. Check contradictions before acting.
 
+When a provider bot posts a recovery notice in Slack for this incident, the platform records it as
+a report. A provider that edits its alert message so it opens with a resolved header covers every
+alert in that message, until the provider edits that message again. An edit that only lists some
+alerts as resolved covers the one alert it matched. A new recovery message covers only the alert
+it names; if one new message names several alerts, only one of them is covered, so the panel does
+not offer confirmation. Slack text cannot clear an alert, so the platform does not resolve the
+incident on its own. When every open alert has a report and the incident is open or mitigated, the
+panel offers **Confirm resolved**. If a human decision is also required, the decision reads
+**Provider reported recovery in Slack. Confirm resolution.** Confirming resolves it and records
+that an operator confirmed the reported recovery, with the time of the notice.
+
 ## Automation policy
 
 What the platform is allowed to do on this incident: whether a provider episode boundary is
@@ -68,6 +79,10 @@ The recorded assessment, with its timestamp. Its observation window may be older
 - **Leading hypothesis** is the most likely cause, and **Full assessment** expands to the ranked
   alternatives with the evidence for and against each one.
 
+When newer recovery evidence controls the brief, retained impact is labeled **Impact at last
+assessment** with the assessment timestamp. This historical impact does not establish current
+impact or imply that impact is zero. Health checks retain their assessment context.
+
 Only a conclusive investigation becomes the trusted assessment. An inconclusive run is recorded and
 visible, but it does not overwrite a good earlier answer.
 
@@ -80,6 +95,11 @@ Before publishing a conclusion, the platform reviews it against the recorded evi
 successful builds do not establish current health, and a mirrored repository does not establish
 which revision was deployed. Missing or contradictory evidence leaves the result inconclusive.
 Repository paths, resource names, and commands are preserved; credentials are redacted.
+
+For an inconclusive run, **Latest investigation result** shows the reviewer's conclusion, limited to
+facts the evidence supports, and a **Still to verify** list of open checks. The next diagnostic step
+comes from the reviewer when the incident has no trusted next step. None of this becomes the trusted
+assessment, and the run has no hypotheses or model confidence.
 
 Replies keep the requested answer or document when evidence review corrects an unsupported claim.
 The full corrected reply remains in the dashboard even when the diagnosis is inconclusive; Slack
@@ -270,6 +290,19 @@ An AI provider rate limit stops the investigation without producing a conclusion
 not automatically retry this failure. Check the provider account limit before requesting another
 investigation. Other transient provider outages keep their existing retry behavior.
 
+When the AI provider rejects the request itself, for example because the configured model is not
+available to the credential, the investigation stops with **AI provider rejected the configured
+request** and is not retried automatically, since repeating the same request cannot succeed. Correct
+the AI model or credential setting, then retry.
+
+**Retry investigation** in the decision panel re-runs a failed or degraded investigation in one
+step, attributed to you. The server accepts a retry only while the incident is open or mitigated,
+its investigation failed or degraded, and no queued or running work remains. The retry is recorded
+in the conversation as your request and runs the same continuation as a reply. When the network
+repeats the same request, the server returns the first result. A second click while the retry is
+still queued is refused, and so is a retry from a page that no longer shows the current state;
+review the incident and try again.
+
 When the latest investigation failed and no queued or running work remains, **Prepare retry request**
 fills the **Ask the SRE** composer. Review it and press **Send** after the blocker clears. Preparing
 the request does not send it. The platform does not change providers or credentials automatically.
@@ -329,3 +362,34 @@ the one trusted at publish. The judge scores that assessment's summary and top h
 the published contributing causes. After publishing you can record your own verdict, correct,
 partial or incorrect, and the model judge's verdict appears beside it once it lands. Your verdict is
 the one the Reliability workspace reports; the judge's is kept so the judge itself can be scored.
+
+
+## Resolution policy
+
+For an active incident, open **Manage incident lifecycle**, enter a lifecycle change reason, choose
+**Provider signals clear** or **Verified recovery**, and save the resolution policy. The change is
+attributed and audited against the version you reviewed. If the incident changed meanwhile, refresh
+and review the new state before retrying. Joined records and completed cases cannot change policy;
+health checks retain verified recovery.
+
+New incidents opened by a native provider webhook (Alertmanager, Grafana, Datadog or StatusCake)
+receive provider-clear policy. That path does not use AI classification. Incidents opened from a
+Slack message, including one opened while classification is unavailable and the investigation is
+degraded, receive verified recovery. This does not change existing incidents automatically.
+For an existing record, review its provider identity, signal history and response group before using
+the policy command above. Record why provider recovery is an appropriate resolution criterion for that
+case. Do not clear the queue or rewrite policies in bulk to hide missing recovery evidence.
+
+Provider-clear resolution requires authoritative provider recovery for every signal, compatible
+policies throughout the response group, and no pending approval. Operator corrections and legacy
+clear states do not satisfy that requirement, and suppressing a Slack notification never clears a
+signal. The brief and queue distinguish **Resolved from provider
+signals** from independently verified health, and retain historical assessment evidence. Reopening or
+changing the response group clears a stale resolution basis. Policy changes reevaluate cleared
+signals through the same recovery process.
+
+Provider resolution retains earlier findings and their evidence. Continue root-cause or prevention work
+as follow-up when needed. Use recurrence context to relate later, separately identified provider
+episodes. A refire or delayed message for the same episode still follows identity and event-order
+checks. Retain the earlier incident and its source-clear basis rather than treating it as independently
+verified health.

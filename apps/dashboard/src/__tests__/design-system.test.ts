@@ -101,6 +101,23 @@ describe.each(['light', 'dark'] as const)('%s design tokens', (theme) => {
     expect(css).toContain('box-shadow: 0 0 0 5px var(--sre-focus-contrast)');
   });
 
+  test('selected text stays readable and visibly highlighted on every surface', () => {
+    expect(contrast(colors, 'ink', 'selection')).toBeGreaterThanOrEqual(4.5);
+    const backgrounds = [...surfaces, 'accent-soft'].concat(
+      ['critical', 'warning', 'success', 'info', 'assessment'].flatMap((status) => [
+        `${status}-soft`,
+        `${status}-muted`,
+      ]),
+    );
+    for (const background of backgrounds) {
+      expect(
+        contrast(colors, 'selection', background),
+        `selection on ${background}`,
+      ).toBeGreaterThanOrEqual(1.4);
+    }
+    expect(css).toMatch(/::selection \{\s*background: var\(--sre-selection\);/);
+  });
+
   test('both palettes expose the same semantic roles', () => {
     expect([...colors.keys()].sort()).toEqual(
       [...palette(theme === 'light' ? 'dark' : 'light').keys()].sort(),

@@ -100,23 +100,23 @@ export const CONNECTOR_GUIDES: Record<ManagedConnectorType | 'slack', ConnectorG
     steps: [
       'Enter the Prometheus server base URL, such as https://prometheus.example.com. Do not enter an Alertmanager address, graph page, or /api/v1/query path.',
       'Choose the authentication actually required by that endpoint or its proxy. Paste the matching credential in the next step. Use your private CA for internal certificates.',
-      'For Alertmanager delivery, first connect Slack and choose the incident channel. Choose public API delivery for a deployed platform, Smee for local development, or Configure later to keep metrics access only.',
-      'Save and verify metrics access. If enabling Alertmanager delivery, copy the generated receiver configuration, including send_resolved, into the existing receiver. Keep existing Slack delivery and routing intact.',
-      'Have your monitoring administrator validate and reload Alertmanager configuration. Check the connector card after the first authenticated notification; a metrics read alone does not verify event delivery.',
+      'For Alertmanager delivery, first connect Slack and enable Listen for the incident channel on Inbound. Choose public API delivery for a deployed platform, Smee for local development, or Configure later to keep metrics access only.',
+      'Save and verify metrics access. Use one ingestion owner per provider route: native delivery or direct provider Slack intake. Before switching, drain active episodes through recorded clears or explicitly reconcile verified mappings. Preserve receiver names, routing and null routes; include the matching bearer token and send_resolved.',
+      'Have your monitoring administrator validate an isolated route: firing, exact replay, resolved and a new episode. Confirm one Slack root and incident before wider cutover. Native delivery depends on platform availability; uncertain posts need operator review. Rollback requires the same active-episode reconciliation. Check delivery health separately from metrics access.',
     ],
     verification:
       'Check metrics authentication separately from Alertmanager delivery. No notification received does not mean the API credential is wrong. Keep receiver tokens out of source control.',
     documentation: 'https://prometheus.io/docs/alerting/latest/configuration/',
   },
   statuscake: {
-    prerequisite: 'A StatusCake API bearer token for the account containing your monitoring tests.',
+    prerequisite: 'A StatusCake API token for the account containing your uptime tests.',
     steps: [
-      'Reuse a valid StatusCake API token. If needed, create one in Integrations → API. When editing, leave it blank to keep the stored token.',
-      'Paste the token below. Do not enter a legacy username/API-key pair or a notification webhook URL. The API host is selected by the platform.',
-      'Review and save. Verification reads the uptime-test listing; investigation can then request supported monitoring evidence.',
+      'Reuse a valid StatusCake API token, or create one in Integrations → API. When editing, leave it blank to keep the saved token.',
+      'Paste the token below. No legacy username, API key, or webhook Token is needed.',
+      'Choose which uptime tests open incidents. The platform creates the StatusCake contact groups for you and keeps your existing contacts.',
     ],
     verification:
-      'If rejected, check token validity and account access. An empty test list can be legitimate. This is read-only investigation access, not incoming alert delivery; no webhook is required.',
+      'If the token is rejected, create a new one and retry. An account with no uptime tests is valid; tests added later are picked up automatically when All uptime tests is selected.',
     documentation: 'https://developers.statuscake.com/api/',
   },
   slack: {

@@ -214,7 +214,12 @@ export function IncidentOverview({ view }: { view: IncidentLiveViewModel }) {
             getCredentials={getCredentials}
             onChanged={refreshWorkspace}
           />
-          <IncidentOperatorPanel workspace={workspace} showTeam={false} />
+          <IncidentOperatorPanel
+            workspace={workspace}
+            showTeam={false}
+            getCredentials={getCredentials}
+            onChanged={refreshWorkspace}
+          />
 
           {workspace.investigationSubject ? (
             <section className="rounded-lg border border-info-line bg-info-soft p-4">

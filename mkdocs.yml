@@ -101,6 +101,7 @@ nav:
           - Connections: dashboard/connectors.md
           - Inbound: dashboard/inbound.md
           - Usage & Cost: dashboard/usage.md
+          - Work queue: dashboard/work-queue.md
           - Settings: dashboard/settings.md
   - Connect your tools:
       - connectors/index.md
