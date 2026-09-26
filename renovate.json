@@ -68,6 +68,11 @@
       "allowedVersions": "<4.5"
     },
     {
+      "description": "jsdom 27 changed its selector engine and user-agent stylesheet, and dashboard getByRole queries by accessible name stop matching. Left uncapped, it would keep the all-major branch red and block every other major. Lift this cap in the change that migrates the dashboard tests.",
+      "matchPackageNames": ["jsdom"],
+      "allowedVersions": "<27"
+    },
+    {
       "description": "Every non-major update across all managers lands in one weekly branch.",
       "groupName": "all non-major dependencies",
       "groupSlug": "all-non-major",
@@ -75,7 +80,7 @@
       "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest"]
     },
     {
-      "description": "Every major update lands in one second weekly branch, kept apart from non-major so a major that needs a code or runtime migration never blocks routine bumps. The tradeoff: one broken major blocks the others until it is fixed or capped with allowedVersions. Coupled packages rely on these two groups to move together: bun across its four managers, drizzle-orm with drizzle-kit, vitest with @vitest/coverage-v8, and the MCP client with the MCP server.",
+      "description": "Every major update lands in one second weekly branch, kept apart from non-major so a major that needs a code or runtime migration never blocks routine bumps. The tradeoff: one broken major blocks the others until it is fixed or capped with allowedVersions. Coupled packages that share a version line (bun across its four managers, vitest with @vitest/coverage-v8, the MCP client with the MCP server) always get the same update type, so they land in the same branch. drizzle-orm and drizzle-kit version independently and can split across the two.",
       "groupName": "all major dependencies",
       "groupSlug": "all-major",
       "matchPackageNames": ["*"],

@@ -71,12 +71,16 @@ Dependency commits are forced to `chore` by the last entry in `packageRules`. Wi
 patch release, and the release workflow publishes a Docker Hub tag for every release it cuts. It is
 last because `packageRules` apply in order and the last match wins.
 
-The two catch-all groups are also what keeps coupled packages in one branch: `drizzle-orm` with
-`drizzle-kit`, `vitest` with `@vitest/coverage-v8`, the MCP client with the MCP server, and Bun's
-five pins: `.tool-versions`, the `packageManager` field, the `@types/bun` devDependency, the
-`ARG BUN_IMAGE` default in `Dockerfile`, and the pipeline image in `.gitlab-ci.yml`. The last two
-carry the same tag and digest, so separate updates would leave the container build and the pipeline
-runtime on different Bun versions. Splitting either group needs a named group for each coupled set.
+The two catch-all groups are also what keeps coupled packages in one branch. That holds for sets
+that share a version line, because every member then gets the same update type: `vitest` with
+`@vitest/coverage-v8`, the MCP client with the MCP server, and Bun's five pins: `.tool-versions`,
+the `packageManager` field, the `@types/bun` devDependency, the `ARG BUN_IMAGE` default in
+`Dockerfile`, and the pipeline image in `.gitlab-ci.yml`. The last two carry the same tag and
+digest, so separate updates would leave the container build and the pipeline runtime on different
+Bun versions. `drizzle-orm` and `drizzle-kit` version independently, so a major on one and a minor
+on the other land in different branches; review them together. A named group does not fix that on
+its own: while `separateMajorMinor` is on, Renovate moves a group's majors to a separate
+`major-` branch. Splitting either catch-all needs a named group for each coupled set.
 
 `@slack/socket-mode` is capped below 3. Version 3 sends heartbeats through `undici.ping`, which Bun
 does not expose, so the API would lose its Slack connection; `bun run test:slack-socket-compat`
@@ -88,6 +92,10 @@ input with its own inlined copy of the zod 4.4 core. From 4.5, zod marks a `.def
 call that omits a defaulted field is rejected before it reaches the engine. The Agent SDK runtime
 tests fail on it. Lift the cap in the change that moves to an Agent SDK release that bundles zod 4.5
 or later.
+
+`jsdom` is capped below 27. From 27 the selector engine and user-agent stylesheet changed, and
+dashboard `getByRole` queries by accessible name stop matching. Uncapped, it would keep the major
+branch failing and block every other major. Lift the cap in the change that migrates those tests.
 
 The kind node image is capped below Kubernetes 1.36. The Argo CD live test pins `ARGOCD_VERSION` by
 hand, and Argo CD 3.4 is tested only up to Kubernetes 1.35, so raise the cap in the same change that
