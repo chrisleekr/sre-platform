@@ -1,3 +1,29 @@
+/**
+ * Mirrors the save route's event rules so a bad channel or token stops on the first step,
+ * not after the operator has entered provider credentials.
+ */
+export function nativeEventFieldsError({
+  eventDelivery,
+  alertChannel,
+  eventToken,
+  credentialConfigured,
+}: {
+  eventDelivery: boolean;
+  alertChannel: string;
+  eventToken: string;
+  credentialConfigured: boolean;
+}): string | null {
+  if (!eventDelivery) return null;
+  if (!/^[CGD][A-Z0-9]{1,255}$/.test(alertChannel.trim()))
+    return 'Enter the subscribed Slack alert channel ID, such as C0123456789.';
+  const token = eventToken.trim();
+  if (!token && !credentialConfigured)
+    return 'Enter a webhook bearer token of 16 to 4096 characters.';
+  if (token && (token.length < 16 || token.length > 4096))
+    return 'The webhook bearer token must be 16 to 4096 characters.';
+  return null;
+}
+
 /** Native webhook setup uses a separate provider event credential. */
 export function NativeAlertEventFields({
   eventDelivery,

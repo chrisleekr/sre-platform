@@ -72,7 +72,8 @@ AI may suggest a recovery, but wording and model output do not change provider l
 
 For an existing incident, open its connection's **Alert lifecycle coverage** panel:
 
-1. Select the open incident by title, then its provider signal by summary.
+1. Select the open incident by title, then its provider signal by summary. The list holds up to the
+   100 highest-priority open incidents and says when more are open.
 2. Enter the exact provider monitor ID and, for Datadog, the exact group scope.
 3. Preview the provider episode and check its timing and current result.
 4. Enter a reason and bind the verified episode. A concurrent signal, lifecycle, or connector change

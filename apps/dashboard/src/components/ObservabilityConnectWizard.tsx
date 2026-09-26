@@ -1,5 +1,5 @@
 import { ObservabilityVerificationResult } from './ObservabilityVerificationResult';
-import { NativeAlertEventFields } from './NativeAlertEventFields';
+import { NativeAlertEventFields, nativeEventFieldsError } from './NativeAlertEventFields';
 import { requestErrorMessage } from '../lib/request-error';
 import { SetupActions } from './SetupDialogSlots';
 import { useState } from 'react';
@@ -101,10 +101,14 @@ export function ObservabilityConnectWizard({
   const showTls = !baseUrl.trim() || usesHttps;
 
   const reviewConnection = (): void => {
-    if (!name.trim()) {
-      setError('Data source name is required.');
-      return;
-    }
+    if (!name.trim()) return setError('Data source name is required.');
+    const eventError = nativeEventFieldsError({
+      eventDelivery,
+      alertChannel,
+      eventToken,
+      credentialConfigured: Boolean(initialSettings?.eventCredentialConfigured),
+    });
+    if (eventError) return setError(eventError);
     if (type === 'grafana') {
       try {
         const url = new URL(baseUrl.trim());
@@ -120,18 +124,14 @@ export function ObservabilityConnectWizard({
         setError('Enter a Grafana HTTP or HTTPS URL without credentials, query, or fragment.');
         return;
       }
-      if (usesHttp && !httpAcknowledged) {
-        setError('Acknowledge the unencrypted HTTP transport before continuing.');
-        return;
-      }
+      if (usesHttp && !httpAcknowledged)
+        return setError('Acknowledge the unencrypted HTTP transport before continuing.');
       if (usesHttps && trust === 'ca' && !caCert.trim() && !initialSettings?.caConfigured) {
         setError('Paste the Grafana CA certificate or use system trust.');
         return;
       }
-      if (usesHttps && trust === 'insecure' && !insecureAcknowledged) {
-        setError('Acknowledge the insecure TLS risk before continuing.');
-        return;
-      }
+      if (usesHttps && trust === 'insecure' && !insecureAcknowledged)
+        return setError('Acknowledge the insecure TLS risk before continuing.');
     }
     setError('');
     setStep(2);

@@ -214,6 +214,34 @@ test('a failed test listing keeps Save disabled so saved exclusions are never dr
   expect(props.onSave).not.toHaveBeenCalled();
 });
 
+test('a failed reload after Back discards the earlier list and keeps Save disabled', async () => {
+  const onListTests = vi
+    .fn()
+    .mockResolvedValueOnce({ tests })
+    .mockResolvedValueOnce({
+      tests: [],
+      error: { category: 'rate_limited', message: 'StatusCake rate limit reached.' },
+    });
+  const props = renderWizard({
+    mode: 'edit',
+    connectorId: id,
+    initialName: 'StatusCake',
+    credentialConfigured: true,
+    initialSettings: { eventTransport: 'direct', setupMode: 'auto', alertChannel: 'C07ALERTS' },
+    onListTests,
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+  await screen.findByRole('checkbox', { name: /Checkout/ });
+  fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+  expect(await screen.findByText('StatusCake rate limit reached.')).toBeDefined();
+  expect(screen.queryByRole('checkbox', { name: /Checkout/ })).toBeNull();
+  expect(
+    (screen.getByRole('button', { name: 'Save and set up' }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  expect(props.onSave).not.toHaveBeenCalled();
+});
+
 test('turning alerts off always runs setup so the platform groups are removed', async () => {
   const props = renderWizard({
     mode: 'edit',

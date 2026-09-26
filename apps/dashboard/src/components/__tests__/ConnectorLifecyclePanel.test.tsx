@@ -1,14 +1,16 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { expect, test, vi } from 'vitest';
+import { expect, onTestFinished, test, vi } from 'vitest';
 import { authenticatedFetch } from '../../lib/authenticatedFetch';
 import type { ConnectorSummary } from '../../lib/connectors';
 import { ConnectorLifecyclePanel } from '../ConnectorLifecyclePanel';
-vi.mock('../../lib/useIncidents', () => ({
-  useIncidents: () => ({
+const useIncidents = vi.hoisted(() =>
+  vi.fn((_opts: unknown) => ({
     incidents: [{ id: 'incident-internal', title: 'Checkout timeout', severity: 'sev2' }],
-  }),
-}));
+    counts: null as { open: number } | null,
+  })),
+);
+vi.mock('../../lib/useIncidents', () => ({ useIncidents }));
 vi.mock('../../lib/authenticatedFetch', () => ({ authenticatedFetch: vi.fn() }));
 const getCredentials = async () => ({ kind: 'cookie' as const });
 const connector: ConnectorSummary = {
@@ -169,9 +171,10 @@ test('an unverified preview shows an operator sentence, never the provider reaso
   });
   fireEvent.change(screen.getByLabelText('Provider monitor ID'), { target: { value: '73' } });
   fireEvent.click(screen.getByText('Preview provider evidence'));
-  expect((await screen.findByRole('status')).textContent).toBe(
+  expect((await screen.findByRole('alert')).textContent).toBe(
     'The provider no longer retains this episode.',
   );
+  expect(screen.getByRole('alert').className).toContain('text-critical');
   fireEvent.click(screen.getByText('Preview provider evidence'));
   await screen.findByText('Provider evidence could not be verified.');
   expect(screen.queryByText(/_/)).toBeNull();
@@ -257,8 +260,9 @@ test('Datadog cycle association is explicit, keeps read-only reconciliation avai
   const previewButton = screen.getByText('Preview provider evidence') as HTMLButtonElement;
   // A blank scope can never match a Datadog group, so it is caught before a provider read.
   expect(previewButton.disabled).toBe(true);
+  // Pasted with surrounding whitespace, which no Datadog group key can contain.
   fireEvent.change(screen.getByLabelText('Exact alert group scope'), {
-    target: { value: 'env:prod' },
+    target: { value: ' env:prod ' },
   });
   fireEvent.click(previewButton);
   await screen.findByText(
@@ -285,4 +289,46 @@ test('Datadog cycle association is explicit, keeps read-only reconciliation avai
     cycleKey: 'opaque-cycle',
     scope: 'env:prod',
   });
+});
+
+test('a proxy page or network failure shows a safe alert, never its runtime text', async () => {
+  vi.mocked(authenticatedFetch)
+    .mockReset()
+    .mockResolvedValueOnce(
+      Response.json({ signals: [{ id: 'signal-internal', summary: 'Checkout', state: 'firing' }] }),
+    )
+    .mockResolvedValueOnce(new Response('<html>Bad gateway</html>', { status: 502 }))
+    .mockRejectedValueOnce(new TypeError('Failed to fetch'));
+  render(
+    <ConnectorLifecyclePanel connector={connector} getCredentials={getCredentials} canConfigure />,
+  );
+  fireEvent.change(screen.getByLabelText('Open incident'), {
+    target: { value: 'incident-internal' },
+  });
+  await screen.findByText('Notification: Checkout (firing)');
+  fireEvent.change(screen.getByLabelText('Provider signal'), {
+    target: { value: 'signal-internal' },
+  });
+  fireEvent.change(screen.getByLabelText('Provider monitor ID'), { target: { value: '73' } });
+  const fallback = 'Verification unavailable. Retry, or check the connection.';
+  fireEvent.click(screen.getByText('Preview provider evidence'));
+  expect((await screen.findByRole('alert')).textContent).toBe(fallback);
+  fireEvent.click(screen.getByText('Reconcile bound episodes'));
+  await waitFor(() => expect(authenticatedFetch).toHaveBeenCalledTimes(3));
+  expect(screen.getByRole('alert').textContent).toBe(fallback);
+  expect(screen.queryByText(/html|Failed to fetch|JSON/)).toBeNull();
+});
+test('the incident picker reads the server maximum and says when open incidents are cut off', () => {
+  const restore = useIncidents.getMockImplementation()!;
+  // Every render must see the counts, not only the first.
+  useIncidents.mockImplementation(() => ({
+    incidents: [{ id: 'incident-internal', title: 'Checkout timeout', severity: 'sev2' }],
+    counts: { open: 140 },
+  }));
+  onTestFinished(() => void useIncidents.mockImplementation(restore));
+  render(
+    <ConnectorLifecyclePanel connector={connector} getCredentials={getCredentials} canConfigure />,
+  );
+  expect(useIncidents.mock.lastCall?.[0]).toMatchObject({ state: 'open', limit: 100 });
+  expect(screen.getByText(/Showing the first 1 of 140 open incidents/)).toBeDefined();
 });

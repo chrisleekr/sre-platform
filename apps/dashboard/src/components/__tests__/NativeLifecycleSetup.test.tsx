@@ -63,3 +63,32 @@ test.each(['datadog', 'grafana'] as const)(
     expect(screen.queryByText('independent-event-token')).toBeNull();
   },
 );
+
+test('event delivery stops on the first step until the channel and bearer token are valid', () => {
+  render(
+    <ObservabilityConnectWizard
+      type="datadog"
+      mode="connect"
+      onSave={async () => ({ connectorId: id })}
+      onRunTest={onRunTest}
+      onClose={() => {}}
+    />,
+  );
+  fireEvent.click(screen.getByLabelText('Receive authenticated alert lifecycle events'));
+  const next = () => fireEvent.click(screen.getByRole('button', { name: 'Credentials' }));
+  next();
+  expect(screen.getByRole('alert').textContent).toMatch(/Slack alert channel ID/);
+  fireEvent.change(screen.getByLabelText('Subscribed Slack alert channel ID'), {
+    target: { value: 'C07ALERTS' },
+  });
+  next();
+  expect(screen.getByRole('alert').textContent).toMatch(/16 to 4096 characters/);
+  fireEvent.change(screen.getByLabelText('Webhook bearer token'), { target: { value: 'short' } });
+  next();
+  expect(screen.getByRole('alert').textContent).toMatch(/must be 16 to 4096 characters/);
+  fireEvent.change(screen.getByLabelText('Webhook bearer token'), {
+    target: { value: 'independent-event-token' },
+  });
+  next();
+  expect(screen.getByLabelText('API key')).toBeDefined();
+});

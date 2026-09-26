@@ -6,6 +6,7 @@ import type { IncidentWorkspaceData } from '../lib/types';
 import type { InvestigationGap } from '@sre/contracts';
 import { FindingFeedback, latestFindingFeedback } from './FindingFeedback';
 import { EvidenceCitation } from './IncidentEvidenceCitation';
+import { isRecoveryCurrent } from './incident-conversation/state';
 function boundedTakeaway(value: string, maxCharacters = 240): string {
   const normalized = value.replace(/\s+/g, ' ').trim();
   const characters = [...normalized];
@@ -27,20 +28,8 @@ export function IncidentDecisionBrief({
   const { incident, progress } = workspace;
   const hypotheses = incident.rankedHypotheses ?? [];
   const leading = hypotheses.find((hypothesis) => hypothesis.state === 'leading') ?? hypotheses[0];
-  const assessmentUpdatedAt = incident.assessmentUpdatedAt
-    ? Date.parse(incident.assessmentUpdatedAt)
-    : Number.NEGATIVE_INFINITY;
-  const recoveryUpdatedAt = incident.recoveryUpdatedAt
-    ? Date.parse(incident.recoveryUpdatedAt)
-    : Number.NEGATIVE_INFINITY;
   const providerResolved = incident.resolutionBasis === 'provider_clear';
-  const recoveryIsCurrent =
-    !providerResolved &&
-    incident.purpose !== 'health_check' &&
-    incident.recoveryState != null &&
-    (incident.recoveryUpdatedAt != null
-      ? recoveryUpdatedAt >= assessmentUpdatedAt
-      : incident.assessmentUpdatedAt == null);
+  const recoveryIsCurrent = isRecoveryCurrent(incident);
   const cited = (
     recoveryIsCurrent
       ? (incident.recoveryEvidenceIds ?? [])

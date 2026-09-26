@@ -9,6 +9,9 @@ only one.
 
 The page is read-only. It never retries, edits or deletes a job.
 
+The page does not update on its own. Select **Refresh** to reload the counts and restart the dead-job
+list from the newest job.
+
 ## By type
 
 One row per kind of job that has outstanding or failed work. Completed jobs are not counted: they say

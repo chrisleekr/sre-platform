@@ -105,6 +105,8 @@ export function StatusCakeConnectWizard({
   useEffect(() => {
     if (step !== 2 || !savedConnectorId) return;
     let active = true;
+    // A reload that fails must not leave the previous visit's list enabling Save.
+    setTests(null);
     setLoadError('');
     setChannelsError('');
     const { onListTests: listTests, loadChannels: listChannels } = loaders.current;

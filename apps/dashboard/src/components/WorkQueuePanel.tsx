@@ -104,6 +104,7 @@ function DeadJobsTable({ jobs, now }: { jobs: DeadJob[]; now: number }) {
 export function WorkQueuePanel() {
   const { getCredentials } = useSession();
   const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const [refreshes, setRefreshes] = useState(0);
   const health = useQueueHealth({ apiBaseUrl: config.apiBaseUrl, getCredentials });
   const dead = useDeadJobs({
     apiBaseUrl: config.apiBaseUrl,
@@ -116,6 +117,7 @@ export function WorkQueuePanel() {
     page: dead.jobs,
     loading: dead.loading,
     error: dead.error,
+    resetKey: String(refreshes),
   });
   const { announcement, announce } = usePaginationAnnouncer({
     pages,
@@ -126,12 +128,30 @@ export function WorkQueuePanel() {
   const now = Date.now();
   const hasRows = pages.length > 0;
   const firstDeadLoad = dead.loading && !hasRows;
+  // Both reads are one-shot, so a page left open needs an explicit reload. The dead-job list
+  // restarts from its first page because older pages may have shifted.
+  const refresh = () => {
+    setRefreshes((count) => count + 1);
+    setCursor(undefined);
+    health.refetch();
+    dead.refetch();
+  };
 
   return (
     <section>
       <PageHeader
         title="Work queue"
         description="Background work the platform is running for this workspace. Completed work is not shown. Retry a failed investigation from its incident page."
+        action={
+          <button
+            type="button"
+            className="sre-action"
+            disabled={health.loading || dead.loading}
+            onClick={refresh}
+          >
+            Refresh
+          </button>
+        }
       />
       <h2 className="mb-2 text-base font-medium text-ink">By type</h2>
       {health.loading ? (

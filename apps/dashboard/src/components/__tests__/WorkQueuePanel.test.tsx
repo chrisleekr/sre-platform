@@ -6,9 +6,11 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import type { DeadJob, DeadJobPage, QueueHealth } from '@sre/contracts';
 
-vi.mock('../../auth', () => ({
-  useSession: () => ({ getCredentials: async () => ({ kind: 'bearer' as const, token: 'jwt' }) }),
-}));
+// One getter for every render: a new function each render would re-run the load effect per response.
+vi.mock('../../auth', () => {
+  const getCredentials = async () => ({ kind: 'bearer' as const, token: 'jwt' });
+  return { useSession: () => ({ getCredentials }) };
+});
 vi.mock('../../config', () => ({ config: { apiBaseUrl: 'http://api.test' } }));
 
 import { WorkQueuePanel } from '../WorkQueuePanel';
@@ -140,5 +142,38 @@ describe('WorkQueuePanel', () => {
     const healthAlert = screen.getByText('Failed to load queue health.').closest('[role="alert"]')!;
     fireEvent.click(within(healthAlert as HTMLElement).getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('Nothing queued, running or dead.')).toBeDefined();
+  });
+
+  test('Refresh reloads the counts and restarts the dead-job list from its first page', async () => {
+    let generation = 1;
+    serve({
+      health: () =>
+        json({
+          asOf: recent,
+          types:
+            generation === 1
+              ? []
+              : [{ type: 'resume', queued: 4, processing: 0, dead: 0, oldestDueAt: recent }],
+        }),
+      dead: (cursor) =>
+        cursor === 'page-2'
+          ? json({ jobs: [deadJob({ incidentTitle: 'Older failure' })], nextCursor: null })
+          : json({
+              jobs: [
+                deadJob({ incidentTitle: generation === 1 ? 'First failure' : 'New failure' }),
+              ],
+              nextCursor: 'page-2',
+            }),
+    });
+    renderPanel();
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more' }));
+    await screen.findByRole('link', { name: 'Older failure' });
+
+    generation = 2;
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await screen.findByRole('link', { name: 'New failure' })).toBeDefined();
+    expect(screen.queryByRole('link', { name: 'First failure' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Older failure' })).toBeNull();
+    expect(await screen.findByText('4')).toBeDefined();
   });
 });

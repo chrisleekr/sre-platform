@@ -3,6 +3,7 @@ import { useIncidents } from '../lib/useIncidents';
 import { useEffect, useState } from 'react';
 import { authenticatedFetch } from '../lib/authenticatedFetch';
 import type { CredentialGetter } from '../lib/request-credentials';
+import { RequestError, requestErrorMessage } from '../lib/request-error';
 import type { ConnectorSummary } from '../lib/connectors';
 import { config } from '../config';
 
@@ -38,6 +39,9 @@ const UNVERIFIED_MESSAGES: Record<string, string> = {
   provider_read_failed: 'The provider could not be read. Check the connection and retry.',
 };
 const UNVERIFIED_FALLBACK = 'Provider evidence could not be verified.';
+const REQUEST_FALLBACK = 'Verification unavailable. Retry, or check the connection.';
+// The open scope takes no cursor, so the picker reads the server maximum in one page.
+const INCIDENT_LIMIT = 100;
 
 /** Previews exact provider evidence before an administrator binds a historical signal. */
 function LifecycleBindingForm({
@@ -57,7 +61,9 @@ function LifecycleBindingForm({
     apiBaseUrl: config.apiBaseUrl,
     getCredentials,
     state: 'open',
+    limit: INCIDENT_LIMIT,
   });
+  const openCount = incidentList.counts?.open ?? 0;
   const [signalsFailed, setSignalsFailed] = useState(false);
   // Reselecting the same incident does not change incidentId, so retry needs its own dependency.
   const [signalsAttempt, setSignalsAttempt] = useState(0);
@@ -69,7 +75,7 @@ function LifecycleBindingForm({
     setSignalsFailed(false);
     if (!incidentId) return;
     void authenticatedFetch(
-      `${config.apiBaseUrl}/incidents/${incidentId}/workspace`,
+      `${config.apiBaseUrl}/incidents/${encodeURIComponent(incidentId)}/workspace`,
       getCredentials,
     )
       .then(async (response) => {
@@ -93,10 +99,12 @@ function LifecycleBindingForm({
   const [reason, setReason] = useState('');
   const [preview, setPreview] = useState<EpisodePreview | null>(null);
   const [message, setMessage] = useState('');
+  const [failure, setFailure] = useState('');
   const [busy, setBusy] = useState(false);
   async function run(mode: 'preview' | 'bind' | 'reconcile') {
     setBusy(true);
     setMessage('');
+    setFailure('');
     setCanonicalIncidentId('');
     try {
       const response = await authenticatedFetch(
@@ -117,7 +125,7 @@ function LifecycleBindingForm({
             signalId: signalId.trim(),
             monitorId: monitorId.trim(),
             // A blank scope must reach the server as absent so it fails before any provider read.
-            ...(scope.trim() ? { scope } : {}),
+            ...(scope.trim() ? { scope: scope.trim() } : {}),
             ...(connector.type === 'datadog' && cycleKey.trim()
               ? { cycleKey: cycleKey.trim() }
               : {}),
@@ -136,10 +144,13 @@ function LifecycleBindingForm({
               ? UNVERIFIED_MESSAGES[result.reason]
               : UNVERIFIED_FALLBACK
             : undefined;
-        throw new Error(
-          [result.error ?? unverified ?? 'Verification unavailable', result.nextStep]
+        const error = typeof result.error === 'string' ? result.error : unverified;
+        if (!error) throw new RequestError(REQUEST_FALLBACK, response.status);
+        throw new RequestError(
+          [error, typeof result.nextStep === 'string' ? result.nextStep : '']
             .filter(Boolean)
             .join(' '),
+          response.status,
         );
       }
       if (mode === 'preview') setPreview(result as unknown as EpisodePreview);
@@ -154,7 +165,8 @@ function LifecycleBindingForm({
       }
     } catch (error) {
       setPreview(null);
-      setMessage(error instanceof Error ? error.message : 'Verification unavailable');
+      // Fetch, token and parse failures carry runtime text; only route guidance is shown.
+      setFailure(requestErrorMessage(error, REQUEST_FALLBACK));
     } finally {
       setBusy(false);
     }
@@ -169,6 +181,12 @@ function LifecycleBindingForm({
         {incidentList.error && (
           <p role="alert" className="text-sm text-critical">
             Unable to load open incidents.
+          </p>
+        )}
+        {openCount > incidentList.incidents.length && (
+          <p role="status" className="text-sm text-warning">
+            Showing the first {incidentList.incidents.length} of {openCount} open incidents, highest
+            priority first.
           </p>
         )}
         <label className="block text-sm">
@@ -316,6 +334,11 @@ function LifecycleBindingForm({
         <a className="text-sm text-accent underline" href={incidentPath(canonicalIncidentId)}>
           Review canonical incident
         </a>
+      )}
+      {failure && (
+        <p role="alert" className="text-sm text-critical">
+          {failure}
+        </p>
       )}
       {message && (
         <p role="status" className="text-sm">
