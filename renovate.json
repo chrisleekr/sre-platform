@@ -3,6 +3,7 @@
   "extends": ["config:recommended", "security:minimumReleaseAgeNpm"],
   "timezone": "Australia/Melbourne",
   "schedule": ["before 9am on monday"],
+  "prConcurrentLimit": 2,
   "customManagers": [
     {
       "customType": "regex",
@@ -52,36 +53,33 @@
   ],
   "packageRules": [
     {
-      "description": "Bun is pinned in five places across four files and four managers. Split updates would leave the container image on one Bun and the pipeline runtime on another, so they move as one branch.",
-      "groupName": "bun runtime",
-      "matchPackageNames": ["bun", "oven-sh/bun", "oven/bun", "@types/bun"]
-    },
-    {
-      "description": "drizzle-kit generates against the ORM schema surface, so drizzle-orm and drizzle-kit have to move at the same version. ioredis rides along as the shared Valkey client.",
-      "groupName": "workspace shared dependencies",
-      "matchPackageNames": ["drizzle-orm", "drizzle-kit", "ioredis"]
-    },
-    {
-      "description": "The coverage provider is version-locked to the runner it instruments.",
-      "groupName": "vitest",
-      "matchPackageNames": ["vitest", "@vitest/coverage-v8"]
-    },
-    {
-      "description": "Client and server are published from one source tree and are only tested against each other at the same version. The sdk package is deliberately excluded: it sits on its own version line, so grouping it here would block both.",
-      "groupName": "model context protocol",
-      "matchPackageNames": ["@modelcontextprotocol/client", "@modelcontextprotocol/server"]
-    },
-    {
       "description": "The Argo CD live test runs a hand-pinned ARGOCD_VERSION that no manager reads, and Argo CD 3.4 is tested only up to Kubernetes 1.35. Move this cap together with ARGOCD_VERSION.",
       "matchPackageNames": ["kindest/node"],
       "allowedVersions": "<1.36"
     },
     {
-      "description": "Every non-major update across all managers lands in one weekly branch. It sits after the named groups so it overrides them for non-major updates, which still move together inside this branch; the named groups keep coupled packages together for majors. Majors stay one branch per group because each can need a code or runtime migration, and one broken major would otherwise block every other update.",
+      "description": "Socket Mode 3 sends heartbeats through undici.ping, which Bun does not expose, so the API would lose its Slack connection. test:slack-socket-compat fails on it. Lift this cap only once that check passes on the pinned Bun.",
+      "matchPackageNames": ["@slack/socket-mode"],
+      "allowedVersions": "<3"
+    },
+    {
+      "description": "The Claude Agent SDK inlines its own zod 4.4 core to validate MCP tool input. zod 4.5 marks a .default() field optin 'defaulted', which that core reads as required, so every terminal tool call that omits a defaulted field fails validation. The agent-sdk runtime tests fail on it. Lift this cap once the Agent SDK bundles zod 4.5 or later.",
+      "matchPackageNames": ["zod"],
+      "allowedVersions": "<4.5"
+    },
+    {
+      "description": "Every non-major update across all managers lands in one weekly branch.",
       "groupName": "all non-major dependencies",
       "groupSlug": "all-non-major",
       "matchPackageNames": ["*"],
       "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest"]
+    },
+    {
+      "description": "Every major update lands in one second weekly branch, kept apart from non-major so a major that needs a code or runtime migration never blocks routine bumps. The tradeoff: one broken major blocks the others until it is fixed or capped with allowedVersions. Coupled packages rely on these two groups to move together: bun across its four managers, drizzle-orm with drizzle-kit, vitest with @vitest/coverage-v8, and the MCP client with the MCP server.",
+      "groupName": "all major dependencies",
+      "groupSlug": "all-major",
+      "matchPackageNames": ["*"],
+      "matchUpdateTypes": ["major"]
     },
     {
       "description": "A replacement swaps one package name for a different one, so it changes dependency identity rather than version, and the npm cooldown preset deliberately exempts it. Hold it behind the dashboard so review does not read it as a routine bump.",
