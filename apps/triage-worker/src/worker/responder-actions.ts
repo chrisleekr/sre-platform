@@ -1,3 +1,4 @@
+import * as z from 'zod';
 import { scrubSecrets } from '@sre/agent-tools';
 import { INVESTIGATION_RETRY_ORIGIN_PREFIX } from '@sre/contracts';
 import type { HumanMessage } from '@sre/db';
@@ -9,6 +10,7 @@ import type { WorkerRuntime } from './runtime';
 import { responderMessageWithinBudget } from './transcript';
 import { requestKnowledgeCapture } from './knowledge-capture';
 import { draftConversationIssue, handleIssueDecision } from './issue-actions';
+import { requestRecoveryVerification } from './recovery-request';
 import {
   hasPendingKnowledgeCapture,
   invalidateKnowledgeCapture,
@@ -137,6 +139,19 @@ export async function processResponderActions(
         await checkpoint(message.id);
         throw new NonRetryableError('AI provider rate limit reached');
       }
+      // Field paths and rule codes only; the message text never reaches the log.
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          app: 'triage-worker',
+          event: 'responder_intent.uninterpretable',
+          jobId: job.id,
+          errorType: error instanceof Error ? error.name : 'UnknownError',
+          ...(error instanceof z.ZodError
+            ? { issues: error.issues.map(({ code, path }) => ({ code, path: path.join('.') })) }
+            : {}),
+        }),
+      );
       intent = {
         kind: 'clarify',
         target: 'ambiguous',
@@ -157,6 +172,21 @@ export async function processResponderActions(
         content: scrubSecrets(intent.reason),
         originMessageId: `intent-clarification:${message.id}`,
       });
+      await checkpoint(message.id);
+      continue;
+    }
+    if (intent.kind === 'verify_recovery') {
+      const outcome = await requestRecoveryVerification(
+        runtime,
+        job,
+        incidentId,
+        message,
+        progress.newer.at(-1)!.id,
+      );
+      // When verification cannot start, a check still answers the request. A forbidden request did
+      // nothing, so earlier pending questions stay queued, as for a forbidden lifecycle change.
+      if (outcome === 'investigate') pendingQuestions = [message];
+      else if (outcome === 'handled') pendingQuestions = [];
       await checkpoint(message.id);
       continue;
     }
