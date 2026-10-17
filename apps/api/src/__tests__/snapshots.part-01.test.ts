@@ -105,7 +105,7 @@ describe('GET /deployments', () => {
       status: 'failed',
       url: 'https://gl/p/42',
     });
-    expect(gitlab!.deployedAt).toBe('2026-07-01T00:05:00.000Z');
+    expect(gitlab!.deployedAt).toBe(__fixture.gitlabDeployedAt.toISOString());
     expect(body.deployments.find((deployment) => deployment.source === 'argocd')).toMatchObject({
       providerId: 'uid-checkout:7',
       revisions: ['release-app', 'release-config'],
@@ -264,7 +264,7 @@ describe('GET /deployments served from Postgres', () => {
         sha: shaC,
         service: serviceC,
         status: 'success',
-        deployedAt: new Date('2026-07-01T00:00:00Z'),
+        deployedAt: __fixture.daysAgo(1),
         url: 'https://gl/p/pg',
       },
     ]);
@@ -330,6 +330,8 @@ describe('GET /deployments status coercion + pagination', () => {
   const sha1 = `d1-${randomUUID()}`;
   const sha2 = `d2-${randomUUID()}`;
   const sha3 = `d3-${randomUUID()}`;
+  const d1At = __fixture.daysAgo(1);
+  const d3At = __fixture.daysAgo(3);
 
   beforeAll(async () => {
     orgD = `org_${randomUUID().slice(0, 8)}`;
@@ -352,7 +354,7 @@ describe('GET /deployments status coercion + pagination', () => {
         environment: 'production',
         actor: 'release-bot',
         status: 'success',
-        deployedAt: new Date('2026-07-03T00:00:00Z'),
+        deployedAt: d1At,
       },
       {
         source: 'gitlab',
@@ -362,7 +364,7 @@ describe('GET /deployments status coercion + pagination', () => {
         service: null,
         // Stored free-text status outside the client union — must be coerced before it reaches the panel.
         status: 'skipped',
-        deployedAt: new Date('2026-07-02T00:00:00Z'),
+        deployedAt: __fixture.daysAgo(2),
       },
       {
         source: 'gitlab',
@@ -371,7 +373,7 @@ describe('GET /deployments status coercion + pagination', () => {
         sha: sha3,
         service: 'checkout',
         status: 'running',
-        deployedAt: new Date('2026-07-01T00:00:00Z'),
+        deployedAt: d3At,
       },
     ]);
   }, 30_000);
@@ -440,7 +442,7 @@ describe('GET /deployments status coercion + pagination', () => {
 
   test('returns service-aware filtered evidence and an all-matches summary', async () => {
     const res = await __fixture.api.request(
-      '/deployments?limit=1&service=checkout&source=gitlab&from=2026-07-01T00%3A00%3A00Z',
+      `/deployments?limit=1&service=checkout&source=gitlab&from=${encodeURIComponent(d3At.toISOString())}`,
       __fixture.auth(await __fixture.sign(orgD)),
     );
     expect(res.status).toBe(200);
@@ -465,7 +467,7 @@ describe('GET /deployments status coercion + pagination', () => {
     ]);
     expect(body.nextCursor).not.toBeNull();
     expect(body.summary).toMatchObject({ total: 2, failed: 0, active: 1, environmentMissing: 1 });
-    expect(body.summary.latestAt).toBe('2026-07-03T00:00:00.000Z');
+    expect(body.summary.latestAt).toBe(d1At.toISOString());
   });
 
   test('rejects invalid deployment filters', async () => {

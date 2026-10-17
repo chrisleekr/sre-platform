@@ -215,6 +215,11 @@ test('deactivation invalidates an existing browser session through the durable c
   const signedIn = await signIn('browser-subject');
   expect(signedIn.status).toBe('active');
   if (signedIn.status !== 'active') throw new Error('expected an active sign-in');
+  // The cutoff is Postgres clock_timestamp(), compared against authenticatedAt. Take authenticatedAt
+  // from the same clock: a host clock running ahead of the database container would otherwise land
+  // the session after the cutoff and keep it valid.
+  const [{ now }] = await db.sql<[{ now: Date | string }]>`select clock_timestamp() as now`;
+  const authenticatedAt = new Date(now);
   const created = await createBrowserSession(db.db, {
     providerId,
     clientId: 'directory-gate-client',
@@ -222,7 +227,7 @@ test('deactivation invalidates an existing browser session through the durable c
     foundingId: null,
     oidcSubject: 'browser-subject',
     bindingClaimValue: null,
-    authenticatedAt: new Date(),
+    authenticatedAt,
     idleSeconds: 3_600,
     absoluteSeconds: 86_400,
   });

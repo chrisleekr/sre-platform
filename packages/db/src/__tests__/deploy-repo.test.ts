@@ -23,6 +23,8 @@ let tenantA: string;
 let tenantB: string;
 
 // The persisted deploy shape the poller stamps (source + sha are the idempotency key).
+// deployedAt defaults to one day ago because listRecentDeployments filters on a now()-relative
+// window in SQL; a fixed calendar date ages out of it and the tests fail on a later date.
 const deployRow = (over: Partial<Parameters<typeof upsertDeployments>[2][number]> = {}) => ({
   source: 'gitlab',
   repo: '71',
@@ -30,7 +32,7 @@ const deployRow = (over: Partial<Parameters<typeof upsertDeployments>[2][number]
   sha: `sha-${randomUUID()}`,
   service: 'checkout',
   status: 'success',
-  deployedAt: new Date('2026-07-01T00:00:00Z'),
+  deployedAt: new Date(Date.now() - 24 * 60 * 60_000),
   ...over,
 });
 

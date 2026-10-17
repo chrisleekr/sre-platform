@@ -42,6 +42,12 @@ export function createFixture() {
 
   const KEY = Buffer.alloc(32, 9).toString('base64');
 
+  // The default GET /deployments read filters on a now()-relative window in SQL, so seeded deploys
+  // must be dated relative to the current time or they age out and the tests fail on a later date.
+  const daysAgo = (days: number) => new Date(Date.now() - days * 24 * 60 * 60_000);
+  const gitlabDeployedAt = daysAgo(1);
+  const argoDeployedAt = new Date(gitlabDeployedAt.getTime() + 60_000);
+
   let admin: DbHandle;
 
   let app: DbHandle;
@@ -240,7 +246,7 @@ export function createFixture() {
         service: null,
         status: 'failed',
         url: 'https://gl/p/42',
-        deployedAt: new Date('2026-07-01T00:05:00Z'),
+        deployedAt: gitlabDeployedAt,
       },
     ]);
     await upsertDeployments(app.db, tenantA, [
@@ -254,7 +260,7 @@ export function createFixture() {
         operationPhase: 'Succeeded',
         service: 'checkout',
         status: 'success',
-        deployedAt: new Date('2026-07-01T00:06:00Z'),
+        deployedAt: argoDeployedAt,
       },
     ]);
     await upsertDeployments(app.db, tenantB, [
@@ -266,7 +272,7 @@ export function createFixture() {
         service: null,
         status: 'failed',
         url: 'https://gl/p/99',
-        deployedAt: new Date('2026-07-01T00:05:00Z'),
+        deployedAt: gitlabDeployedAt,
       },
     ]);
   }, 30_000);
@@ -309,6 +315,8 @@ export function createFixture() {
     AUDIENCE,
     KID,
     KEY,
+    daysAgo,
+    gitlabDeployedAt,
     get admin() {
       return admin;
     },

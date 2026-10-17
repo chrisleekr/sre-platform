@@ -23,6 +23,10 @@ let tenantId: string;
 let emptyTenantId: string;
 let tool: ReturnType<typeof makeFetchRecentDeploysTool>;
 const service = 'checkout';
+// The deploy read filters on a now()-relative window in SQL, so fixtures are dated relative to the
+// current time; fixed calendar dates age out and the tests fail on a later date.
+const HOUR = 60 * 60_000;
+const base = Date.now() - 24 * HOUR;
 
 function makeCtx(audit: ToolContext['audit'], tenant = tenantId): ToolContext {
   return {
@@ -53,7 +57,7 @@ beforeAll(async () => {
       sha: 'sha-checkout-old',
       service,
       status: 'success',
-      deployedAt: new Date('2026-07-03T00:00:00Z'),
+      deployedAt: new Date(base),
     },
     {
       source: 'gitlab',
@@ -62,7 +66,7 @@ beforeAll(async () => {
       sha: 'sha-checkout-new',
       service,
       status: 'success',
-      deployedAt: new Date('2026-07-03T01:00:00Z'),
+      deployedAt: new Date(base + HOUR),
     },
     {
       source: 'gitlab',
@@ -71,7 +75,7 @@ beforeAll(async () => {
       sha: 'sha-orders',
       service: 'ordersdb',
       status: 'success',
-      deployedAt: new Date('2026-07-03T02:00:00Z'),
+      deployedAt: new Date(base + 2 * HOUR),
     },
   ]);
   tool = makeFetchRecentDeploysTool({ db: app.db });

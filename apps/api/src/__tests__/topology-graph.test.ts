@@ -65,8 +65,10 @@ function auth(token: string): { authorization: string } {
   return { authorization: `Bearer ${token}` };
 }
 
-const OLD = new Date('2026-07-03T00:00:00Z');
-const NEW = new Date('2026-07-03T02:00:00Z');
+// The graph reads deploys through a now()-relative window in SQL, so fixture deploys are dated relative
+// to the current time; fixed calendar dates age out and the deploy assertions fail on a later date.
+const NEW = new Date(Date.now() - 24 * 60 * 60_000);
+const OLD = new Date(NEW.getTime() - 2 * 60 * 60_000);
 
 test('selected incident overlay and dependency impact share the same scoped identity', async () => {
   await verifyTopologyIncidentSelection(
