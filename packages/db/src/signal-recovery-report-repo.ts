@@ -4,6 +4,7 @@ import type { Db } from './client';
 import { lockResponseGroupWorkTx } from './incident-relation-repo/causal';
 import { withTenant, type Tx } from './rls';
 import { incidentSignals, incidents, signalDispositions } from './schema';
+import { clearRecoveryTx } from './signal-repo/recovery-state';
 
 /** Correlation decision for an advisory Slack recovery notice that covers only its linked signal. */
 export const PROVIDER_RECOVERY_REPORT_DECISION = 'recovery_reported';
@@ -24,6 +25,7 @@ type RootedSignal = Pick<
   | 'externalMessageId'
   | 'lastSeenAt'
   | 'monitorKey'
+  | 'lastEventKey'
 >;
 
 // Mirrors sourceEventOrder in signal-control-repo: a numeric version orders events, otherwise receipt
@@ -35,6 +37,12 @@ function eventOrder(table: { sourceEventVersion: AnyPgColumn; sourceEventAt: Any
 // Grouped Slack alerts are stored as `<message>#<alert>`, so the part before `#` names the message.
 function messageRoot(signal: RootedSignal): string {
   return JSON.stringify([signal.surface, signal.channel, signal.externalMessageId.split('#')[0]]);
+}
+
+// The authenticated poster, which the monitor key does not hash: two bots in one channel can share a key.
+function producerTag(signal: RootedSignal): string | null {
+  const at = signal.lastEventKey.lastIndexOf(':producer:');
+  return at < 0 ? null : signal.lastEventKey.slice(at);
 }
 
 /**
@@ -109,6 +117,7 @@ async function listProviderRecoveryReportsTx(
       externalMessageId: incidentSignals.externalMessageId,
       lastSeenAt: incidentSignals.lastSeenAt,
       monitorKey: incidentSignals.monitorKey,
+      lastEventKey: incidentSignals.lastEventKey,
     })
     .from(incidentSignals)
     .where(or(eq(incidentSignals.incidentId, incidentId), inArray(incidentSignals.id, reportedIds)))
@@ -131,7 +140,10 @@ async function listProviderRecoveryReportsTx(
         signal.lastSeenAt <= row.reportedAt &&
         ((row.decision === PROVIDER_RECOVERY_REPORT_ROOT_DECISION &&
           messageRoot(signal) === root) ||
-          (Boolean(reported?.monitorKey) && signal.monitorKey === reported!.monitorKey)),
+          (Boolean(reported?.monitorKey) &&
+            signal.monitorKey === reported!.monitorKey &&
+            producerTag(signal) !== null &&
+            producerTag(signal) === producerTag(reported!))),
     );
     return [row.signalId!, ...siblings.map((signal) => signal.id)].map((signalId) => ({
       signalId,
@@ -229,9 +241,9 @@ export async function reopenReportedSignalsTx(
   refiredAt: Date,
 ): Promise<string[]> {
   if (signalIds.length === 0) return [];
-  // Only while the incident is open. The version bump breaks the signal fence, so a queued or
-  // running recovery verification stops instead of resolving the incident.
-  await lockResponseGroupWorkTx(tx, tenantId, incidentId);
+  // Only while the incident is open. The version bump breaks the signal fence, so a running
+  // recovery verification stops instead of resolving the incident.
+  const group = await lockResponseGroupWorkTx(tx, tenantId, incidentId);
   const [incident] = await tx
     .select({ status: incidents.status, archivedAt: incidents.archivedAt })
     .from(incidents)
@@ -262,5 +274,8 @@ export async function reopenReportedSignalsTx(
       ),
     )
     .returning({ id: incidentSignals.id });
+  // As a repeat firing does: retire the queued verification and the stale recovery projection.
+  if (reopened.length > 0)
+    await clearRecoveryTx(tx, tenantId, group.rootIncidentId, group.incidentIds);
   return reopened.map((signal) => signal.id);
 }

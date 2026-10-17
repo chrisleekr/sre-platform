@@ -188,7 +188,7 @@ export const reportMessages = (incidentId: string) =>
 
 export const recoveryJobs = (incidentId: string) =>
   admin.db
-    .select({ payload: jobs.payload })
+    .select({ payload: jobs.payload, status: jobs.status })
     .from(jobs)
     .where(
       and(

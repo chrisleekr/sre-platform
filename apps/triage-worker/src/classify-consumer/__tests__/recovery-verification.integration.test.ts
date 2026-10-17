@@ -125,6 +125,34 @@ describe('Slack recovery verification', () => {
     expect(await recoveryJobs(first.incidentId)).toHaveLength(1);
   });
 
+  test('a notice does not cover a post of the same monitor from another bot', async () => {
+    const monitorKey = `slack:monitor-${randomUUID()}`;
+    const first = await trackedIncident(monitorKey);
+    // The monitor key hashes channel, provider and alert name, so another bot can share it.
+    const otherRoot = `root-${randomUUID()}`;
+    await applySignalObservation(app.db, tenantId, {
+      incidentId: first.incidentId,
+      surface: 'slack',
+      channel: CHANNEL,
+      externalMessageId: otherRoot,
+      state: 'unknown',
+      summary: 'Checkout error rate is high.',
+      contentHash: 'other-bot',
+      monitorKey,
+      eventKey: `slack:${CHANNEL}:${otherRoot}:producer:bot:B_OTHER`,
+      eventAt: new Date('2026-09-20T00:01:00.000Z'),
+    });
+    const { handle } = handler();
+
+    await handle(job(resolvedCandidate(monitorKey)));
+
+    expect((await signalStates(first.incidentId)).map((signal) => signal.state)).toEqual([
+      'unknown',
+      'unknown',
+    ]);
+    expect(await recoveryJobs(first.incidentId)).toEqual([]);
+  });
+
   test('an edit to resolved covers earlier episodes of the same monitor posted as new messages', async () => {
     const monitorKey = `slack:monitor-${randomUUID()}`;
     const first = await trackedIncident(monitorKey);
@@ -331,6 +359,13 @@ describe('Slack recovery verification', () => {
       { state: 'unknown', clearProvenance: null },
       { state: 'unknown', clearProvenance: null },
     ]);
+    // The queued verification is retired and the recovery projection cleared, as a repeat firing does.
+    expect((await recoveryJobs(incident.id)).map((row) => row.status)).toEqual(['done']);
+    const [projection] = await admin.db
+      .select({ recoveryState: incidents.recoveryState, nextCheck: incidents.recoveryNextCheckAt })
+      .from(incidents)
+      .where(eq(incidents.id, incident.id));
+    expect(projection).toEqual({ recoveryState: null, nextCheck: null });
     const [refired] = await admin.db
       .select({ content: incidentMessages.content })
       .from(incidentMessages)
