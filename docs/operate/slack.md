@@ -40,10 +40,25 @@ Slack gets what a responder needs to act. The dashboard gets everything.
 | Recovery conclusions | Relationship and cohort decisions |
 | Lifecycle updates on every thread in a causal response group | Intermediate recovery checks |
 
-Any inconclusive finding posts as **Unverified**, followed by its next step and, when the evidence
-review named them, up to three open checks under **Still to verify**. This covers a finding the
-engine left inconclusive, one the evidence review rejected, and one whose review did not complete. It
-is not a conclusion; the dashboard shows up to five open checks.
+A finding posts as one headline followed by short labelled lines, each present only when the
+finding has it:
+
+| Line | What it says |
+| --- | --- |
+| **Cause** or **Likely cause** | The leading hypothesis. It reads **Likely cause** unless the finding is a trusted conclusion. |
+| **Impact** | Who or what is affected. |
+| **Do** | The recommended action, or the next diagnostic step when no fix is supported yet. |
+| **Verify** | Up to three open checks named by the evidence review. |
+
+Any inconclusive finding is headed **Unverified**. This covers a finding the engine left
+inconclusive, one the evidence review rejected, and one whose review did not complete. It is not a
+conclusion; the dashboard shows up to five open checks.
+
+Commits and Argo CD applications that a finding names are linked to their provider pages. The
+platform builds these links from what your GitLab, GitHub, and Argo CD connectors returned, never
+from model text. An Argo CD link needs the connector's browser URL, or an https server URL. A
+commit the text does not mention is left out, because a run reads many commits; an Argo CD
+application the text does not mention is listed on a **Links** line.
 
 This split exists so that an incident channel stays readable. If you want the full audit trail, open
 the incident on the dashboard.

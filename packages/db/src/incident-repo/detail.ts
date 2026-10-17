@@ -39,6 +39,10 @@ export interface LatestInvestigationRun {
   reason: string | null;
   /** Evidence reviewer open checks; read by the incident detail only, never by list projections. */
   gaps?: string[];
+  /** The run's first standing hypothesis, whether or not it was promoted. Detail only. */
+  likelyCause?: string | null;
+  /** The run's impact statement, whether or not it was promoted. Detail only. */
+  impact?: string | null;
   completedAt: string;
 }
 
@@ -61,7 +65,13 @@ const latestInvestigationRunSql = (withGaps = false) => sql<LatestInvestigationR
     'summary', ${investigationRuns.result} ->> 'summary',
     'nextStep', ${investigationRuns.result} ->> 'nextStep',
     'reason', ${investigationRuns.result} ->> 'reason',
-    ${withGaps ? sql`'gaps', ${investigationRuns.result} -> 'gaps',` : sql``}
+    ${
+      withGaps
+        ? sql`'gaps', ${investigationRuns.result} -> 'gaps',
+          'hypotheses', ${investigationRuns.result} -> 'rankedHypotheses',
+          'impact', ${investigationRuns.result} -> 'impact',`
+        : sql``
+    }
     'completedAt', to_char(
       ${investigationRuns.completedAt} at time zone 'UTC',
       'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
@@ -410,9 +420,36 @@ export async function getIncidentDetail(
       .limit(1);
     const row = rows[0];
     if (!row?.latestInvestigationRun) return row ?? null;
-    const run = row.latestInvestigationRun;
-    return { ...row, latestInvestigationRun: { ...run, gaps: publicRunGaps(run.gaps) } };
+    const { hypotheses, ...run } = row.latestInvestigationRun as LatestInvestigationRun & {
+      hypotheses?: unknown;
+    };
+    return {
+      ...row,
+      latestInvestigationRun: {
+        ...run,
+        gaps: publicRunGaps(run.gaps),
+        likelyCause: publicRunText(standingHypothesis(hypotheses)),
+        impact: publicRunText(run.impact),
+      },
+    };
   });
+}
+
+/** Stored hypotheses are model-shaped jsonb; disfavored and disproven ones never headline. */
+function standingHypothesis(value: unknown): unknown {
+  if (!Array.isArray(value)) return null;
+  const standing = value.find(
+    (item): item is { hypothesis: unknown } =>
+      item !== null &&
+      typeof item === 'object' &&
+      !['disfavored', 'disproven'].includes((item as { state?: unknown }).state as string),
+  );
+  return standing?.hypothesis ?? null;
+}
+
+function publicRunText(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  return scrubSecrets(value.trim()).slice(0, 1_000);
 }
 
 /** Stored gaps are model-shaped jsonb, so keep only bounded, scrubbed, nonblank strings. */

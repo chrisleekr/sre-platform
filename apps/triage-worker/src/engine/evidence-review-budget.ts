@@ -21,7 +21,7 @@ import type {
 interface Review {
   correctedRecovery?: Infer<typeof reportRecoverySchema>;
   supported: boolean;
-  rejection?: 'insufficient_evidence' | 'contradictory_evidence';
+  rejection?: 'insufficient_evidence' | 'contradictory_evidence' | 'missing_capability';
   summary: string;
   detail?: string;
   gaps?: string[];

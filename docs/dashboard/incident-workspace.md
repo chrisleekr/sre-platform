@@ -104,7 +104,8 @@ Repository paths, resource names, and commands are preserved; credentials are re
 For an inconclusive run, **Latest investigation result** shows the reviewer's conclusion, limited to
 facts the evidence supports, and a **Still to verify** list of open checks. The next diagnostic step
 comes from the reviewer when the incident has no trusted next step. None of this becomes the trusted
-assessment, and the run has no hypotheses or model confidence.
+assessment, and the run has no model confidence. When the review found evidence missing rather than
+contradictory, the run keeps the engine's hypotheses, none of them leading.
 
 Replies keep the requested answer or document when evidence review corrects an unsupported claim.
 The full corrected reply remains in the dashboard even when the diagnosis is inconclusive; Slack

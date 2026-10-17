@@ -35,3 +35,26 @@ test('a result without reviewer gaps records no gaps key', () => {
   ).not.toHaveProperty('gaps');
   expect(investigationRunResult(plain)).not.toHaveProperty('gaps');
 });
+
+test('the likely cause is the first hypothesis still standing, and links pass through', () => {
+  const links = [{ label: '3391576a', url: 'https://gitlab.example.com/g/a/-/commit/3391576a' }];
+  const finding = incidentFindingPayload(
+    {
+      ...rejected,
+      links,
+      rankedHypotheses: [
+        { hypothesis: 'Disproven idea.', confidence: 5, evidence: 'e', state: 'disproven' },
+        { hypothesis: `Limit too low, key ${secret}.`, confidence: 60, evidence: 'e' },
+      ],
+    },
+    'run-1',
+    'not_promoted',
+    'investigation_inconclusive',
+  );
+  expect(finding.likelyCause).toMatch(/^Limit too low/);
+  expect(finding.likelyCause).not.toContain(secret);
+  expect(finding.links).toEqual(links);
+  expect(
+    incidentFindingPayload(rejected, 'run-1', 'not_promoted', 'investigation_inconclusive'),
+  ).not.toHaveProperty('likelyCause');
+});
