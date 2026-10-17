@@ -63,6 +63,8 @@ import { makeTopologyDiscoveryRuntime, runTopologyDiscoveryConsumer } from './to
 import { drainAndExit, runConsumerLoop, stopOnSignal, superviseConsumer } from './consumer-loop';
 import { makePlatformTools } from './platform-tools';
 
+// Before the first await: a SIGTERM during startup is otherwise ignored under PID 1.
+const stopping = stopOnSignal();
 const adminDb = makeDb(adminUrl());
 // A dedicated pool prevents routing-fence transactions from starving their callbacks.
 const coordinationDb = makeDb(adminUrl());
@@ -367,7 +369,6 @@ const jobPruneGuard = makeRedisWindowGuard(redis, 'jobs:prune');
 const signalMaintenanceGuard = makeRedisWindowGuard(redis, 'signals:maintenance');
 const SIGNAL_MAINTENANCE_MS = 5 * 60_000;
 
-const stopping = stopOnSignal();
 // Triage and topology have their own loops: a run takes minutes and would stall every stream here.
 while (!stopping()) {
   const polled = await pollQueue.process('poll-worker', async (job) => {

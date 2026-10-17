@@ -228,6 +228,17 @@ describe('TriageWorker', () => {
     expect(handled).toBe(1);
   });
 
+  test('a turn handles one job, so shutdown is checked between investigations', async () => {
+    for (let i = 0; i < 2; i++)
+      await __fixture.queue.enqueue({
+        tenantId: __fixture.tenantId,
+        type: 'triage',
+        payload: { incidentId: randomUUID() },
+      });
+    expect(await __fixture.worker.tick('t1')).toBe(1);
+    expect(await __fixture.worker.tick('t1')).toBe(1);
+  });
+
   // finding D: an unknown job type must not silently vanish. handle should warn (so a misrouted
   // producer is observable) without throwing (the delivery is still acked, not endlessly redelivered).
   test('handle logs a warning for an unknown job type', async () => {
