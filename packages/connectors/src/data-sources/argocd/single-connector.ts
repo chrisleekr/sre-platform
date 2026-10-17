@@ -32,11 +32,10 @@ import {
   projectedConditions,
   projectedSources,
   revisions,
-  safeHttpUrl,
   safeProviderMessage,
   summarizeApp,
 } from './projection';
-import { makeArgoCdTools } from './tools';
+import { applicationWebUrl, makeArgoCdTools } from './tools';
 import { argoTopology } from './topology';
 import {
   readApplications,
@@ -88,8 +87,11 @@ export function makeSingleArgoCdConnector(
           const destinationNamespace = str(destination.namespace);
           const displayBase = new URL(client.base);
           if (client.hostHeader) displayBase.host = client.hostHeader;
+          // Operator-entered settings only: the external-link annotation is manifest-controlled and
+          // names the workload's own address, not its Argo CD page. The server URL stays the
+          // fallback, so an HTTP-only install keeps its dashboard link.
           const externalUrl =
-            safeHttpUrl(obj(metadata.annotations)['link.argocd.argoproj.io/external-link']) ??
+            applicationWebUrl(config.settings, name, namespace) ??
             `${displayBase.toString().replace(/\/+$/, '')}/applications/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`;
           snapshots.push({
             tenantId: config.tenantId,

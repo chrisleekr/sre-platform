@@ -203,7 +203,8 @@ export function makeGitLabTools(
       gtool({
         name: 'compare_commits',
         description:
-          'Compare two revisions in one synchronized project to find commits and files changed between them.',
+          'Compare two revisions in one synchronized project to find commits and files changed between them. ' +
+          'A large comparison returns collapsed or missing diffs; to check one file, call get_file at each revision instead.',
         inputSchema: z.object({ project: projectSchema, from: z.string(), to: z.string() }),
         run: ({ project, from, to }, call) =>
           projectGet(project, 'repository/compare', { from, to, straight: 'true' }, call?.signal),
@@ -232,7 +233,10 @@ export function makeGitLabTools(
       gtool({
         name: 'get_file',
         description:
-          'Read one repository file at a branch, tag, or commit. The content is Base64 encoded by GitLab.',
+          'Read one repository file at a branch, tag, or commit. The content is Base64 encoded by GitLab. ' +
+          'The response includes blob_id and last_commit_id: the same blob_id at two revisions means identical ' +
+          'bytes, and last_commit_id names the commit that last touched the file. content_sha256 hashes text that ' +
+          'GitLab may have converted to UTF-8, so it does not prove byte equality.',
         inputSchema: z.object({
           project: projectSchema,
           path: z.string(),

@@ -62,6 +62,35 @@ describe('snapshot', () => {
     expect(new URL(calls[0]!.url).searchParams.has('projects')).toBe(false);
   });
 
+  test('links an application from the browser URL, never from its external-link annotation', async () => {
+    const { impl } = fakeFetch(() => ({
+      json: {
+        items: [
+          {
+            metadata: {
+              name: 'checkout',
+              namespace: 'argocd',
+              uid: 'uid-checkout',
+              annotations: { 'link.argocd.argoproj.io/external-link': 'https://evil.example/' },
+            },
+            spec: { project: 'payments' },
+            status: {},
+          },
+        ],
+      },
+    }));
+    const snapshots = await makeArgoCdConnector(
+      cfg({
+        settings: { baseUrl: 'http://argocd-server.argocd', webUrl: 'https://argocd.example.com' },
+      }),
+      impl,
+      async () => ['10.96.0.10'],
+    ).snapshot();
+    expect(snapshots[0]!.metadata.url).toBe(
+      'https://argocd.example.com/applications/argocd/checkout',
+    );
+  });
+
   test('removes credentials and sensitive query data from snapshots and links', async () => {
     const connector = apiConn(
       fakeFetch(() => ({

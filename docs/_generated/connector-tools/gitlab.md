@@ -24,9 +24,9 @@
 | `api_get` | GET a read-only REST endpoint beneath one synchronized project. The request cannot escape that project. |
 | `list_commits` | List recent commits in one synchronized project. |
 | `get_commit` | Get one commit with its parent revisions, changed files, and diff metadata. |
-| `compare_commits` | Compare two revisions in one synchronized project to find commits and files changed between them. |
+| `compare_commits` | Compare two revisions in one synchronized project to find commits and files changed between them. A large comparison returns collapsed or missing diffs; to check one file, call get_file at each revision instead. |
 | `search_code` | Search code in one synchronized project. GitLab code search availability depends on the instance tier and search configuration. |
-| `get_file` | Read one repository file at a branch, tag, or commit. The content is Base64 encoded by GitLab. |
+| `get_file` | Read one repository file at a branch, tag, or commit. The content is Base64 encoded by GitLab. The response includes blob_id and last_commit_id: the same blob_id at two revisions means identical bytes, and last_commit_id names the commit that last touched the file. content_sha256 hashes text that GitLab may have converted to UTF-8, so it does not prove byte equality. |
 | `list_merge_requests` | List recent merge requests in one synchronized project. |
 | `list_pipelines` | List recent CI pipelines in one synchronized project. |
 | `get_pipeline_jobs` | List jobs and statuses for one pipeline. |

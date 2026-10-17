@@ -55,6 +55,15 @@ For example, an Argo CD server running without TLS in the `argocd` namespace may
 `http://argocd-server.argocd.svc.cluster.local`. Verify the service name, namespace, port, and server
 protocol for your installation. Changing the prefix to HTTPS does not enable TLS on the server.
 
+**Optional browser URL for links** is the HTTPS address responders open in a browser, for example
+`https://argocd.example.com`. Links to Argo CD applications, in the dashboard and in investigation
+results, use it. Leave it blank when the server URL is already that address. Investigation results
+link only to an HTTPS address, so with an in-cluster HTTP server URL and no browser URL they name
+applications without linking them. The platform never sends requests to this address.
+
+With Applications in any namespace enabled, investigation tools find an application's namespace
+from its name when only one scoped application has that name.
+
 ### 2. Projects
 
 ![Choosing projects and applications](../assets/screenshots/add-argocd-2-projects-light.png#only-light)

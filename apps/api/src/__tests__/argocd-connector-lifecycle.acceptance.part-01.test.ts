@@ -40,6 +40,23 @@ describe('ArgoCD connector lifecycle acceptance', () => {
   });
 
   test.each([
+    'http://argocd.example.com',
+    'https://user:pass@argocd.example.com',
+    'https://argocd.example.com?x=1',
+  ])('rejects a browser link URL that is not plain HTTPS: %s', async (webUrl) => {
+    const response = await __fixture.connectorApp().request('/connectors/argocd', {
+      method: 'PUT',
+      headers: await __fixture.headers(),
+      body: JSON.stringify({
+        settings: { ...__fixture.projectSettings(), webUrl },
+        credentials: __fixture.projectCredentials('must-not-be-stored'),
+      }),
+    });
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as { error: string }).error).toContain('browser URL');
+  });
+
+  test.each([
     {
       settings: {
         baseUrl: `https://${'a'.repeat(2048)}.example`,
@@ -243,7 +260,12 @@ describe('ArgoCD connector lifecycle acceptance', () => {
       headers: await __fixture.headers(),
       body: JSON.stringify({
         name: 'Legacy Argo CD renamed',
-        settings: { ...legacySettings, labelSelector: 'team=payments', accessRole: 'sre-platform' },
+        settings: {
+          ...legacySettings,
+          labelSelector: 'team=payments',
+          accessRole: 'sre-platform',
+          webUrl: 'https://argocd.example.com/',
+        },
       }),
     });
     expect(edited.status).toBe(200);
@@ -254,7 +276,10 @@ describe('ArgoCD connector lifecycle acceptance', () => {
         .where(eq(connectorConfigs.id, legacyId)),
     );
     expect(row?.name).toBe('Legacy Argo CD renamed');
-    expect(row?.settings).toMatchObject({ labelSelector: 'team=payments' });
+    expect(row?.settings).toMatchObject({
+      labelSelector: 'team=payments',
+      webUrl: 'https://argocd.example.com',
+    });
     expect(row?.settings).not.toHaveProperty('accessRole');
   });
 

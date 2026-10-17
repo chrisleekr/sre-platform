@@ -8,6 +8,7 @@ import {
   toolNamed,
 } from './test-helpers';
 import { abortableFetch, expectCancelledInFlight } from '../../../__tests__/request-signal.fixture';
+import { applicationWebUrl } from '../tools';
 
 describe('list_applications', () => {
   const appsResp = {
@@ -132,6 +133,10 @@ describe('get_application', () => {
     expect(JSON.stringify(out)).not.toContain('odd-pass');
     expect(JSON.stringify(out)).not.toContain('token=abc');
     expect(JSON.stringify(out)).not.toContain('valuesObject');
+    // Built from the configured base, not the manifest-controlled external-link annotation.
+    expect((out as { webUrl?: string }).webUrl).toBe(
+      'https://argocd.example.com/applications/team-a/api',
+    );
   });
 
   test('rejects an invalid application name before any fetch', async () => {
@@ -149,12 +154,48 @@ describe('get_application', () => {
     ).rejects.toThrow(/invalid appNamespace/);
   });
 
-  test('requires appNamespace for named tools in Applications-in-any-namespace mode', async () => {
-    const { impl, calls } = fakeFetch();
+  const anyNamespaceApp = (namespace: string) => ({
+    metadata: { name: 'api', namespace, uid: `uid-${namespace}` },
+    spec: { project: 'default' },
+  });
+  const anyNamespaceConn = (impl: ReturnType<typeof fakeFetch>['impl']) =>
+    conn(impl, {
+      settings: {
+        applicationsInAnyNamespace: true,
+        applications: [{ project: 'default', name: '*', namespace: '*' }],
+      },
+    });
+
+  test('resolves a missing appNamespace from the scoped list when the name is unique', async () => {
+    const { impl, calls } = fakeFetch((url) =>
+      new URL(url).pathname === '/api/v1/applications'
+        ? { json: { items: [anyNamespaceApp('team-a')] } }
+        : { json: anyNamespaceApp('team-a') },
+    );
+    const out = (await toolNamed(anyNamespaceConn(impl), 'get_application').run({
+      name: 'api',
+    })) as { metadata: Record<string, unknown> };
+    expect(new URL(calls[1]!.url).pathname).toBe('/api/v1/applications/api');
+    expect(new URL(calls[1]!.url).searchParams.get('appNamespace')).toBe('team-a');
+    expect(out.metadata.namespace).toBe('team-a');
+  });
+
+  test('asks for appNamespace when the name is in several scoped namespaces', async () => {
+    const { impl, calls } = fakeFetch(() => ({
+      json: { items: [anyNamespaceApp('team-a'), anyNamespaceApp('team-b')] },
+    }));
     await expect(
-      toolNamed(apiConn(impl, true), 'get_application').run({ name: 'api' }),
-    ).rejects.toThrow(/namespace is required/);
-    expect(calls).toHaveLength(0);
+      toolNamed(anyNamespaceConn(impl), 'get_application_events').run({ name: 'api' }),
+    ).rejects.toThrow(/pass appNamespace/);
+    expect(calls).toHaveLength(1);
+  });
+
+  test('rejects a missing appNamespace for a name outside the scoped list', async () => {
+    const { impl, calls } = fakeFetch(() => ({ json: { items: [] } }));
+    await expect(
+      toolNamed(anyNamespaceConn(impl), 'get_application').run({ name: 'api' }),
+    ).rejects.toThrow(/outside the configured scope/);
+    expect(calls).toHaveLength(1);
   });
 });
 
@@ -343,5 +384,31 @@ describe('tool cancellation', () => {
     const { impl, signals } = abortableFetch();
     const tool = toolNamed(conn(impl), 'list_applications');
     await expectCancelledInFlight((signal) => tool.run({}, { signal }), signals);
+  });
+});
+
+describe('applicationWebUrl', () => {
+  test('keeps a path-prefixed https base and encodes the segments', () => {
+    expect(applicationWebUrl({ baseUrl: 'https://ops.example.com/argocd/' }, 'a.b', 'ns')).toBe(
+      'https://ops.example.com/argocd/applications/ns/a.b',
+    );
+  });
+
+  test('offers no link for an http or malformed base', () => {
+    expect(applicationWebUrl({ baseUrl: 'http://argocd-server.argocd' }, 'api', 'argocd')).toBe(
+      undefined,
+    );
+    expect(applicationWebUrl({ baseUrl: 'not a url' }, 'api', 'argocd')).toBe(undefined);
+    expect(applicationWebUrl({}, 'api', 'argocd')).toBe(undefined);
+  });
+
+  test('prefers the browser URL over an in-cluster server URL', () => {
+    expect(
+      applicationWebUrl(
+        { baseUrl: 'http://argocd-server.argocd', webUrl: 'https://argocd.example.com' },
+        'api',
+        'argocd',
+      ),
+    ).toBe('https://argocd.example.com/applications/argocd/api');
   });
 });
