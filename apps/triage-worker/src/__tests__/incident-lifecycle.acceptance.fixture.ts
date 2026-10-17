@@ -3,6 +3,8 @@ import {
   inboundChannels,
   inboundSideEffects,
   incidentMessages,
+  alertCohortMembers,
+  alertCohorts,
   incidentSignals,
   incidents,
   investigationRuns,
@@ -160,6 +162,8 @@ export function createFixture() {
       await admin.db.delete(jobs).where(tenant);
       await admin.db.delete(agentToolCalls).where(tenant);
       await admin.db.delete(incidentMessages).where(tenant);
+      await admin.db.delete(alertCohortMembers).where(tenant);
+      await admin.db.delete(alertCohorts).where(tenant);
       await admin.db.delete(incidentSignals).where(tenant);
       await admin.db.delete(inboundSideEffects).where(tenant);
       await admin.db.delete(surfaceBindings).where(tenant);
