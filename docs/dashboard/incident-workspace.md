@@ -23,12 +23,17 @@ When a provider bot posts a recovery notice in Slack for this incident, the plat
 a report. A provider that edits its alert message so it opens with a resolved header covers every
 alert in that message, until the provider edits that message again. An edit that only lists some
 alerts as resolved covers the one alert it matched. A new recovery message covers only the alert
-it names; if one new message names several alerts, only one of them is covered, so the panel does
-not offer confirmation. Slack text cannot clear an alert, so the platform does not resolve the
-incident on its own. When every open alert has a report and the incident is open or mitigated, the
-panel offers **Confirm resolved**. If a human decision is also required, the decision reads
-**Provider reported recovery in Slack. Confirm resolution.** Confirming resolves it and records
-that an operator confirmed the reported recovery, with the time of the notice.
+it names; if one new message names several alerts, only one of them is covered. Any report also
+covers earlier posts of the same alert, because a provider that posts a new message for each
+firing leaves one alert per post, and the latest recovery ends them all. When every open
+alert has a report, every open alert came from Slack, and the incident is open or mitigated, the
+platform marks the alerts recovered and starts recovery verification, and the conversation reads **Verifying recovery before
+resolving.** The incident resolves only if verification confirms recovery. Until every alert is
+covered, the conversation notes that verification waits for the remaining alerts. If the provider
+edits the message back to firing, or posts the alert again, the alert is active again and
+verification stops. Under the provider-clear policy a Slack report never counts as provider
+recovery, so verification reports the blocker instead of resolving. An operator can still resolve
+the incident at any time.
 
 ## Automation policy
 

@@ -4,23 +4,30 @@ import {
   getSignalByExternal,
   listActiveSlackSignalsByMonitorKeys,
   listSignalsByExternalRoot,
+  reopenReportedSignalsTx,
+  withTenant,
 } from '@sre/db';
+import { RECOVERY_NOT_QUEUED, startReportedRecoveryTx } from '../recovery-start';
 import type { ClassifyCore } from './core';
 
 type MatchedSignal = NonNullable<Awaited<ReturnType<typeof getSignalByExternal>>>;
 
 /**
- * Finds open Slack-born signals from the same channel and authenticated producer as a bot event.
+ * Finds Slack-born signals from the same channel and authenticated producer as a bot event.
  * An edit keeps its root `ts`, so it matches by exact root; a new message matches by monitor identity.
- * Returns only signals whose incident is open or mitigated.
+ * Returns only signals whose incident is open or mitigated, and only unresolved ones unless
+ * `includeResolved` is set: an incident stays open while a reported recovery is verified.
  * @param core - Classify collaborators.
  * @param tenantId - Owning tenant.
  * @param candidate - Scrubbed inbound candidate.
+ * @param options - `includeResolved` also matches resolved signals of an open incident;
+ * `resolvedOnly` matches only those.
  */
 export async function matchOpenProducerSignals(
   core: ClassifyCore,
   tenantId: string,
   candidate: InboundCandidate,
+  options: { includeResolved?: boolean; resolvedOnly?: boolean } = {},
 ): Promise<MatchedSignal[]> {
   if (candidate.author !== 'bot' || !candidate.producerId) return [];
   const db = core.deps.appDb;
@@ -42,12 +49,15 @@ export async function matchOpenProducerSignals(
       candidate.channel,
       candidate.producerId,
       observations.map((observation) => observation.monitorKey!),
+      { includeResolved: options.includeResolved || options.resolvedOnly },
     );
   }
   const producerTag = `:producer:${candidate.producerId}`;
   const scoped = signals.filter(
     (signal) =>
-      signal.state !== 'resolved' &&
+      (options.resolvedOnly
+        ? signal.state === 'resolved'
+        : options.includeResolved || signal.state !== 'resolved') &&
       signal.channel === candidate.channel &&
       signal.lastEventKey.endsWith(producerTag),
   );
@@ -68,15 +78,15 @@ function opensWithResolvedHeader(text: string): boolean {
   return /^\s*(?:<[^|>\n]+\|)?\[\s*resolved\b/i.test(first);
 }
 
-/** Links an advisory Slack recovery notice to the one incident it describes. */
+/** Links a Slack recovery notice to the one incident it describes and starts verification. */
 export class RecoveryReports {
   constructor(private readonly core: ClassifyCore) {}
 
   /**
-   * Appends one advisory hub line when the notice matches signals of exactly one open incident.
-   * Slack text never changes lifecycle; an operator confirms resolution from the dashboard.
-   * Scope is `root` only for an edit whose message opens with a resolved header, so the whole
-   * message recovered; otherwise `signal`, covering just the matched signal.
+   * Finds the one open incident a recovery notice describes. Scope is `root` only for an edit whose
+   * message opens with a resolved header, so the whole message recovered; otherwise `signal`,
+   * covering just the matched signal. Resolved signals of an open incident still match, so a
+   * redelivered notice whose first delivery already resolved them links to the same incident.
    * @param tenantId - Owning tenant.
    * @param candidate - Scrubbed resolved candidate.
    */
@@ -84,23 +94,96 @@ export class RecoveryReports {
     tenantId: string,
     candidate: InboundCandidate,
   ): Promise<{ incidentId: string; signalId: string; scope: 'root' | 'signal' } | null> {
-    const signals = await matchOpenProducerSignals(this.core, tenantId, candidate);
-    const incidents = new Set(signals.map((signal) => signal.incidentId));
-    if (incidents.size !== 1) return null;
-    const { hub } = this.core.deps;
-    if (!hub) throw new Error('classify recovery report path is not wired (hub)');
-    const signal = signals[0]!;
-    // Keyed by the event, so a redelivered notice or a replayed job appends nothing new.
-    await hub.appendOnce(tenantId, signal.incidentId, {
-      author: 'system',
-      kind: 'status',
-      content: `Provider reported recovery in Slack at ${new Date(candidate.eventAt).toISOString()}. Slack text is advisory; confirm to resolve.`,
-      originMessageId: `slack-recovery:${candidate.eventKey}`,
+    const matched = await matchOpenProducerSignals(this.core, tenantId, candidate, {
+      includeResolved: true,
     });
+    const active = matched.filter((signal) => signal.state !== 'resolved');
+    const signals = active.length > 0 ? active : matched;
+    if (new Set(signals.map((signal) => signal.incidentId)).size !== 1) return null;
+    const signal = signals[0]!;
     return {
       incidentId: signal.incidentId,
       signalId: signal.id,
       scope: candidate.isEdit && opensWithResolvedHeader(candidate.text) ? 'root' : 'signal',
     };
+  }
+
+  /**
+   * Acts on a recorded notice. When current reports cover every active signal, resolves them and
+   * queues recovery verification, which checks the service before the incident resolves; Slack
+   * text alone never resolves it. Otherwise posts the notice as advisory. One transaction, keyed by
+   * the event, so a redelivered notice writes and queues nothing new; the line is still published,
+   * because the first delivery may have committed and died before publishing.
+   * @param tenantId - Owning tenant.
+   * @param incidentId - Incident the notice was linked to.
+   * @param candidate - Scrubbed resolved candidate.
+   */
+  async settle(tenantId: string, incidentId: string, candidate: InboundCandidate): Promise<void> {
+    const { hub, queue } = this.core.deps;
+    if (!hub?.appendTxOnce) throw new Error('classify recovery report path is not wired (hub)');
+    const reportedAt = new Date(candidate.eventAt).toISOString();
+    const settled = await withTenant(this.core.deps.appDb, tenantId, async (tx) => {
+      const { resolved, active, durable, prepared, queued, jobId } = await startReportedRecoveryTx(
+        tx,
+        queue,
+        tenantId,
+        incidentId,
+      );
+      const reported = `Provider reported recovery in Slack at ${reportedAt}.`;
+      const { message } = await hub.appendTxOnce!(tx, tenantId, incidentId, {
+        author: 'system',
+        kind: 'status',
+        content: queued
+          ? `${reported} Verifying recovery before resolving.`
+          : prepared
+            ? `${reported} ${RECOVERY_NOT_QUEUED}`
+            : resolved.length > 0
+              ? `${reported} Verification waits for the other incidents in this response group.`
+              : durable
+                ? `${reported} Provider-verified alerts stay active until the provider clears them.`
+                : active > 0
+                  ? `${reported} Verification starts when every active alert on this incident has reported recovery.`
+                  : reported,
+        originMessageId: `slack-recovery:${candidate.eventKey}`,
+      });
+      return { message, jobId };
+    });
+    await this.core.publishAppended(settled.message);
+    if (settled.jobId) await this.core.publishJob(settled.jobId);
+  }
+
+  /**
+   * Reopens signals a recovery report resolved when their message is edited back to firing, which
+   * stops any recovery verification for the incident.
+   * @param tenantId - Owning tenant.
+   * @param candidate - Scrubbed firing edit.
+   */
+  async reopen(tenantId: string, candidate: InboundCandidate): Promise<boolean> {
+    const { hub } = this.core.deps;
+    const signals = await matchOpenProducerSignals(this.core, tenantId, candidate, {
+      resolvedOnly: true,
+    });
+    if (new Set(signals.map((signal) => signal.incidentId)).size !== 1) return false;
+    if (!hub?.appendTxOnce) throw new Error('classify recovery report path is not wired (hub)');
+    const incidentId = signals[0]!.incidentId;
+    const message = await withTenant(this.core.deps.appDb, tenantId, async (tx) => {
+      const reopened = await reopenReportedSignalsTx(
+        tx,
+        tenantId,
+        incidentId,
+        signals.map((signal) => signal.id),
+        new Date(candidate.eventAt),
+      );
+      if (reopened.length === 0) return null;
+      const appended = await hub.appendTxOnce!(tx, tenantId, incidentId, {
+        author: 'system',
+        kind: 'status',
+        content: `Alert fired again in Slack at ${new Date(candidate.eventAt).toISOString()}. Recovery is no longer reported.`,
+        originMessageId: `slack-refired:${candidate.eventKey}`,
+      });
+      return appended.inserted ? appended.message : null;
+    });
+    if (message) await this.core.publishAppended(message);
+    return message !== null;
   }
 }

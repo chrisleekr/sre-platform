@@ -80,7 +80,7 @@ as one of these:
 | **No incident action** | It matched nothing: no alert, no tracked thread, no interaction |
 | **Untracked thread ignored** | A reply in a thread that is not attached to an incident |
 | **Edit ignored** | An edited message that is not attached to a tracked incident |
-| **Recovery reported** | A bot recovery notice linked to the one open incident whose alert it names; a responder confirms resolution from that incident |
+| **Recovery reported** | A bot recovery notice linked to the one open incident whose alert it names; once reports cover every active alert, recovery verification decides resolution |
 | **Resolution not matched** | A recovery notice that matched no single open incident, an edit of a tracked message, or a suggested resolution, logged without changing any alert; only connector-verified or native provider evidence clears one |
 | **Duplicate ignored** | Already recorded |
 | **Duplicate mention ignored** | The same responder mention was already accepted |

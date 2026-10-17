@@ -1,8 +1,9 @@
 import { and, asc, eq, gt, inArray, isNotNull, isNull, ne, notExists, or, sql } from 'drizzle-orm';
 import { alias, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { Db } from './client';
-import { withTenant } from './rls';
-import { incidentSignals, signalDispositions } from './schema';
+import { lockResponseGroupWorkTx } from './incident-relation-repo/causal';
+import { withTenant, type Tx } from './rls';
+import { incidentSignals, incidents, signalDispositions } from './schema';
 
 /** Correlation decision for an advisory Slack recovery notice that covers only its linked signal. */
 export const PROVIDER_RECOVERY_REPORT_DECISION = 'recovery_reported';
@@ -15,7 +16,14 @@ export const PROVIDER_RECOVERY_REPORT_ROOT_DECISION = 'recovery_reported_root';
 
 type RootedSignal = Pick<
   typeof incidentSignals.$inferSelect,
-  'id' | 'incidentId' | 'state' | 'surface' | 'channel' | 'externalMessageId' | 'lastSeenAt'
+  | 'id'
+  | 'incidentId'
+  | 'state'
+  | 'surface'
+  | 'channel'
+  | 'externalMessageId'
+  | 'lastSeenAt'
+  | 'monitorKey'
 >;
 
 // Mirrors sourceEventOrder in signal-control-repo: a numeric version orders events, otherwise receipt
@@ -40,89 +48,219 @@ export function listProviderRecoveryReports(
   tenantId: string,
   incidentId: string,
 ): Promise<Array<{ signalId: string; reportedAt: Date }>> {
+  return withTenant(db, tenantId, (tx) => listProviderRecoveryReportsTx(tx, incidentId));
+}
+
+async function listProviderRecoveryReportsTx(
+  tx: Tx,
+  incidentId: string,
+): Promise<Array<{ signalId: string; reportedAt: Date }>> {
   const later = alias(signalDispositions, 'later_event');
-  return withTenant(db, tenantId, async (tx) => {
-    const rows = await tx
-      .select({
-        signalId: signalDispositions.correlatedSignalId,
-        reportedAt: signalDispositions.sourceEventAt,
-        decision: signalDispositions.correlationDecision,
-      })
-      .from(signalDispositions)
-      .where(
-        and(
-          eq(signalDispositions.correlatedIncidentId, incidentId),
-          inArray(signalDispositions.correlationDecision, [
-            PROVIDER_RECOVERY_REPORT_DECISION,
-            PROVIDER_RECOVERY_REPORT_ROOT_DECISION,
-          ]),
-          // A newer event for the same monitor supersedes a report, so a re-fired alert no longer
-          // reads as recovered.
-          isNull(signalDispositions.supersededAt),
-          isNotNull(signalDispositions.correlatedSignalId),
-          // Supersession keys on the first alert's monitor, so an edit back to firing whose first
-          // alert differs leaves a root report current. Any later event on the same message retires it.
-          or(
-            ne(signalDispositions.correlationDecision, PROVIDER_RECOVERY_REPORT_ROOT_DECISION),
-            notExists(
-              tx
-                .select({ id: later.id })
-                .from(later)
-                .where(
-                  and(
-                    eq(later.tenantId, signalDispositions.tenantId),
-                    eq(later.source, signalDispositions.source),
-                    eq(later.surface, signalDispositions.surface),
-                    eq(later.channel, signalDispositions.channel),
-                    eq(later.threadId, signalDispositions.threadId),
-                    gt(eventOrder(later), eventOrder(signalDispositions)),
-                  ),
+  const rows = await tx
+    .select({
+      signalId: signalDispositions.correlatedSignalId,
+      reportedAt: signalDispositions.sourceEventAt,
+      decision: signalDispositions.correlationDecision,
+    })
+    .from(signalDispositions)
+    .where(
+      and(
+        eq(signalDispositions.correlatedIncidentId, incidentId),
+        inArray(signalDispositions.correlationDecision, [
+          PROVIDER_RECOVERY_REPORT_DECISION,
+          PROVIDER_RECOVERY_REPORT_ROOT_DECISION,
+        ]),
+        // A newer event for the same monitor supersedes a report, so a re-fired alert no longer
+        // reads as recovered.
+        isNull(signalDispositions.supersededAt),
+        isNotNull(signalDispositions.correlatedSignalId),
+        // Supersession keys on the first alert's monitor, so an edit back to firing whose first
+        // alert differs leaves a root report current. Any later event on the same message retires it.
+        or(
+          ne(signalDispositions.correlationDecision, PROVIDER_RECOVERY_REPORT_ROOT_DECISION),
+          notExists(
+            tx
+              .select({ id: later.id })
+              .from(later)
+              .where(
+                and(
+                  eq(later.tenantId, signalDispositions.tenantId),
+                  eq(later.source, signalDispositions.source),
+                  eq(later.surface, signalDispositions.surface),
+                  eq(later.channel, signalDispositions.channel),
+                  eq(later.threadId, signalDispositions.threadId),
+                  gt(eventOrder(later), eventOrder(signalDispositions)),
                 ),
-            ),
+              ),
           ),
         ),
-      )
-      .orderBy(asc(signalDispositions.sourceEventAt), asc(signalDispositions.id));
-    if (rows.length === 0) return [];
-    const reportedIds = [...new Set(rows.map((row) => row.signalId!))];
-    const signals: RootedSignal[] = await tx
-      .select({
-        id: incidentSignals.id,
-        incidentId: incidentSignals.incidentId,
-        state: incidentSignals.state,
-        surface: incidentSignals.surface,
-        channel: incidentSignals.channel,
-        externalMessageId: incidentSignals.externalMessageId,
-        lastSeenAt: incidentSignals.lastSeenAt,
-      })
-      .from(incidentSignals)
-      .where(
-        or(eq(incidentSignals.incidentId, incidentId), inArray(incidentSignals.id, reportedIds)),
-      )
-      .orderBy(asc(incidentSignals.firstSeenAt), asc(incidentSignals.id));
-    const byId = new Map(signals.map((signal) => [signal.id, signal]));
-    // A root-scoped report edited the alert message and records only the first signal it matched,
-    // so it also covers the incident's other active signals born from that message. A new recovery
-    // message matched by monitor identity covers exactly its linked signal: one message naming
-    // several alerts therefore covers one of them, and confirmation stays hidden (fails closed).
-    return rows.flatMap((row) => {
-      if (row.decision !== PROVIDER_RECOVERY_REPORT_ROOT_DECISION)
-        return [{ signalId: row.signalId!, reportedAt: row.reportedAt }];
-      const reported = byId.get(row.signalId!);
-      const root = reported ? messageRoot(reported) : null;
-      const siblings = signals.filter(
-        (signal) =>
-          signal.id !== row.signalId &&
-          signal.incidentId === incidentId &&
-          signal.state !== 'resolved' &&
-          // A sibling seen after the notice re-fired, so the notice no longer describes it.
-          signal.lastSeenAt <= row.reportedAt &&
-          messageRoot(signal) === root,
-      );
-      return [row.signalId!, ...siblings.map((signal) => signal.id)].map((signalId) => ({
-        signalId,
-        reportedAt: row.reportedAt,
-      }));
-    });
+      ),
+    )
+    .orderBy(asc(signalDispositions.sourceEventAt), asc(signalDispositions.id));
+  if (rows.length === 0) return [];
+  const reportedIds = [...new Set(rows.map((row) => row.signalId!))];
+  const signals: RootedSignal[] = await tx
+    .select({
+      id: incidentSignals.id,
+      incidentId: incidentSignals.incidentId,
+      state: incidentSignals.state,
+      surface: incidentSignals.surface,
+      channel: incidentSignals.channel,
+      externalMessageId: incidentSignals.externalMessageId,
+      lastSeenAt: incidentSignals.lastSeenAt,
+      monitorKey: incidentSignals.monitorKey,
+    })
+    .from(incidentSignals)
+    .where(or(eq(incidentSignals.incidentId, incidentId), inArray(incidentSignals.id, reportedIds)))
+    .orderBy(asc(incidentSignals.firstSeenAt), asc(incidentSignals.id));
+  const byId = new Map(signals.map((signal) => [signal.id, signal]));
+  // A root-scoped report edited the alert message and records only the first signal it matched,
+  // so it also covers the incident's other active signals born from that message. Either scope
+  // covers earlier active signals of the reported monitor: a provider that posts a new message per
+  // episode or re-posts while firing leaves one signal per post, and a later recovery ends them all.
+  // One message naming several monitors covers one of them, so verification waits.
+  return rows.flatMap((row) => {
+    const reported = byId.get(row.signalId!);
+    const root = reported ? messageRoot(reported) : null;
+    const siblings = signals.filter(
+      (signal) =>
+        signal.id !== row.signalId &&
+        signal.incidentId === incidentId &&
+        signal.state !== 'resolved' &&
+        // A sibling seen after the notice re-fired, so the notice no longer describes it.
+        signal.lastSeenAt <= row.reportedAt &&
+        ((row.decision === PROVIDER_RECOVERY_REPORT_ROOT_DECISION &&
+          messageRoot(signal) === root) ||
+          (Boolean(reported?.monitorKey) && signal.monitorKey === reported!.monitorKey)),
+    );
+    return [row.signalId!, ...siblings.map((signal) => signal.id)].map((signalId) => ({
+      signalId,
+      reportedAt: row.reportedAt,
+    }));
   });
+}
+
+/**
+ * Resolves an open incident's active signals when current Slack recovery reports cover all of them.
+ * @param tx - Tenant transaction; takes response-group work, incident, then signal locks.
+ * @param tenantId - Owning tenant.
+ * @param incidentId - Incident the reports were linked to.
+ * @returns The resolved signal ids, and how many signals were active before.
+ */
+export async function resolveReportedSignalsTx(
+  tx: Tx,
+  tenantId: string,
+  incidentId: string,
+): Promise<{ resolved: string[]; active: number; durable: boolean }> {
+  // Recovery verification then checks the service. The clear is recorded as `unknown` provenance:
+  // Slack text is not provider proof, so a `provider_clear` incident still refuses it and a
+  // `verified_recovery` incident resolves only after verification. Partial coverage changes nothing.
+  await lockResponseGroupWorkTx(tx, tenantId, incidentId);
+  const [incident] = await tx
+    .select({ status: incidents.status, archivedAt: incidents.archivedAt })
+    .from(incidents)
+    .where(eq(incidents.id, incidentId))
+    .limit(1)
+    .for('update');
+  if (!incident || incident.archivedAt || !['open', 'mitigated'].includes(incident.status))
+    return { resolved: [], active: 0, durable: false };
+  const active = await tx
+    .select({
+      id: incidentSignals.id,
+      lastSeenAt: incidentSignals.lastSeenAt,
+      surface: incidentSignals.surface,
+      state: incidentSignals.state,
+      dataSourceId: incidentSignals.dataSourceId,
+    })
+    .from(incidentSignals)
+    .where(and(eq(incidentSignals.incidentId, incidentId), ne(incidentSignals.state, 'resolved')))
+    .orderBy(asc(incidentSignals.id))
+    .for('update');
+  // Only advisory Slack signals: a `firing` signal was established by a connector or the provider
+  // and only provider or connector evidence may clear it.
+  const durable = active.some(
+    (signal) =>
+      signal.surface !== 'slack' || signal.state !== 'unknown' || signal.dataSourceId !== null,
+  );
+  if (durable) return { resolved: [], active: active.length, durable };
+  const reportedAt = new Map<string, Date>();
+  for (const report of await listProviderRecoveryReportsTx(tx, incidentId)) {
+    const seen = reportedAt.get(report.signalId);
+    if (!seen || report.reportedAt > seen) reportedAt.set(report.signalId, report.reportedAt);
+  }
+  // A signal seen after its report fired again, so the report no longer describes it.
+  if (
+    active.length === 0 ||
+    active.some((signal) => {
+      const at = reportedAt.get(signal.id);
+      return !at || at < signal.lastSeenAt;
+    })
+  )
+    return { resolved: [], active: active.length, durable };
+  for (const signal of active)
+    await tx
+      .update(incidentSignals)
+      .set({
+        state: 'resolved',
+        clearProvenance: 'unknown',
+        providerClearGeneration: null,
+        lastEventType: 'resolved',
+        resolvedAt: reportedAt.get(signal.id)!,
+        version: sql`${incidentSignals.version} + 1`,
+      })
+      .where(eq(incidentSignals.id, signal.id));
+  return { resolved: active.map((signal) => signal.id), active: active.length, durable };
+}
+
+/**
+ * Reopens Slack signals that a recovery report resolved when their message fires again.
+ * @param tx - Tenant transaction; takes response-group work, incident, then signal locks.
+ * @param tenantId - Owning tenant.
+ * @param incidentId - Incident that owns the signals.
+ * @param signalIds - Signals born from the edited message.
+ * @param refiredAt - Time of the firing edit.
+ * @returns The reopened signal ids.
+ */
+export async function reopenReportedSignalsTx(
+  tx: Tx,
+  tenantId: string,
+  incidentId: string,
+  signalIds: string[],
+  refiredAt: Date,
+): Promise<string[]> {
+  if (signalIds.length === 0) return [];
+  // Only while the incident is open. The version bump breaks the signal fence, so a queued or
+  // running recovery verification stops instead of resolving the incident.
+  await lockResponseGroupWorkTx(tx, tenantId, incidentId);
+  const [incident] = await tx
+    .select({ status: incidents.status, archivedAt: incidents.archivedAt })
+    .from(incidents)
+    .where(eq(incidents.id, incidentId))
+    .limit(1)
+    .for('update');
+  if (!incident || incident.archivedAt || !['open', 'mitigated'].includes(incident.status))
+    return [];
+  const reopened = await tx
+    .update(incidentSignals)
+    .set({
+      // Slack-born signals are advisory, so they reopen as `unknown`, never `firing`.
+      state: 'unknown',
+      clearProvenance: null,
+      lastEventType: 'refired',
+      resolvedAt: null,
+      // Any report older than the re-fire no longer covers the signal.
+      lastSeenAt: sql`greatest(${incidentSignals.lastSeenAt}, ${refiredAt.toISOString()}::timestamptz)`,
+      version: sql`${incidentSignals.version} + 1`,
+    })
+    .where(
+      and(
+        eq(incidentSignals.incidentId, incidentId),
+        inArray(incidentSignals.id, signalIds),
+        eq(incidentSignals.surface, 'slack'),
+        eq(incidentSignals.state, 'resolved'),
+        eq(incidentSignals.clearProvenance, 'unknown'),
+      ),
+    )
+    .returning({ id: incidentSignals.id });
+  return reopened.map((signal) => signal.id);
 }
