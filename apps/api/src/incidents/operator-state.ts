@@ -78,7 +78,8 @@ function requiredDecision(
 ): string {
   if (incident.attentionReason === 'approval_pending')
     return 'Approve or deny the pending proposed action.';
-  // Slack text cannot clear a signal, so a reported recovery still needs an operator decision.
+  // A report that still leaves an active signal (a provider-verified alert, or one recorded before
+  // reports started verification) has queued nothing, so it needs an operator decision.
   if (providerReportedRecovery(recovery))
     return 'Provider reported recovery in Slack. Confirm resolution.';
   switch (incident.attentionReason) {

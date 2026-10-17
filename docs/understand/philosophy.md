@@ -98,8 +98,8 @@ annotated and reviewed. A filter nobody can audit is a filter nobody should trus
 
 Today, a recognised firing, warning, or predictive provider alert in a subscribed channel cannot be
 discarded as not worth investigating. If the model tries, a structural check opens a low-severity
-investigation anyway. Human chatter and ordinary bot status can still be filtered out, and Slack
-recovery notices are always logged without clearing anything.
+investigation anyway. Human chatter and ordinary bot status can still be filtered out. A Slack
+recovery notice never resolves an incident by itself: at most it starts recovery verification.
 
 ### 4. Aggregate, tag, analyse
 

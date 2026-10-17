@@ -170,6 +170,7 @@ describe('grouped signal transaction', () => {
       },
       // The advisory recovery report line is expected; lifecycle writes are not.
       appendOnce: realHub.appendOnce.bind(realHub),
+      appendTxOnce: realHub.appendTxOnce.bind(realHub),
       publishAppended,
     };
     const insertRecoveryTx = vi.fn();
@@ -248,7 +249,13 @@ describe('grouped signal transaction', () => {
     ).toEqual([{ author: 'system', kind: 'status' }]);
     expect(insertRecoveryTx).not.toHaveBeenCalled();
     expect(insertReassessmentTx).not.toHaveBeenCalled();
-    expect(publishAppended).not.toHaveBeenCalled();
+    // Firing signals are provider-established, so the report stays advisory.
+    expect(publishAppended).toHaveBeenCalledTimes(1);
+    expect(publishAppended).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining('Provider-verified alerts stay active'),
+      }),
+    );
     expect(publishJob).not.toHaveBeenCalled();
   });
 });

@@ -268,6 +268,7 @@ export async function listSignalsByExternalRoot(
  * @param channel - Slack channel containing the observations.
  * @param producerId - Authenticated Slack producer identity.
  * @param monitorKeys - Stable monitor identities to match.
+ * @param options - `includeResolved` also returns resolved episodes; the caller checks the incident.
  */
 export async function listActiveSlackSignalsByMonitorKeys(
   db: Executor,
@@ -275,6 +276,7 @@ export async function listActiveSlackSignalsByMonitorKeys(
   channel: string,
   producerId: string,
   monitorKeys: string[],
+  options: { includeResolved?: boolean } = {},
 ) {
   const keys = [...new Set(monitorKeys.filter(Boolean))].slice(0, 100);
   if (keys.length === 0) return [];
@@ -286,8 +288,9 @@ export async function listActiveSlackSignalsByMonitorKeys(
         and(
           eq(incidentSignals.surface, 'slack'),
           eq(incidentSignals.channel, channel),
-          // Slack-born signals are stored as advisory `unknown`, never `firing`.
-          ne(incidentSignals.state, 'resolved'),
+          // Slack-born signals are stored as advisory `unknown`, never `firing`. A repeat may also match
+          // a resolved one: its incident can still be open while recovery is verified.
+          options.includeResolved ? undefined : ne(incidentSignals.state, 'resolved'),
           inArray(incidentSignals.monitorKey, keys),
           like(incidentSignals.lastEventKey, `%:producer:${producerId}`),
           inArray(incidentSignals.incidentId, visibleIncidentIds(tx)),

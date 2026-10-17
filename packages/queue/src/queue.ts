@@ -109,7 +109,7 @@ export class Queue extends QueueConsumer {
       availableAt?: Date;
       scheduleReason?: string;
     } = {},
-  ): Promise<{ jobId: string | null }> {
+  ): Promise<{ jobId: string | null; coalesced?: true }> {
     return this.writer.insertRecoveryTx(
       tx,
       tenantId,
