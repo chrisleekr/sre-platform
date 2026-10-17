@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, expect, test, vi } from 'vitest';
-import { runConsumerLoop, superviseConsumer } from '../consumer-loop';
+import { drainConsumers, runConsumerLoop, superviseConsumer } from '../consumer-loop';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -65,7 +65,27 @@ test('production wiring runs triage in its own supervised loop, not the shared o
   expect(source).toContain(
     "superviseConsumer('triage', () => runConsumerLoop(() => worker.tick()))",
   );
-  const shared = source.slice(source.indexOf('for (;;) {'));
+  const shared = source.slice(source.indexOf('while (!stopping()) {'));
   expect(shared).toContain("pollQueue.process('poll-worker'");
   expect(shared).not.toContain('worker.tick');
+});
+
+test('after shutdown a loop finishes its current turn and claims nothing more', async () => {
+  let stopped = false;
+  let finish!: () => void;
+  const investigation = new Promise<number>((resolve) => (finish = () => resolve(1)));
+  const turn = vi.fn<() => Promise<number>>().mockReturnValueOnce(investigation);
+  superviseConsumer('triage', () => runConsumerLoop(turn, 1000, () => stopped), vi.fn());
+  const drained = drainConsumers();
+  stopped = true;
+  finish();
+  await drained;
+  expect(turn).toHaveBeenCalledTimes(1);
+});
+
+test('production wiring stops claiming work on SIGTERM and drains before exiting', () => {
+  const source = readFileSync(new URL('../index.ts', import.meta.url), 'utf8');
+  expect(source).toContain('const stopping = stopOnSignal();');
+  const tail = source.slice(source.indexOf('while (!stopping()) {'));
+  expect(tail).toContain('await drainAndExit([scheduler, topology.scheduler, slo.scheduler]);');
 });

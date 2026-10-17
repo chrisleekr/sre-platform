@@ -275,4 +275,22 @@ describe('per-attempt processing deadline', () => {
       RangeError,
     );
   });
+
+  test('a turn never exceeds count when a reclaimed entry and a new entry are both waiting', async () => {
+    const enqueue = () =>
+      __fixture.q.enqueue({ tenantId: __fixture.tenant, type: __fixture.TYPE, payload: {} });
+    const idle = await enqueue();
+    await __fixture.q.process('c1', async () => {
+      throw new Error('leave it pending');
+    });
+    const fresh = await enqueue();
+    const handled: string[] = [];
+    const record = async (job: { id: string }) => {
+      handled.push(job.id);
+    };
+    expect(await __fixture.q.process('c1', record, { count: 1, idleMs: 0 })).toBe(1);
+    expect(handled).toHaveLength(1);
+    expect(await __fixture.q.process('c1', record, { count: 1, idleMs: 0 })).toBe(1);
+    expect(handled).toEqual(expect.arrayContaining([idle, fresh]));
+  });
 });

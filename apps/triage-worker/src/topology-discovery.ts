@@ -214,6 +214,6 @@ export function makeTopologyDiscoveryRuntime(deps: {
 export async function runTopologyDiscoveryConsumer(
   queue: Pick<Queue, 'process'>,
   handler: (job: Job) => Promise<void>,
-): Promise<never> {
+): Promise<void> {
   return runConsumerLoop(() => queue.process('topology-worker', handler, { count: 1 }));
 }

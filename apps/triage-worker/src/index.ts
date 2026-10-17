@@ -60,9 +60,11 @@ import { makeSubjectSyncRecovery } from './subject-sync-recovery';
 import { runSignalMaintenance } from './signal-maintenance';
 import { makeSignalEvaluationHandler } from './signal-evaluation';
 import { makeTopologyDiscoveryRuntime, runTopologyDiscoveryConsumer } from './topology-discovery';
-import { runConsumerLoop, superviseConsumer } from './consumer-loop';
+import { drainAndExit, runConsumerLoop, stopOnSignal, superviseConsumer } from './consumer-loop';
 import { makePlatformTools } from './platform-tools';
 
+// Before the first await: a SIGTERM during startup is otherwise ignored under PID 1.
+const stopping = stopOnSignal();
 const adminDb = makeDb(adminUrl());
 // A dedicated pool prevents routing-fence transactions from starving their callbacks.
 const coordinationDb = makeDb(adminUrl());
@@ -358,6 +360,14 @@ const recoverSubjectSync = makeSubjectSyncRecovery(redis, adminDb.db, appDb.db, 
 const classifyReconcileGuard = makeRedisWindowGuard(redis, 'classify:recon');
 const runbookReconcileGuard = makeRedisWindowGuard(redis, 'runbook:recon');
 const pollReconcileGuard = makeRedisWindowGuard(redis, 'poll:recon');
+const streamReconcilers = [
+  [classifyReconcileGuard, () => classifyQueue.reconcile()],
+  [runbookReconcileGuard, () => runbookQueue.reconcile()],
+  [
+    pollReconcileGuard,
+    async () => (await pollQueue.reconcile()) + (await topologyQueue.reconcile()),
+  ],
+] as const;
 // One replica per window applies the current platform archive policy.
 const AUTOARCHIVE_SWEEP_MS = 15 * 60_000;
 const autoArchiveGuard = makeRedisWindowGuard(redis, 'incident:autoarchive');
@@ -368,18 +378,26 @@ const signalMaintenanceGuard = makeRedisWindowGuard(redis, 'signals:maintenance'
 const SIGNAL_MAINTENANCE_MS = 5 * 60_000;
 
 // Triage and topology have their own loops: a run takes minutes and would stall every stream here.
-for (;;) {
+while (!stopping()) {
   const polled = await pollQueue.process('poll-worker', async (job) => {
     // Drain discovery jobs queued before stream isolation without running them in the poll loop.
     if (job.type === 'topology.discover')
       await topologyQueue.enqueue({ tenantId: job.tenantId, type: job.type, payload: job.payload });
     else await pollHandler(job);
   });
+  // Checked before each stream: a SIGTERM mid-iteration must not start more work on the old code.
+  if (stopping()) break;
   const classified = await classifyQueue.process('classify-worker', classifyStreamHandler);
-  const generated = await runbookQueue.process('runbook-worker', generationStreamHandler);
+  if (stopping()) break;
+  // One per turn: every runbook-stream job is an LLM generation, too slow to batch past SIGTERM.
+  const generated = await runbookQueue.process('runbook-worker', generationStreamHandler, {
+    count: 1,
+  });
+  if (stopping()) break;
   // Bounded per turn so a slow metrics backend cannot starve the other streams. No reconcile
   // driver: a lost evaluation is covered by the next window's fan-out.
   const evaluated = await slo.queue.process('slo-worker', slo.handler, { count: 2 });
+  if (stopping()) break;
   // Coarse, guarded triage reconcile so lost-XADD incidents are recovered exactly once per window.
   await runOncePerWindow(
     triageReconcileGuard,
@@ -406,24 +424,8 @@ for (;;) {
     RECOVERY_DUE_DISPATCH_MS,
     Date.now(),
   );
-  await runOncePerWindow(
-    classifyReconcileGuard,
-    () => classifyQueue.reconcile(),
-    TRIAGE_RECONCILE_MS,
-    Date.now(),
-  );
-  await runOncePerWindow(
-    runbookReconcileGuard,
-    () => runbookQueue.reconcile(),
-    TRIAGE_RECONCILE_MS,
-    Date.now(),
-  );
-  await runOncePerWindow(
-    pollReconcileGuard,
-    async () => (await pollQueue.reconcile()) + (await topologyQueue.reconcile()),
-    TRIAGE_RECONCILE_MS,
-    Date.now(),
-  );
+  for (const [guard, reconcile] of streamReconcilers)
+    await runOncePerWindow(guard, reconcile, TRIAGE_RECONCILE_MS, Date.now());
   await runOncePerWindow(
     signalMaintenanceGuard,
     () =>
@@ -494,3 +496,5 @@ for (;;) {
   if (polled === 0 && classified === 0 && generated === 0 && evaluated === 0)
     await new Promise((r) => setTimeout(r, 1000));
 }
+
+await drainAndExit([scheduler, topology.scheduler, slo.scheduler]);

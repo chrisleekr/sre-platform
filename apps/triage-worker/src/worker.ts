@@ -69,11 +69,15 @@ export class TriageWorker {
   }
 
   /**
-   * Process one queue batch.
+   * Process one queued job, reclaimed or new. One per turn, because a run takes minutes and the
+   * shutdown check runs only between turns: a larger batch would keep starting investigations
+   * after SIGTERM.
    *
    * @param consumer - Queue consumer identity.
    */
   tick(consumer = 'triage-worker'): Promise<number> {
-    return this.runtime.deps.queue.process(consumer, (job, ctx) => this.handle(job, ctx));
+    return this.runtime.deps.queue.process(consumer, (job, ctx) => this.handle(job, ctx), {
+      count: 1,
+    });
   }
 }
