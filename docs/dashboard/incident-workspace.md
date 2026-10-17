@@ -172,8 +172,16 @@ retries an uncertain write or a rate-limited request. Results stay in the incide
 
 An active workspace member can ask to close or reopen the current case in the conversation, for
 example, “Please close this incident.” The platform records an attributed lifecycle receipt after
-the change commits. Advice such as “Should we close?”, quoted instructions, conditional requests,
-and references to another case do not authorize a change. The lifecycle controls remain available.
+the change commits. Advice such as “Should we close?”, quoted instructions, other conditional
+requests, and references to another case do not authorize a change. The lifecycle controls remain
+available.
+
+A request to close only once recovery is confirmed, such as “Recheck and close if resolved”, starts
+recovery verification instead. Slack-reported alerts with a recorded recovery report are resolved,
+and the case resolves only if verification confirms recovery. When verification cannot start, for
+example because a provider-verified alert is still active or an alert has no recovery report, the
+platform says why and runs a check instead; nothing is resolved. A clarifying question never offers
+to act on your reply. Restate the request instead.
 
 Closing a case does not verify recovery, silence a monitor, or discard evidence. A later question
 continues the conversation without reopening it. New responder context arriving during a run is
