@@ -234,8 +234,9 @@ export function makeGitLabTools(
         name: 'get_file',
         description:
           'Read one repository file at a branch, tag, or commit. The content is Base64 encoded by GitLab. ' +
-          'The response includes content_sha256 (SHA-256 of the file bytes), blob_id and last_commit_id, so ' +
-          'calling it at two revisions shows whether the file changed and which commit last touched it, without decoding.',
+          'The response includes blob_id and last_commit_id: the same blob_id at two revisions means identical ' +
+          'bytes, and last_commit_id names the commit that last touched the file. content_sha256 hashes text that ' +
+          'GitLab may have converted to UTF-8, so it does not prove byte equality.',
         inputSchema: z.object({
           project: projectSchema,
           path: z.string(),
