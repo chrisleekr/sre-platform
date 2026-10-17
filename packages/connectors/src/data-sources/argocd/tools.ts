@@ -117,7 +117,8 @@ export function makeArgoCdTools(
       description:
         'Get one application by name: projected investigation state including sync, health, ' +
         'operationState (last sync result), conditions, and revision history. appNamespace is ' +
-        'needed only when the name is in several namespaces.',
+        'needed only when the name is in several namespaces; ' +
+        "if a call without it fails, call list_applications and retry with the application's namespace.",
       inputSchema: z.object({ name: z.string(), appNamespace: z.string().optional() }),
       run: async ({ name, appNamespace }, call) => {
         const c = await client(call);
@@ -138,7 +139,8 @@ export function makeArgoCdTools(
       description:
         'Get the live resource tree for an application: every managed Kubernetes resource with its ' +
         'health and sync status (find the Degraded Deployment/Pod). No manifest bodies are returned. ' +
-        'appNamespace is needed only when the name is in several namespaces.',
+        'appNamespace is needed only when the name is in several namespaces; ' +
+        "if a call without it fails, call list_applications and retry with the application's namespace.",
       inputSchema: z.object({ name: z.string(), appNamespace: z.string().optional() }),
       run: async ({ name, appNamespace }, call) => {
         const c = await client(call);
@@ -155,7 +157,8 @@ export function makeArgoCdTools(
       description:
         'Get the live-vs-desired drift diff for an application (what has drifted from Git, the "why is ' +
         'it OutOfSync" detail). Secret and ConfigMap values and container env values are redacted. ' +
-        'appNamespace is needed only when the name is in several namespaces.',
+        'appNamespace is needed only when the name is in several namespaces; ' +
+        "if a call without it fails, call list_applications and retry with the application's namespace.",
       inputSchema: z.object({ name: z.string(), appNamespace: z.string().optional() }),
       run: async ({ name, appNamespace }, call) => {
         const c = await client(call);
@@ -175,7 +178,8 @@ export function makeArgoCdTools(
       name: 'get_application_events',
       description:
         'List Kubernetes events for an application (why a sync failed, image pull errors, etc.). ' +
-        'appNamespace is needed only when the name is in several namespaces.',
+        'appNamespace is needed only when the name is in several namespaces; ' +
+        "if a call without it fails, call list_applications and retry with the application's namespace.",
       inputSchema: z.object({ name: z.string(), appNamespace: z.string().optional() }),
       run: async ({ name, appNamespace }, call) => {
         const c = await client(call);
@@ -193,7 +197,8 @@ export function makeArgoCdTools(
         'Read pod logs for an application (bounded to the last 64K characters, default last 100 ' +
         'lines). Omit podName to aggregate across the app pods; optional container, namespace (the ' +
         'resource namespace), and sinceSeconds. appNamespace is needed only when the name is ' +
-        'in several namespaces.',
+        'in several namespaces; ' +
+        "if a call without it fails, call list_applications and retry with the application's namespace.",
       inputSchema: z.object({
         name: z.string(),
         podName: z.string().optional(),

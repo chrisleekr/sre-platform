@@ -91,7 +91,7 @@ export function ArgoCdSetupSteps({ view }: { view: ArgoCdWizardViewModel }) {
             />
           </label>
           <p id="argocd-web-url-help" className="text-xs text-ink-muted">
-            The HTTPS address responders open in a browser. Incident posts link applications here.
+            The HTTPS address responders open in a browser. Links to Argo CD applications use it.
             Leave blank when the server URL above is already that address. The platform never sends
             requests to it.
           </p>
