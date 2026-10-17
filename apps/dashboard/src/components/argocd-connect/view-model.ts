@@ -32,6 +32,9 @@ export interface ArgoCdWizardViewModel {
   setProjects: Dispatch<SetStateAction<ProjectDraft[]>>;
   labelSelector: string;
   setLabelSelector: Dispatch<SetStateAction<string>>;
+  webUrl: string;
+  setWebUrl: Dispatch<SetStateAction<string>>;
+  webUrlError: string | null;
   busyProject: number | null;
   busy: boolean;
   submitted: boolean;

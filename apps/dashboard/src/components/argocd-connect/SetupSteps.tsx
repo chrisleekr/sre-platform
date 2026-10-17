@@ -31,6 +31,9 @@ export function ArgoCdSetupSteps({ view }: { view: ArgoCdWizardViewModel }) {
     setProjects,
     labelSelector,
     setLabelSelector,
+    webUrl,
+    setWebUrl,
+    webUrlError,
     error,
     continueFromServer,
     continueFromProjects,
@@ -72,6 +75,29 @@ export function ArgoCdSetupSteps({ view }: { view: ArgoCdWizardViewModel }) {
           {baseUrlError && (
             <p id="argocd-url-error" role="alert" className="text-sm text-critical">
               {baseUrlError}
+            </p>
+          )}
+          <label className="text-sm font-medium">
+            Optional browser URL for links
+            <input
+              type="url"
+              aria-invalid={Boolean(webUrlError)}
+              aria-describedby={
+                webUrlError ? 'argocd-web-url-help argocd-web-url-error' : 'argocd-web-url-help'
+              }
+              value={webUrl}
+              onChange={(event) => setWebUrl(event.target.value)}
+              className="sre-field mt-1 min-w-0 w-full"
+            />
+          </label>
+          <p id="argocd-web-url-help" className="text-xs text-ink-muted">
+            The HTTPS address responders open in a browser. Incident posts link applications here.
+            Leave blank when the server URL above is already that address. The platform never sends
+            requests to it.
+          </p>
+          {webUrlError && (
+            <p id="argocd-web-url-error" role="alert" className="text-sm text-critical">
+              {webUrlError}
             </p>
           )}
           {usesHttp && (

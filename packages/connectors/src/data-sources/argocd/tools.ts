@@ -20,7 +20,41 @@ import {
   scrubManagedResources,
   summarizeApp,
 } from './projection';
-import { readApplications, readScopedApplication } from './verification';
+import {
+  readApplications,
+  readScopedApplication,
+  resolveApplicationNamespace,
+} from './verification';
+
+function httpsBase(value: unknown): URL | undefined {
+  if (typeof value !== 'string' || !value) return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !url.username && !url.password ? url : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Browser URL for one application, built from operator-entered settings rather than the app's
+ * external-link annotation, which the application's own manifest controls. The optional `webUrl`
+ * wins, because the server URL is often an in-cluster address. An http server URL is confined to
+ * private networks, so it is not offered as a link.
+ * @param settings - Connector settings holding the operator-entered `webUrl` and `baseUrl`.
+ * @param name - Application name.
+ * @param namespace - Application namespace.
+ */
+export function applicationWebUrl(
+  settings: Record<string, unknown>,
+  name: string,
+  namespace: string,
+): string | undefined {
+  const base = httpsBase(settings.webUrl) ?? httpsBase(settings.baseUrl);
+  if (!base) return undefined;
+  const prefix = base.pathname.replace(/\/+$/, '');
+  return `${base.origin}${prefix}/applications/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`;
+}
 
 export function atool<S extends z.ZodType>(def: {
   name: string;
@@ -51,6 +85,18 @@ export function makeArgoCdTools(
     ...(await connect(config, lookup)),
     signal: call?.signal,
   });
+  const namespaceFor = async (
+    c: Awaited<ReturnType<typeof client>>,
+    app: string,
+    appNamespace: string | undefined,
+  ) =>
+    resolveApplicationNamespace(
+      config,
+      fetchImpl,
+      c,
+      app,
+      appNamespace ? validateName('appNamespace', appNamespace) : undefined,
+    );
 
   return [
     atool({
@@ -71,14 +117,20 @@ export function makeArgoCdTools(
       description:
         'Get one application by name: projected investigation state including sync, health, ' +
         'operationState (last sync result), conditions, and revision history. appNamespace is ' +
-        'required when Applications-in-any-namespace is enabled.',
+        'needed only when the name is in several namespaces.',
       inputSchema: z.object({ name: z.string(), appNamespace: z.string().optional() }),
       run: async ({ name, appNamespace }, call) => {
         const c = await client(call);
         const app = validateName('name', name);
-        const namespace = appNamespace ? validateName('appNamespace', appNamespace) : undefined;
+        const namespace = await namespaceFor(c, app, appNamespace);
         const data = await readScopedApplication(config, fetchImpl, c, app, namespace);
-        return projectApplicationForInvestigation(data);
+        const projected = projectApplicationForInvestigation(data);
+        const metadata = projected.metadata as { name?: string; namespace?: string };
+        const webUrl =
+          metadata.name && metadata.namespace
+            ? applicationWebUrl(config.settings, metadata.name, metadata.namespace)
+            : undefined;
+        return webUrl ? { ...projected, webUrl } : projected;
       },
     }),
     atool({
@@ -86,12 +138,12 @@ export function makeArgoCdTools(
       description:
         'Get the live resource tree for an application: every managed Kubernetes resource with its ' +
         'health and sync status (find the Degraded Deployment/Pod). No manifest bodies are returned. ' +
-        'appNamespace is required when Applications-in-any-namespace is enabled.',
+        'appNamespace is needed only when the name is in several namespaces.',
       inputSchema: z.object({ name: z.string(), appNamespace: z.string().optional() }),
       run: async ({ name, appNamespace }, call) => {
         const c = await client(call);
         const app = validateName('name', name);
-        const namespace = appNamespace ? validateName('appNamespace', appNamespace) : undefined;
+        const namespace = await namespaceFor(c, app, appNamespace);
         await readScopedApplication(config, fetchImpl, c, app, namespace);
         return aget(fetchImpl, c, `/api/v1/applications/${encodeURIComponent(app)}/resource-tree`, {
           appNamespace: namespace,
@@ -103,12 +155,12 @@ export function makeArgoCdTools(
       description:
         'Get the live-vs-desired drift diff for an application (what has drifted from Git, the "why is ' +
         'it OutOfSync" detail). Secret and ConfigMap values and container env values are redacted. ' +
-        'appNamespace is required when Applications-in-any-namespace is enabled.',
+        'appNamespace is needed only when the name is in several namespaces.',
       inputSchema: z.object({ name: z.string(), appNamespace: z.string().optional() }),
       run: async ({ name, appNamespace }, call) => {
         const c = await client(call);
         const app = validateName('name', name);
-        const namespace = appNamespace ? validateName('appNamespace', appNamespace) : undefined;
+        const namespace = await namespaceFor(c, app, appNamespace);
         await readScopedApplication(config, fetchImpl, c, app, namespace);
         const data = await aget(
           fetchImpl,
@@ -123,12 +175,12 @@ export function makeArgoCdTools(
       name: 'get_application_events',
       description:
         'List Kubernetes events for an application (why a sync failed, image pull errors, etc.). ' +
-        'appNamespace is required when Applications-in-any-namespace is enabled.',
+        'appNamespace is needed only when the name is in several namespaces.',
       inputSchema: z.object({ name: z.string(), appNamespace: z.string().optional() }),
       run: async ({ name, appNamespace }, call) => {
         const c = await client(call);
         const app = validateName('name', name);
-        const namespace = appNamespace ? validateName('appNamespace', appNamespace) : undefined;
+        const namespace = await namespaceFor(c, app, appNamespace);
         await readScopedApplication(config, fetchImpl, c, app, namespace);
         return aget(fetchImpl, c, `/api/v1/applications/${encodeURIComponent(app)}/events`, {
           appNamespace: namespace,
@@ -140,8 +192,8 @@ export function makeArgoCdTools(
       description:
         'Read pod logs for an application (bounded to the last 64K characters, default last 100 ' +
         'lines). Omit podName to aggregate across the app pods; optional container, namespace (the ' +
-        'resource namespace), and sinceSeconds. appNamespace is required when ' +
-        'Applications-in-any-namespace is enabled.',
+        'resource namespace), and sinceSeconds. appNamespace is needed only when the name is ' +
+        'in several namespaces.',
       inputSchema: z.object({
         name: z.string(),
         podName: z.string().optional(),
@@ -157,9 +209,7 @@ export function makeArgoCdTools(
       ) => {
         const c = await client(call);
         const app = validateName('name', name);
-        const applicationNamespace = appNamespace
-          ? validateName('appNamespace', appNamespace)
-          : undefined;
+        const applicationNamespace = await namespaceFor(c, app, appNamespace);
         await readScopedApplication(config, fetchImpl, c, app, applicationNamespace);
         // follow is forced off: a streaming follow never terminates for a request/response tool.
         const body = await atext(

@@ -59,6 +59,36 @@ export async function readApplications(
   );
 }
 
+/**
+ * The namespace to address an application by. With Applications-in-any-namespace the API needs one,
+ * and a caller that only knows the name (a model reading an alert) would otherwise always fail, with
+ * an error the model never sees. A name that is unique within the scope resolves to its namespace;
+ * an ambiguous name still requires the caller to choose.
+ */
+export async function resolveApplicationNamespace(
+  config: ConnectorConfig,
+  fetchImpl: FetchLike,
+  client: ArgoClient,
+  name: string,
+  appNamespace?: string,
+): Promise<string | undefined> {
+  if (appNamespace || config.settings.applicationsInAnyNamespace !== true) return appNamespace;
+  const namespaces = new Set<string>();
+  for (const application of await readApplications(config, fetchImpl, client)) {
+    const metadata = obj(obj(application).metadata);
+    const namespace = str(metadata.namespace);
+    if (str(metadata.name) === name && namespace) namespaces.add(namespace);
+  }
+  if (namespaces.size === 0)
+    throw new ArgoApiError('application is outside the configured scope', 'permission_denied');
+  if (namespaces.size > 1)
+    throw new ArgoApiError(
+      'application name is in several namespaces; pass appNamespace',
+      'permission_denied',
+    );
+  return [...namespaces][0];
+}
+
 export async function readScopedApplication(
   config: ConnectorConfig,
   fetchImpl: FetchLike,

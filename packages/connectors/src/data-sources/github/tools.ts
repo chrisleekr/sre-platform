@@ -250,7 +250,8 @@ export function makeGitHubTools(
       name: 'compare_commits',
       description:
         'Compare two revisions in one repository to identify commits and files changed between the ' +
-        'last known-good and incident revisions.',
+        'last known-good and incident revisions. A large comparison omits patches or files; to check ' +
+        'one file, call get_content at each revision instead.',
       inputSchema: z.object({ repo: z.string(), base: z.string(), head: z.string() }),
       run: async ({ repo, base, head }, call) => {
         const { owner, repo: name } = parseRepo(repo);
@@ -289,7 +290,8 @@ export function makeGitHubTools(
       name: 'get_content',
       description:
         'Read one file or directory at an optional revision from a resolved repository. File content ' +
-        'is bounded to the provider response limits and remains read-only.',
+        'is bounded to the provider response limits and remains read-only. A file response includes ' +
+        'sha, the git blob SHA: the same sha at two revisions means identical bytes.',
       inputSchema: z.object({ repo: z.string(), path: z.string(), ref: z.string().optional() }),
       run: async ({ repo, path, ref }, call) => {
         const { owner, repo: name } = parseRepo(repo);

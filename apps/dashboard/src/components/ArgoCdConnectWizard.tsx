@@ -1,5 +1,5 @@
 import { requestErrorMessage } from '../lib/request-error';
-import { argoCdUrlError } from '@sre/contracts';
+import { argoCdUrlError, argoCdWebUrlError } from '@sre/contracts';
 import { useState } from 'react';
 import type { ArgoCdAccessResult, ArgoCdSettings, ArgoCdTestResult } from '../lib/connectors';
 import { SetupDialog } from './SetupDialog';
@@ -120,6 +120,8 @@ export function ArgoCdConnectWizard({
       : [newProject()],
   );
   const [labelSelector, setLabelSelector] = useState(initialSettings?.labelSelector ?? '');
+  const [webUrl, setWebUrl] = useState(initialSettings?.webUrl ?? '');
+  const webUrlError = serverSubmitted ? argoCdWebUrlError(webUrl) : null;
   const [busyProject, setBusyProject] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -145,6 +147,10 @@ export function ArgoCdConnectWizard({
     }
     setServerSubmitted(true);
     if (argoCdUrlError(baseUrl)) {
+      setError('');
+      return;
+    }
+    if (argoCdWebUrlError(webUrl)) {
       setError('');
       return;
     }
@@ -259,6 +265,7 @@ export function ArgoCdConnectWizard({
             applicationsInAnyNamespace,
             projects: normalizedProjects,
             ...(labelSelector.trim() ? { labelSelector: labelSelector.trim() } : {}),
+            ...(webUrl.trim() ? { webUrl: webUrl.trim() } : {}),
             ...(!usesHttp && trust === 'ca'
               ? caCert.trim()
                 ? { caCert: caCert.trim() }
@@ -341,6 +348,9 @@ export function ArgoCdConnectWizard({
     setProjects,
     labelSelector,
     setLabelSelector,
+    webUrl,
+    setWebUrl,
+    webUrlError,
     busyProject,
     busy,
     submitted,

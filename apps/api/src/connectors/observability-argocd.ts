@@ -1,6 +1,7 @@
 import { PromCreds, alertmanagerEventToken, alertmanagerSmeeUrl } from '@sre/connectors';
 import {
   argoCdUrlError,
+  argoCdWebUrlError,
   EPISODE_GROUPING_WINDOW_DEFAULT_SEC,
   EPISODE_GROUPING_WINDOW_MAX_SEC,
   EPISODE_GROUPING_WINDOW_MIN_SEC,
@@ -358,9 +359,13 @@ export function parseArgoCdSettings(input: unknown): ArgoCdSettings | null {
       !ARGO_SEGMENT_RE.test(accessRole))
   )
     return null;
+  if (argoCdWebUrlError(raw.webUrl)) return null;
+  const web =
+    typeof raw.webUrl === 'string' && raw.webUrl.trim() ? new URL(raw.webUrl.trim()) : null;
   const path = url.pathname.replace(/\/+$/, '');
   return {
     baseUrl: `${url.origin}${path}`,
+    ...(web ? { webUrl: `${web.origin}${web.pathname.replace(/\/+$/, '')}` } : {}),
     ...(accessRole ? { accessRole } : {}),
     applicationsInAnyNamespace: anyNamespace,
     projects,

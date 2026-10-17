@@ -263,6 +263,7 @@ export interface ArgoCdProjectBinding {
 
 export interface ArgoCdSettings {
   baseUrl: string;
+  webUrl?: string;
   accessRole?: string;
   applicationsInAnyNamespace: boolean;
   projects: ArgoCdProjectBinding[];
