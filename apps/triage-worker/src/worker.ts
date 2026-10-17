@@ -69,8 +69,9 @@ export class TriageWorker {
   }
 
   /**
-   * Process one queued job. One per turn, because a run takes minutes and the shutdown check runs
-   * only between turns: a larger batch would keep starting investigations after SIGTERM.
+   * Process one queued job, reclaimed or new. One per turn, because a run takes minutes and the
+   * shutdown check runs only between turns: a larger batch would keep starting investigations
+   * after SIGTERM.
    *
    * @param consumer - Queue consumer identity.
    */

@@ -90,16 +90,21 @@ export class QueueConsumer {
     )) as unknown as [string, StreamEntry[], string[]];
     entries.push(...(claimed[1] ?? []));
 
-    const read = (await this.redis.xreadgroup(
-      'GROUP',
-      this.group,
-      consumer,
-      'COUNT',
-      count,
-      'STREAMS',
-      this.stream,
-      '>',
-    )) as unknown as Array<[string, StreamEntry[]]> | null;
+    // Read only what reclaiming left room for, so a turn never exceeds count.
+    const room = count - entries.length;
+    const read =
+      room > 0
+        ? ((await this.redis.xreadgroup(
+            'GROUP',
+            this.group,
+            consumer,
+            'COUNT',
+            room,
+            'STREAMS',
+            this.stream,
+            '>',
+          )) as unknown as Array<[string, StreamEntry[]]> | null)
+        : null;
     if (read) {
       for (const [, msgs] of read) entries.push(...msgs);
     }
