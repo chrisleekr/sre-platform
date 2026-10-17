@@ -17,6 +17,7 @@ import { RetryableError } from '@sre/queue';
 import { createHash } from 'node:crypto';
 import { entityCandidateKey } from '@sre/contracts';
 import { priorThreadMessage } from './attachments';
+import { joinSlackAlertCohortTx } from './cohort';
 import type {
   AuthorizedResolutionCandidate,
   ClassifyHandlerDeps,
@@ -357,6 +358,21 @@ export class ClassifyCore {
     const enrichedSignals = options.signals?.map(enrichSignal);
     const enrichedSignal = options.signal ? enrichSignal(options.signal) : undefined;
     const followupJobIds: string[] = [];
+    const onRoutedTx: NonNullable<OpenIncidentOptions['onRoutedTx']> = async (tx, routed) => {
+      const jobIds = options.onRoutedTx ? await options.onRoutedTx(tx, routed) : [];
+      // Provider alerts that open incidents together may share a cause.
+      if (opener.author === 'system' && !routed.reused && routed.signalId)
+        jobIds.push(
+          ...(await joinSlackAlertCohortTx(
+            tx,
+            this.deps.queue,
+            tenantId,
+            thread.channel,
+            routed.signalId,
+          )),
+        );
+      return jobIds;
+    };
     let created: RouteResult;
     try {
       created = await this.routeOrRetry({
@@ -386,10 +402,10 @@ export class ClassifyCore {
         dedupKey: options.dedupKey,
         signal: enrichedSignal,
         signals: enrichedSignals,
-        ...(options.onRoutedTx
+        ...(options.onRoutedTx || opener.author === 'system'
           ? {
               onRoutedTx: async (tx, routed) => {
-                followupJobIds.push(...(await options.onRoutedTx!(tx, routed)));
+                followupJobIds.push(...(await onRoutedTx(tx, routed)));
               },
             }
           : {}),
