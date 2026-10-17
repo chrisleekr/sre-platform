@@ -56,8 +56,32 @@ export const lifecycleCases = [
     to: null,
   },
   {
-    name: 'conditional',
+    name: 'close once verified',
     message: 'Close this once recovery is verified.',
+    kind: 'verify_recovery',
+    to: null,
+  },
+  {
+    name: 'recheck then close',
+    message: 'Recheck and close if resolved',
+    kind: 'verify_recovery',
+    to: null,
+  },
+  {
+    name: 'recheck first then close',
+    message: "you can recheck first and if it's resolved then close the incident",
+    kind: 'verify_recovery',
+    to: null,
+  },
+  {
+    name: 'non-recovery condition',
+    message: 'Close this once the release manager approves.',
+    kind: 'clarify',
+    to: null,
+  },
+  {
+    name: 'verify another incident',
+    message: 'Recheck incident abc in the finance workspace and close it if resolved.',
     kind: 'clarify',
     to: null,
   },

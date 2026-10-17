@@ -15,8 +15,10 @@ vi.mock('../knowledge-capture-offer', () => ({
   offerKnowledgeCapture: vi.fn(),
 }));
 vi.mock('../knowledge-capture', () => ({ requestKnowledgeCapture: vi.fn() }));
+vi.mock('../recovery-request', () => ({ requestRecoveryVerification: vi.fn() }));
 
 import { processResponderActions } from '../responder-actions';
+import { requestRecoveryVerification } from '../recovery-request';
 
 const incidentId = '33333333-3333-4333-8333-333333333333';
 const job: Job = {
@@ -27,7 +29,7 @@ const job: Job = {
   attempts: 1,
 };
 
-const generate = vi.fn(async () => ({
+const generate = vi.fn(async (): Promise<Record<string, unknown>> => ({
   kind: 'investigate',
   target: 'current',
   to: null,
@@ -94,3 +96,31 @@ test('a retry origin id arriving from another surface is still classified', asyn
   await process(message('slack', `${INVESTIGATION_RETRY_ORIGIN_PREFIX}${incidentId}:request`));
   expect(generate).toHaveBeenCalledTimes(1);
 });
+
+test.each([
+  { outcome: 'handled' as const, investigated: false },
+  { outcome: 'investigate' as const, investigated: true },
+  { outcome: 'forbidden' as const, investigated: false },
+])(
+  'a recovery verification request is $outcome without a lifecycle transition',
+  async ({ outcome, investigated }) => {
+    generate.mockResolvedValueOnce({
+      kind: 'verify_recovery',
+      target: 'current',
+      to: null,
+      reason: 'Check recovery and resolve only if it is confirmed.',
+    });
+    vi.mocked(requestRecoveryVerification).mockResolvedValueOnce(outcome);
+    const typed = message('dashboard', 'dashboard:typed');
+    const { pending } = await process(typed);
+    expect(requestRecoveryVerification).toHaveBeenCalledWith(
+      runtime,
+      job,
+      incidentId,
+      typed,
+      typed.id,
+    );
+    expect(pending).toEqual(investigated ? [typed] : []);
+    expect(runtime.deps.hub.transitionIncident).not.toHaveBeenCalled();
+  },
+);

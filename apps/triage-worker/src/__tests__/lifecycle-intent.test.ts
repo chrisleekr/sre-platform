@@ -33,6 +33,7 @@ test.each([
   },
   { kind: 'action', target: 'current', to: null, reason: 'Missing transition' },
   { kind: 'investigate', target: 'current', to: 'closed', reason: 'Hidden action' },
+  { kind: 'verify_recovery', target: 'other', to: null, reason: 'Another incident' },
 ])('invalid or expanded model authority is rejected', async (value) => {
   await expect(
     classifyLifecycleIntent(
@@ -70,4 +71,33 @@ test('accepts issue drafts for the current incident', async () => {
     new AbortController().signal,
   );
   expect(result.kind).toBe('manage_issue');
+});
+
+test('accepts recovery verification for the current incident without a lifecycle change', async () => {
+  const result = await classifyLifecycleIntent(
+    makeFakeGenerator(() => ({
+      kind: 'verify_recovery',
+      target: 'current',
+      to: null,
+      reason: 'Check recovery and resolve only if it is confirmed.',
+    })),
+    'Recheck and close if resolved',
+    new AbortController().signal,
+  );
+  expect(result).toMatchObject({ kind: 'verify_recovery', target: 'current', to: null });
+});
+
+test('a target state attached to a recovery request is dropped, never executed', async () => {
+  // Seen live: asked to "close if resolved", the model attached the closed state it was asked for.
+  const result = await classifyLifecycleIntent(
+    makeFakeGenerator(() => ({
+      kind: 'verify_recovery',
+      target: 'current',
+      to: 'closed',
+      reason: 'Recheck, then close if recovery is confirmed.',
+    })),
+    'Recheck and close if resolved',
+    new AbortController().signal,
+  );
+  expect(result).toMatchObject({ kind: 'verify_recovery', target: 'current', to: null });
 });
