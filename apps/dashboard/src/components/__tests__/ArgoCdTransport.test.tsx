@@ -111,3 +111,23 @@ test('changing the endpoint resets HTTP acknowledgement and restores HTTPS contr
   expect(screen.queryByRole('checkbox', { name: /HTTP sends project tokens/ })).toBeNull();
   expect(screen.getByRole('group', { name: 'Server certificate trust' })).toBeDefined();
 });
+
+test('keeps an invalid browser URL on Server and saves the trimmed browser URL', async () => {
+  const { onSave } = setup();
+  fill('Optional browser URL for links', 'http://argo.example');
+  click('Continue');
+  expect(screen.getByRole('alert').textContent).toContain('HTTPS');
+  expect(screen.queryByLabelText('Argo CD project 1')).toBeNull();
+  fill('Optional browser URL for links', 'https://argocd.example.com ');
+  click('Continue');
+  click('Continue');
+  fill('Argo CD token for default', 'replacement-token');
+  click('Review');
+  click('Save and verify all projects');
+  await screen.findByRole('button', { name: 'Finish' });
+  expect(onSave).toHaveBeenCalledWith(
+    expect.objectContaining({
+      settings: expect.objectContaining({ webUrl: 'https://argocd.example.com' }),
+    }),
+  );
+});

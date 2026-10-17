@@ -53,6 +53,7 @@ describe('ArgoCD connector lifecycle acceptance', () => {
       }),
     });
     expect(response.status).toBe(400);
+    expect(((await response.json()) as { error: string }).error).toContain('browser URL');
   });
 
   test.each([

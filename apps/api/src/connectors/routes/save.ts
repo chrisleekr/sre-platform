@@ -1,5 +1,5 @@
 import { connectorCapabilities, isConnectorType } from '@sre/connectors';
-import { argoCdUrlError } from '@sre/contracts';
+import { argoCdUrlError, argoCdWebUrlError } from '@sre/contracts';
 import { connectorConfigs, connectorCredentialKey, withTenant } from '@sre/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { Hono, type Context } from 'hono';
@@ -153,7 +153,10 @@ export function registerConnectorSaveRoutes(
     if (type === 'argocd' && !parsedArgoCdSettings)
       return c.json(
         {
-          error: argoCdUrlError(requestObject(body.settings)?.baseUrl) ?? 'invalid ArgoCD settings',
+          error:
+            argoCdUrlError(requestObject(body.settings)?.baseUrl) ??
+            argoCdWebUrlError(requestObject(body.settings)?.webUrl) ??
+            'invalid ArgoCD settings',
         },
         400,
       );
