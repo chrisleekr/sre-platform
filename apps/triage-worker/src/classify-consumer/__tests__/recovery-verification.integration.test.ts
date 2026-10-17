@@ -125,6 +125,49 @@ describe('Slack recovery verification', () => {
     expect(await recoveryJobs(first.incidentId)).toHaveLength(1);
   });
 
+  test('a firing edit older than the notice that resolved the alert does not reopen it', async () => {
+    const monitorKey = `slack:monitor-${randomUUID()}`;
+    const tracked = await trackedIncident(monitorKey);
+    const { handle } = handler();
+    await handle(job(resolvedCandidate(monitorKey)));
+    // Delivered late: the alert message was edited to firing at 00:03, before the 00:05 notice.
+    const eventAt = '2026-09-20T00:03:00.000Z';
+    const version = String(Date.parse(eventAt) * 1000);
+    const eventKey = `slack:${CHANNEL}:${tracked.root}:edit:${version}:producer:${PRODUCER}`;
+    const text = '[FIRING:1] Checkout error rate is high.';
+
+    await handle(
+      job(
+        resolvedCandidate(monitorKey, {
+          externalId: tracked.root,
+          eventKey,
+          eventAt,
+          eventVersion: version,
+          isEdit: true,
+          text,
+          signalState: 'firing',
+          contentHash: createHash('sha256').update(text).digest('hex'),
+          observations: [
+            {
+              externalMessageId: tracked.root,
+              state: 'unknown',
+              summary: text,
+              contentHash: 'late-edit',
+              eventKey,
+              eventAt,
+              monitorKey,
+            },
+          ],
+        }),
+      ),
+    );
+
+    expect(await signalStates(tracked.incidentId)).toEqual([
+      { state: 'resolved', clearProvenance: 'unknown' },
+    ]);
+    expect((await recoveryJobs(tracked.incidentId)).map((row) => row.status)).toEqual(['queued']);
+  });
+
   test('a notice does not cover a post of the same monitor from another bot', async () => {
     const monitorKey = `slack:monitor-${randomUUID()}`;
     const first = await trackedIncident(monitorKey);

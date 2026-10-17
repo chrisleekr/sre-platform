@@ -1,4 +1,17 @@
-import { and, asc, eq, gt, inArray, isNotNull, isNull, ne, notExists, or, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  ne,
+  notExists,
+  or,
+  sql,
+} from 'drizzle-orm';
 import { alias, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { Db } from './client';
 import { lockResponseGroupWorkTx } from './incident-relation-repo/causal';
@@ -271,6 +284,8 @@ export async function reopenReportedSignalsTx(
         eq(incidentSignals.surface, 'slack'),
         eq(incidentSignals.state, 'resolved'),
         eq(incidentSignals.clearProvenance, 'unknown'),
+        // A firing edit delivered after a newer recovery report describes an earlier state.
+        lt(incidentSignals.resolvedAt, refiredAt),
       ),
     )
     .returning({ id: incidentSignals.id });
