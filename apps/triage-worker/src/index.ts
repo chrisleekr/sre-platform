@@ -60,7 +60,7 @@ import { makeSubjectSyncRecovery } from './subject-sync-recovery';
 import { runSignalMaintenance } from './signal-maintenance';
 import { makeSignalEvaluationHandler } from './signal-evaluation';
 import { makeTopologyDiscoveryRuntime, runTopologyDiscoveryConsumer } from './topology-discovery';
-import { runConsumerLoop, superviseConsumer } from './consumer-loop';
+import { drainAndExit, runConsumerLoop, stopOnSignal, superviseConsumer } from './consumer-loop';
 import { makePlatformTools } from './platform-tools';
 
 const adminDb = makeDb(adminUrl());
@@ -367,8 +367,9 @@ const jobPruneGuard = makeRedisWindowGuard(redis, 'jobs:prune');
 const signalMaintenanceGuard = makeRedisWindowGuard(redis, 'signals:maintenance');
 const SIGNAL_MAINTENANCE_MS = 5 * 60_000;
 
+const stopping = stopOnSignal();
 // Triage and topology have their own loops: a run takes minutes and would stall every stream here.
-for (;;) {
+while (!stopping()) {
   const polled = await pollQueue.process('poll-worker', async (job) => {
     // Drain discovery jobs queued before stream isolation without running them in the poll loop.
     if (job.type === 'topology.discover')
@@ -494,3 +495,5 @@ for (;;) {
   if (polled === 0 && classified === 0 && generated === 0 && evaluated === 0)
     await new Promise((r) => setTimeout(r, 1000));
 }
+
+await drainAndExit([scheduler, topology.scheduler, slo.scheduler]);
