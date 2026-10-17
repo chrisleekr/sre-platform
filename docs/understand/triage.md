@@ -260,7 +260,9 @@ investigation run, and is recorded as a log entry. A message that also carries a
 incident tracks, or that matches no open incident or more than one, is classified as usual, as is a
 repeat whose incident closes before it is attached.
 
-Alerts that arrive close together enter a fixed, provider-scoped comparison cohort. The cohort is
+Alerts that arrive close together enter a fixed comparison cohort, scoped to one connection, or to
+one Slack channel for alerts posted there. A Slack cohort groups alerts by when the platform
+received them, so a burst delayed by a classification backlog still lands together. The cohort is
 sealed before one budget-admitted model call sees at most five incidents. It can suggest that a pair
 may be related or record that they are unrelated. Timing cannot establish direction or merge records.
 

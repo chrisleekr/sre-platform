@@ -4,6 +4,8 @@ import { eq, sql } from 'drizzle-orm';
 import { Redis } from 'ioredis';
 import {
   incidentMessages,
+  alertCohortMembers,
+  alertCohorts,
   incidentSignals,
   inboundSideEffects,
   inboundChannels,
@@ -186,6 +188,8 @@ afterAll(async () => {
     await admin.db.delete(surfaceDeliveries).where(eq(surfaceDeliveries.tenantId, tenantId));
     await admin.db.delete(incidentMessages).where(eq(incidentMessages.tenantId, tenantId));
     await admin.db.delete(inboundSideEffects).where(eq(inboundSideEffects.tenantId, tenantId));
+    await admin.db.delete(alertCohortMembers).where(eq(alertCohortMembers.tenantId, tenantId));
+    await admin.db.delete(alertCohorts).where(eq(alertCohorts.tenantId, tenantId));
     await admin.db.delete(incidentSignals).where(eq(incidentSignals.tenantId, tenantId));
     await admin.db.delete(surfaceBindings).where(eq(surfaceBindings.tenantId, tenantId));
     await admin.db.delete(incidents).where(eq(incidents.tenantId, tenantId));

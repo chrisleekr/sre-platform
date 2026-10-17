@@ -6,6 +6,8 @@ import {
   createIncident,
   inboundSideEffects,
   incidentMessages,
+  alertCohortMembers,
+  alertCohorts,
   incidentSignals,
   incidents,
   isSurfaceInboundSuperseded,
@@ -44,6 +46,8 @@ afterAll(async () => {
     await admin.db.delete(incidentMessages).where(eq(incidentMessages.tenantId, tenantId));
     await admin.db.delete(surfaceBindings).where(eq(surfaceBindings.tenantId, tenantId));
     await admin.db.delete(inboundSideEffects).where(eq(inboundSideEffects.tenantId, tenantId));
+    await admin.db.delete(alertCohortMembers).where(eq(alertCohortMembers.tenantId, tenantId));
+    await admin.db.delete(alertCohorts).where(eq(alertCohorts.tenantId, tenantId));
     await admin.db.delete(incidentSignals).where(eq(incidentSignals.tenantId, tenantId));
     await admin.db.delete(incidents).where(eq(incidents.tenantId, tenantId));
     await admin.db.delete(tenants).where(eq(tenants.id, tenantId));
