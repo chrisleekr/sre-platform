@@ -505,6 +505,8 @@ describe('persistDeploys (DB-backed)', () => {
       },
       observedAt: new Date(),
     };
+    // Relative to now so the row stays inside listRecentDeployments' now()-relative window.
+    const completedAt = new Date(Date.now() - 24 * 60 * 60_000);
     const completed: NormalizedSnapshot = {
       tenantId,
       source: 'argocd',
@@ -519,9 +521,9 @@ describe('persistDeploys (DB-backed)', () => {
         revisions: ['release-app', 'release-config'],
         operationPhase: 'Succeeded',
         status: 'success',
-        deployedAt: '2026-08-22T01:02:00Z',
+        deployedAt: completedAt.toISOString(),
       },
-      observedAt: new Date('2026-08-22T01:02:00Z'),
+      observedAt: completedAt,
     };
 
     await persistDeploys(app.db, tenantId, [live, completed], 'argocd', { durationMs: 17 });

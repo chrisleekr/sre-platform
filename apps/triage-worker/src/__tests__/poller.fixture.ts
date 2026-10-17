@@ -5,6 +5,14 @@
 import type { IDataSourceConnector, NormalizedSnapshot } from '@sre/connectors';
 import type { SnapshotCache } from '@sre/queue';
 
+// Deploy timestamps are relative to now because listRecentDeployments filters on a now()-relative
+// window in SQL; fixed calendar dates age out and the DB-backed poller tests fail on a later date.
+function isoMinutesAgo(minutes: number): string {
+  return new Date(Date.now() - minutes * 60_000).toISOString();
+}
+
+const DAY_MINUTES = 24 * 60;
+
 export function createFixture() {
   const CONNECTOR_IDS = {
     github: '00000000-0000-4000-8000-000000000001',
@@ -38,7 +46,7 @@ export function createFixture() {
         sha,
         service,
         status: 'success',
-        deployedAt: '2026-07-01T00:00:00Z',
+        deployedAt: isoMinutesAgo(DAY_MINUTES),
       },
       observedAt: new Date(),
     };
@@ -57,9 +65,9 @@ export function createFixture() {
         sha: `sha-${providerId}`,
         service: 'checkout',
         status: 'inactive',
-        deployedAt: '2026-08-22T00:01:00Z',
-        providerCreatedAt: '2026-08-22T00:00:00Z',
-        providerUpdatedAt: '2026-08-22T00:01:00Z',
+        deployedAt: isoMinutesAgo(DAY_MINUTES - 1),
+        providerCreatedAt: isoMinutesAgo(DAY_MINUTES),
+        providerUpdatedAt: isoMinutesAgo(DAY_MINUTES - 1),
       },
       observedAt: new Date(),
     };
