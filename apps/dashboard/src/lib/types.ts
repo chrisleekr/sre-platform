@@ -1,3 +1,4 @@
+import type { LatestInvestigationRun } from './investigation-run';
 import type {
   IncidentAttentionReason,
   ResolutionPolicy,
@@ -8,7 +9,6 @@ import type {
   InvestigationBudgetSnapshot,
   InvestigationGap,
   RecoveryQuestion,
-  InvestigationTriggerReason,
   WsMessageDelivery,
 } from '@sre/contracts';
 import type { IncidentEntityContext } from './entityContext';
@@ -75,22 +75,7 @@ export interface Incident extends Partial<IncidentTitlePresentation> {
   confidence: number | null;
   trustedAssessmentRunId?: string | null;
   correlationMaxAgeAt?: string | null;
-  latestInvestigationRun?: {
-    id: string;
-    operation: 'investigate' | 'reassess' | 'resume' | 'verify-recovery';
-    outcome:
-      'conclusive' | 'inconclusive' | 'blocked_missing_capability' | 'budget_exhausted' | 'failed';
-    triggerReason: InvestigationTriggerReason | null;
-    triggerAutomatic: boolean;
-    triggerMonitorKey: string | null;
-    triggerMonitorKeys: string[];
-    triggerBudget: InvestigationBudgetSnapshot | null;
-    summary?: string | null;
-    nextStep?: string | null;
-    gaps?: string[];
-    reason?: string | null;
-    completedAt: string;
-  } | null;
+  latestInvestigationRun?: LatestInvestigationRun | null;
   pendingAutomation?: PendingIncidentWork | null;
   queuedResponderWork?: PendingIncidentWork | null;
   rankedHypotheses?: Array<{

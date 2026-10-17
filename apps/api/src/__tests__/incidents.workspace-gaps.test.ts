@@ -23,6 +23,11 @@ test('the workspace exposes the latest run reviewer gaps as bounded scrubbed str
     result: {
       summary: 'Grafana was OOMKilled at 09:12Z.',
       nextStep: 'Query container RSS against the limit.',
+      impact: 'Dashboards were down for 4 minutes.',
+      rankedHypotheses: [
+        { hypothesis: 'A plugin leak.', confidence: 20, evidence: 'x', state: 'disproven' },
+        { hypothesis: `The memory limit is too low. ${secret}`, confidence: 60, evidence: 'y' },
+      ],
       gaps: [
         'Confirm the termination reason per restart.',
         42,
@@ -44,10 +49,24 @@ test('the workspace exposes the latest run reviewer gaps as bounded scrubbed str
   );
   expect(response.status).toBe(200);
   const body = (await response.json()) as {
-    incident: { latestInvestigationRun: { id: string; nextStep: string; gaps: string[] } };
+    incident: {
+      latestInvestigationRun: {
+        id: string;
+        nextStep: string;
+        gaps: string[];
+        likelyCause: string | null;
+      };
+    };
   };
   const run = body.incident.latestInvestigationRun;
-  expect(run).toMatchObject({ id: runId, nextStep: 'Query container RSS against the limit.' });
+  expect(run).toMatchObject({
+    id: runId,
+    nextStep: 'Query container RSS against the limit.',
+    impact: 'Dashboards were down for 4 minutes.',
+  });
+  // An unpromoted run keeps its standing hypothesis for the brief; the disproven one is skipped.
+  expect(run.likelyCause).toMatch(/^The memory limit is too low\./);
+  expect(run.likelyCause).not.toContain(secret.slice(0, 8));
   expect(run.gaps).toHaveLength(5);
   expect(run.gaps[0]).toBe('Confirm the termination reason per restart.');
   expect(run.gaps.join(' ')).not.toContain(secret.slice(0, 8));
@@ -80,7 +99,13 @@ test('a run without stored gaps exposes an empty list', async () => {
     __fixture.auth(token),
   );
   const body = (await response.json()) as {
-    incident: { latestInvestigationRun: { gaps: string[] } };
+    incident: {
+      latestInvestigationRun: { gaps: string[]; likelyCause: string | null; impact: string | null };
+    };
   };
-  expect(body.incident.latestInvestigationRun.gaps).toEqual([]);
+  expect(body.incident.latestInvestigationRun).toMatchObject({
+    gaps: [],
+    likelyCause: null,
+    impact: null,
+  });
 });

@@ -107,6 +107,7 @@ export function incidentFindingPayload(
   promotion: IncidentFindingPayload['promotion'],
   promotionReason: IncidentFindingPayload['promotionReason'],
 ): IncidentFindingPayload {
+  const likelyCause = leadingHypothesis(result);
   return {
     runId: runId ?? null,
     outcome: result.outcome,
@@ -117,7 +118,16 @@ export function incidentFindingPayload(
     impact: result.impact ? publicModelText(result.impact) : null,
     nextStep: result.nextStep ? publicModelText(result.nextStep) : null,
     ...(result.reviewGaps?.length ? { gaps: result.reviewGaps.map(publicModelText) } : {}),
+    ...(likelyCause ? { likelyCause: publicModelText(likelyCause) } : {}),
+    ...(result.links?.length ? { links: result.links } : {}),
   };
+}
+
+/** The first hypothesis still standing; disfavored and disproven ones never headline a finding. */
+function leadingHypothesis(result: TriageResult): string | undefined {
+  return result.rankedHypotheses?.find(
+    (hypothesis) => hypothesis.state !== 'disfavored' && hypothesis.state !== 'disproven',
+  )?.hypothesis;
 }
 
 export function investigationRunResult(result: TriageResult): Record<string, unknown> {
