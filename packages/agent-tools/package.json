@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
-    "@modelcontextprotocol/server": "2.0.0",
+    "@modelcontextprotocol/server": "2.3.1",
     "@sre/connectors": "workspace:*",
     "@sre/contracts": "workspace:*",
     "@sre/db": "workspace:*",
