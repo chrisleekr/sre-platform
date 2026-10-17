@@ -421,6 +421,9 @@ test('production wiring dispatches and consumes discovery independently from sna
   expect(poll![1]).not.toContain('topology.handler');
   // Topology reconcile shares the poll guard window, so a stranded pass is retried on the same cadence.
   expect(source).toMatch(
-    /runOncePerWindow\(\s*pollReconcileGuard,\s*async \(\) =>[^\n]*await topologyQueue\.reconcile\(\)/,
+    /\[\s*pollReconcileGuard,\s*async \(\) =>[^\n]*await topologyQueue\.reconcile\(\)/,
+  );
+  expect(source).toMatch(
+    /of streamReconcilers\)\s*await runOncePerWindow\(guard, reconcile, TRIAGE_RECONCILE_MS/,
   );
 });

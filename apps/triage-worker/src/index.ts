@@ -360,6 +360,14 @@ const recoverSubjectSync = makeSubjectSyncRecovery(redis, adminDb.db, appDb.db, 
 const classifyReconcileGuard = makeRedisWindowGuard(redis, 'classify:recon');
 const runbookReconcileGuard = makeRedisWindowGuard(redis, 'runbook:recon');
 const pollReconcileGuard = makeRedisWindowGuard(redis, 'poll:recon');
+const streamReconcilers = [
+  [classifyReconcileGuard, () => classifyQueue.reconcile()],
+  [runbookReconcileGuard, () => runbookQueue.reconcile()],
+  [
+    pollReconcileGuard,
+    async () => (await pollQueue.reconcile()) + (await topologyQueue.reconcile()),
+  ],
+] as const;
 // One replica per window applies the current platform archive policy.
 const AUTOARCHIVE_SWEEP_MS = 15 * 60_000;
 const autoArchiveGuard = makeRedisWindowGuard(redis, 'incident:autoarchive');
@@ -377,11 +385,19 @@ while (!stopping()) {
       await topologyQueue.enqueue({ tenantId: job.tenantId, type: job.type, payload: job.payload });
     else await pollHandler(job);
   });
+  // Checked before each stream: a SIGTERM mid-iteration must not start more work on the old code.
+  if (stopping()) break;
   const classified = await classifyQueue.process('classify-worker', classifyStreamHandler);
-  const generated = await runbookQueue.process('runbook-worker', generationStreamHandler);
+  if (stopping()) break;
+  // One per turn: every runbook-stream job is an LLM generation, too slow to batch past SIGTERM.
+  const generated = await runbookQueue.process('runbook-worker', generationStreamHandler, {
+    count: 1,
+  });
+  if (stopping()) break;
   // Bounded per turn so a slow metrics backend cannot starve the other streams. No reconcile
   // driver: a lost evaluation is covered by the next window's fan-out.
   const evaluated = await slo.queue.process('slo-worker', slo.handler, { count: 2 });
+  if (stopping()) break;
   // Coarse, guarded triage reconcile so lost-XADD incidents are recovered exactly once per window.
   await runOncePerWindow(
     triageReconcileGuard,
@@ -408,24 +424,8 @@ while (!stopping()) {
     RECOVERY_DUE_DISPATCH_MS,
     Date.now(),
   );
-  await runOncePerWindow(
-    classifyReconcileGuard,
-    () => classifyQueue.reconcile(),
-    TRIAGE_RECONCILE_MS,
-    Date.now(),
-  );
-  await runOncePerWindow(
-    runbookReconcileGuard,
-    () => runbookQueue.reconcile(),
-    TRIAGE_RECONCILE_MS,
-    Date.now(),
-  );
-  await runOncePerWindow(
-    pollReconcileGuard,
-    async () => (await pollQueue.reconcile()) + (await topologyQueue.reconcile()),
-    TRIAGE_RECONCILE_MS,
-    Date.now(),
-  );
+  for (const [guard, reconcile] of streamReconcilers)
+    await runOncePerWindow(guard, reconcile, TRIAGE_RECONCILE_MS, Date.now());
   await runOncePerWindow(
     signalMaintenanceGuard,
     () =>
