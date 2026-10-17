@@ -57,6 +57,18 @@ export const INCIDENT_FINDING_PROMOTION_REASONS = [
 
 export type IncidentFindingPromotionReason = (typeof INCIDENT_FINDING_PROMOTION_REASONS)[number];
 
+/**
+ * A provider web page for an entity named in a finding, such as a commit or an Argo CD application.
+ * Built by the platform from provider API fields, never from model text, so a model cannot plant a
+ * link in a responder channel.
+ */
+export interface FindingLink {
+  /** Exact token a surface may link in place, such as a short commit SHA or an application name. */
+  label: string;
+  /** Absolute https URL on the provider. */
+  url: string;
+}
+
 /** Durable provenance for an evidence-bearing conclusion in the incident conversation. */
 export interface IncidentFindingPayload {
   runId: string | null;
@@ -69,6 +81,10 @@ export interface IncidentFindingPayload {
   nextStep: string | null;
   /** Open checks named by the evidence reviewer for an unverified result; absent when none. */
   gaps?: string[];
+  /** Leading hypothesis in one sentence. Trusted only when `promotion` is `trusted_assessment`. */
+  likelyCause?: string;
+  /** Provider pages for entities the finding names; absent when none. */
+  links?: FindingLink[];
 }
 
 export const INCIDENT_FEEDBACK_TARGETS = ['finding', 'entity', 'correlation', 'noise'] as const;

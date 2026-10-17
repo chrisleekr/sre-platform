@@ -79,3 +79,51 @@ test('the compact summary is cut on code points, so an emoji at the cut stays wh
   const view = render(<InvestigationResult run={{ ...run, summary }} compact />);
   expect(view.getByText(`${'a'.repeat(278)}🔥…`)).toBeTruthy();
 });
+
+test('without a trusted assessment the brief shows the run cause and impact as not verified', () => {
+  const view = render(
+    <IncidentDecisionBrief
+      workspace={{
+        ...workspace,
+        incident: {
+          ...workspace.incident,
+          latestInvestigationRun: {
+            ...run,
+            likelyCause: 'The memory limit is too low.',
+            impact: 'Dashboards were down for 4 minutes.',
+          },
+        },
+      }}
+      onSelectEvidence={vi.fn()}
+      getCredentials={async () => ({ kind: 'bearer' as const, token: 'test' })}
+      onChanged={vi.fn()}
+    />,
+  );
+  expect(view.getByText('Likely cause, not verified')).toBeTruthy();
+  expect(view.getByText('The memory limit is too low.')).toBeTruthy();
+  expect(view.getByText('Impact, not verified')).toBeTruthy();
+  expect(view.getByText('Dashboards were down for 4 minutes.')).toBeTruthy();
+  expect(view.queryByText('No diagnosis established')).toBeNull();
+});
+
+test('a trusted assessment keeps its own labels and ignores the run cause', () => {
+  const view = render(
+    <IncidentDecisionBrief
+      workspace={{
+        ...workspace,
+        incident: {
+          ...workspace.incident,
+          rcaSummary: 'Trusted summary.',
+          trustedAssessmentRunId: run.id,
+          latestInvestigationRun: { ...run, likelyCause: 'Untrusted cause.' },
+        },
+      }}
+      onSelectEvidence={vi.fn()}
+      getCredentials={async () => ({ kind: 'bearer' as const, token: 'test' })}
+      onChanged={vi.fn()}
+    />,
+  );
+  expect(view.getByText('Leading hypothesis')).toBeTruthy();
+  expect(view.queryByText('Untrusted cause.')).toBeNull();
+  expect(view.queryByText('Likely cause, not verified')).toBeNull();
+});

@@ -1,5 +1,10 @@
 import type { ToolContext, ToolDefinition } from '@sre/agent-tools';
-import type { CausalFinding, InvestigationGap, InvestigationRunOutcome } from '@sre/contracts';
+import type {
+  CausalFinding,
+  FindingLink,
+  InvestigationGap,
+  InvestigationRunOutcome,
+} from '@sre/contracts';
 import type { ZodType } from 'zod';
 import type { EvidenceReceipt } from './evidence-closure';
 import type { ReportRecovery } from './report-recovery';
@@ -189,6 +194,8 @@ export interface TriageResult {
   nextStep?: string | null;
   /** Open checks named by the evidence reviewer when it rejected this result, already scrubbed. */
   reviewGaps?: string[];
+  /** Provider pages built from admitted evidence for entities a surface may link. */
+  links?: FindingLink[];
   /** The provider model that produced the result (e.g. claude-opus-4-8). */
   model?: string;
 }

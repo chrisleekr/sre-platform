@@ -48,7 +48,7 @@ const candidate: TriageResult = {
   evidenceReceipts: [{ evidenceId, tool: 'k8s', outcome: 'complete' }],
 };
 
-test('a rejection surfaces the reviewer answer, gaps and next step without promoting', async () => {
+test('an insufficient-evidence rejection keeps the demoted hypotheses, state and impact', async () => {
   const secret = 'AKIAIOSFODNN7EXAMPLE';
   const generator = makeFakeGenerator(() => ({
     supported: false,
@@ -74,12 +74,14 @@ test('a rejection surfaces the reviewer answer, gaps and next step without promo
     confidence: 0,
     summary: 'Grafana was OOMKilled at 09:12Z; memory was at 99.6% of its limit at 09:40Z.',
     nextStep: 'Query container RSS against the limit over the last 6 hours.',
-    rankedHypotheses: [],
+    rankedHypotheses: [
+      { hypothesis: 'Limit too low', confidence: 90, evidence: 'OOMKilled', state: 'plausible' },
+    ],
     causalFindings: [],
     causeTagSuggestions: [],
     approval: undefined,
-    currentState: null,
-    impact: null,
+    currentState: 'Memory at 99.6% of limit.',
+    impact: 'Dashboards unavailable.',
     evidenceIds: [evidenceId],
   });
   expect(result.detail).toBeUndefined();
@@ -111,6 +113,68 @@ test('a contradiction rejection classifies every gap as contradictory evidence',
     new AbortController().signal,
   );
   expect(result.unknowns?.slice(1).map((gap) => gap.category)).toEqual(['contradictory_evidence']);
+  // Contradicted content may be false, so none of it survives.
+  expect(result).toMatchObject({ rankedHypotheses: [], currentState: null, impact: null });
+});
+
+test('an incomplete review drops the unreviewed candidate content', async () => {
+  const generator = makeFakeGenerator(() => ({ supported: 'not a boolean' }));
+  const result = await reviewInvestigation(
+    generator,
+    candidate,
+    evidence,
+    new AbortController().signal,
+  );
+  expect(result).toMatchObject({
+    outcome: 'inconclusive',
+    rankedHypotheses: [],
+    currentState: null,
+    impact: null,
+    evidenceIds: [],
+  });
+});
+
+test('a rejection that cites nothing falls back to the candidate citations', async () => {
+  const foreign = randomUUID();
+  const generator = makeFakeGenerator(() => ({
+    supported: false,
+    rejection: 'insufficient_evidence',
+    summary: 'Grafana was OOMKilled at 09:12Z.',
+    evidenceIds: [],
+  }));
+  const result = await reviewInvestigation(
+    generator,
+    { ...candidate, evidenceIds: [evidenceId, foreign] },
+    evidence,
+    new AbortController().signal,
+  );
+  // Only ids in the admitted inventory survive the fallback.
+  expect(result.evidenceIds).toEqual([evidenceId]);
+});
+
+test('hypotheses already below leading keep their state', async () => {
+  const generator = makeFakeGenerator(() => ({
+    supported: false,
+    rejection: 'insufficient_evidence',
+    summary: 'Grafana was OOMKilled at 09:12Z.',
+    evidenceIds: [evidenceId],
+  }));
+  const result = await reviewInvestigation(
+    generator,
+    {
+      ...candidate,
+      rankedHypotheses: [
+        { hypothesis: 'A', confidence: 60, evidence: 'e' },
+        { hypothesis: 'B', confidence: 10, evidence: 'e', state: 'disfavored' },
+      ],
+    },
+    evidence,
+    new AbortController().signal,
+  );
+  expect(result.rankedHypotheses?.map((hypothesis) => hypothesis.state)).toEqual([
+    'plausible',
+    'disfavored',
+  ]);
 });
 
 test('a rejection without gaps records a fixed open question, not the factual summary', async () => {
@@ -178,4 +242,32 @@ test('more than five gaps are all kept as unknowns and a blank next step falls b
   );
   expect(result.reviewGaps).toEqual(Array.from({ length: 5 }, (_, index) => `Check ${index}.`));
   expect(result.nextStep).toBe('Review the preserved evidence before relying on this conclusion.');
+});
+
+test('a missing-capability rejection blocks the run and keeps the demoted hypotheses', async () => {
+  const generator = makeFakeGenerator(() => ({
+    supported: false,
+    rejection: 'missing_capability',
+    summary: 'Grafana was OOMKilled at 09:12Z.',
+    gaps: ['Read the hypervisor memory balloon log for 09:00 to 09:15Z.'],
+    evidenceIds: [evidenceId],
+  }));
+  const result = await reviewInvestigation(
+    generator,
+    candidate,
+    evidence,
+    new AbortController().signal,
+  );
+  expect(result).toMatchObject({
+    outcome: 'blocked_missing_capability',
+    confidence: 0,
+    causalFindings: [],
+    rankedHypotheses: [expect.objectContaining({ confidence: 90, state: 'plausible' })],
+  });
+  expect(result.unknowns?.at(-1)).toEqual({
+    question: 'Read the hypervisor memory balloon log for 09:00 to 09:15Z.',
+    category: 'missing_capability',
+    evidenceKind: null,
+    attemptedEvidenceIds: [evidenceId],
+  });
 });
