@@ -74,6 +74,28 @@ describe('Slack recovery notices', () => {
     expect(await recoveryJobs(tracked.incidentId)).toEqual([]);
   });
 
+  test('a new post that opens firing and lists a resolved alert stays advisory', async () => {
+    const monitorKey = `slack:monitor-${randomUUID()}`;
+    const tracked = await trackedIncident(monitorKey);
+    const { handle, onOutcome } = handler();
+    // The adapter reads the message as resolved; its observation still names the firing monitor.
+    const text = '[FIRING:1] Checkout latency is high.\nResolved: Checkout error rate is high.';
+    const candidate = resolvedCandidate(monitorKey, {
+      text,
+      contentHash: createHash('sha256').update(text).digest('hex'),
+    });
+
+    await handle(job(candidate));
+
+    expect(onOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'resolution_unmatched' }),
+    );
+    expect(await signalStates(tracked.incidentId)).toEqual([
+      { state: 'unknown', clearProvenance: null },
+    ]);
+    expect(await recoveryJobs(tracked.incidentId)).toEqual([]);
+  });
+
   test('the link and message do not depend on disposition recording', async () => {
     const monitorKey = `slack:monitor-${randomUUID()}`;
     const tracked = await trackedIncident(monitorKey);
