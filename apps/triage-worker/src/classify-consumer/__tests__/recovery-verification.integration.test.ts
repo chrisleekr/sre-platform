@@ -356,6 +356,13 @@ describe('Slack recovery verification', () => {
       'resolved',
       'unknown',
     ]);
+    // The new active signal retires the queued verification and clears the recovery projection.
+    expect((await recoveryJobs(tracked.incidentId)).map((row) => row.status)).toEqual(['done']);
+    const [projection] = await admin.db
+      .select({ recoveryState: incidents.recoveryState, nextCheck: incidents.recoveryNextCheckAt })
+      .from(incidents)
+      .where(eq(incidents.id, tracked.incidentId));
+    expect(projection).toEqual({ recoveryState: null, nextCheck: null });
   });
 
   test('an Alertmanager message edited to resolved and back to firing no longer reads as recovered', async () => {
