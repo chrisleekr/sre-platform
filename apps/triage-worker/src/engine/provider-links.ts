@@ -1,7 +1,8 @@
 import type { FindingLink } from '@sre/contracts';
 import type { InvestigationEvidence } from './types';
 
-const MAX_LINKS = 8;
+const MAX_COMMITS = 8;
+const MAX_APPLICATIONS = 4;
 const MAX_DEPTH = 6;
 const MAX_NODES = 5_000;
 const FULL_SHA = /^[0-9a-f]{40}$/;
@@ -29,14 +30,14 @@ function httpsUrl(value: unknown): URL | null {
  * provider, unlike the commit message, so the link cannot be authored by whoever wrote the commit.
  * The path must end in the commit's own SHA, which also rejects any other URL shape.
  */
-function commitLink(node: Record<string, unknown>): FindingLink | null {
+function commitLink(node: Record<string, unknown>): { sha: string; link: FindingLink } | null {
   const sha = [node.id, node.sha].find(
     (value): value is string => typeof value === 'string' && FULL_SHA.test(value),
   );
   if (!sha) return null;
   const url = httpsUrl(node.web_url) ?? httpsUrl(node.html_url);
   if (!url || !url.pathname.endsWith(`/commit/${sha}`)) return null;
-  return { label: sha.slice(0, 8), url: url.toString() };
+  return { sha, link: { label: sha.slice(0, 8), url: url.toString() } };
 }
 
 /** The Argo CD connector adds `webUrl` from its configured base; the name labels the link. */
@@ -51,33 +52,44 @@ function applicationLink(output: unknown): FindingLink | null {
 /**
  * Collects provider pages for commits and Argo CD applications found in admitted evidence. Only
  * provider-generated URL fields are read, and only from the connector tools that return them, so
- * model text and free-form provider content never become a link.
+ * model text and free-form provider content never become a link. A commit is kept only when the
+ * finding names it, since a run reads many commits and Slack links only the named ones; the caps
+ * apply after that filter and separately per kind, so a long commit list cannot crowd out the rest.
  * @param evidence - Admitted evidence records for the run.
+ * @param findingText - The finding's own text, which decides the commits worth linking.
  */
-export function providerLinks(evidence: readonly InvestigationEvidence[]): FindingLink[] {
-  const links = new Map<string, FindingLink>();
-  const add = (link: FindingLink | null) => {
-    if (link && !links.has(link.label) && links.size < MAX_LINKS) links.set(link.label, link);
+export function providerLinks(
+  evidence: readonly InvestigationEvidence[],
+  findingText: string,
+): FindingLink[] {
+  // Any hex run of 7 to 40 characters that the text names on its own, as a SHA prefix.
+  const named = findingText.toLowerCase().match(/(?<![0-9a-f])[0-9a-f]{7,40}(?![0-9a-f])/g) ?? [];
+  const commits = new Map<string, FindingLink>();
+  const applications = new Map<string, FindingLink>();
+  const add = (into: Map<string, FindingLink>, max: number, link: FindingLink | null) => {
+    if (link && !into.has(link.label) && into.size < max) into.set(link.label, link);
   };
   for (const item of evidence) {
     if (item.outcome !== undefined && item.outcome !== 'data') continue;
     if (ARGO_APPLICATION_TOOL.test(item.tool)) {
-      add(applicationLink(item.output));
+      add(applications, MAX_APPLICATIONS, applicationLink(item.output));
       continue;
     }
-    if (!GIT_TOOL.test(item.tool)) continue;
+    if (!GIT_TOOL.test(item.tool) || named.length === 0) continue;
     let visited = 0;
     const walk = (node: unknown, depth: number) => {
-      if (depth > MAX_DEPTH || ++visited > MAX_NODES || links.size >= MAX_LINKS) return;
+      if (depth > MAX_DEPTH || ++visited > MAX_NODES || commits.size >= MAX_COMMITS) return;
       if (Array.isArray(node)) {
         for (const child of node) walk(child, depth + 1);
         return;
       }
       if (!isRecord(node)) return;
-      add(commitLink(node));
+      const commit = commitLink(node);
+      if (commit && named.some((prefix) => commit.sha.startsWith(prefix)))
+        add(commits, MAX_COMMITS, commit.link);
       for (const child of Object.values(node)) walk(child, depth + 1);
     };
     walk(item.output, 0);
   }
-  return [...links.values()];
+  return [...commits.values(), ...applications.values()];
 }

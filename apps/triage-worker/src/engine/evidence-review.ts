@@ -118,8 +118,6 @@ export async function reviewInvestigation(
       signal,
       task,
     );
-    contradictory = !review.supported && review.rejection === 'contradictory_evidence';
-    blocked = !review.supported && review.rejection === 'missing_capability';
     // A cited-only review must not read as a full one: uncited records may contradict the answer.
     if (unreviewedIds.length > 0)
       coverageGaps = [
@@ -201,6 +199,10 @@ export async function reviewInvestigation(
     detail = review.detail ? scrubSecrets(review.detail) : undefined;
     gaps = (review.gaps ?? []).flatMap((gap) => reviewerText(gap) ?? []);
     reviewNextStep = reviewerText(review.nextStep);
+    // Set only once the review completed: a throw above means the review itself failed, so its
+    // rejection must not classify the result as a contradiction or a missing capability.
+    contradictory = !review.supported && review.rejection === 'contradictory_evidence';
+    blocked = !review.supported && review.rejection === 'missing_capability';
     reviewed = true;
   } catch (error) {
     if (signal.aborted) throw signal.reason;
@@ -399,7 +401,16 @@ export function reviewedEngine(engine: TriageEngine, generator: StructuredGenera
       input,
       currentAttemptIds,
     );
-    const links = providerLinks(evidence);
+    // The text Slack renders from the finding, so only commits it names are linked.
+    const findingText = [
+      reviewed.summary,
+      reviewed.currentState,
+      reviewed.impact,
+      reviewed.nextStep,
+      ...(reviewed.reviewGaps ?? []),
+      ...(reviewed.rankedHypotheses ?? []).map((hypothesis) => hypothesis.hypothesis),
+    ].join('\n');
+    const links = providerLinks(evidence, findingText);
     return links.length > 0 ? { ...reviewed, links } : reviewed;
   };
   return {

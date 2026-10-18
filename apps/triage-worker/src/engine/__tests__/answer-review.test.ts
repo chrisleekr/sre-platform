@@ -343,6 +343,43 @@ test.each(['missing', 'malformed', 'foreign citation', 'unavailable evidence'])(
   },
 );
 
+test('a missing-capability rejection whose recovery correction fails reads as an incomplete review', async () => {
+  const generate = vi.fn(() => ({
+    supported: false,
+    rejection: 'missing_capability',
+    summary: 'Optional cause unsupported.',
+    reason: 'The cause needs data outside the connected systems.',
+    evidenceIds: [evidenceId],
+    // Well formed and admitted, so it parses, but the record it cites failed to read.
+    correctedRecovery: {
+      questions: [],
+      outcome: 'recovered',
+      recovered: true,
+      summary: 'Checkout is healthy.',
+      evidence: [{ name: 'Request success', before: 'High errors', now: 'Objective met' }],
+      evidenceIds: [evidenceId],
+      unknowns: [],
+      nextStep: null,
+      recheckAfterMinutes: null,
+      scheduleReason: null,
+    },
+  }));
+  const result = await reviewInvestigation(
+    makeFakeGenerator(generate),
+    { ...candidate, disposition: 'recovery' },
+    [{ ...evidence, outcome: 'error', output: null }],
+    new AbortController().signal,
+    input,
+  );
+  expect(result).toMatchObject({
+    outcome: 'inconclusive',
+    recovery: { recovered: false, outcome: 'needs_human' },
+  });
+  expect(result.recovery?.questions?.map((question) => question.category)).toEqual([
+    'partial_evidence',
+  ]);
+});
+
 test.each(['foreign', 'unavailable'] as const)(
   'an endorsed original cannot authorize a %s corrected recovery citation',
   async (scenario) => {
