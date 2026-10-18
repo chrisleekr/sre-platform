@@ -4,6 +4,8 @@ import { Redis } from 'ioredis';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import {
   EMBED_DIM,
+  alertCohortMembers,
+  alertCohorts,
   incidentMessages,
   incidentSignals,
   incidents,
@@ -41,6 +43,8 @@ afterAll(async () => {
   if (admin) {
     await admin.db.delete(jobs).where(eq(jobs.tenantId, tenantId));
     await admin.db.delete(incidentMessages).where(eq(incidentMessages.tenantId, tenantId));
+    await admin.db.delete(alertCohortMembers).where(eq(alertCohortMembers.tenantId, tenantId));
+    await admin.db.delete(alertCohorts).where(eq(alertCohorts.tenantId, tenantId));
     await admin.db.delete(incidentSignals).where(eq(incidentSignals.tenantId, tenantId));
     await admin.db.delete(surfaceBindings).where(eq(surfaceBindings.tenantId, tenantId));
     await admin.db.delete(incidents).where(eq(incidents.tenantId, tenantId));

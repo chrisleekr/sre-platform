@@ -11,12 +11,14 @@ import {
   retrieveNearestActive,
   setIncidentEmbedding,
   type IncidentSummary,
+  type Tx,
 } from '@sre/db';
 import type { HubMessage } from '@sre/hub';
 import { RetryableError } from '@sre/queue';
 import { createHash } from 'node:crypto';
 import { entityCandidateKey } from '@sre/contracts';
 import { priorThreadMessage } from './attachments';
+import { joinSlackAlertCohortTx } from './cohort';
 import type {
   AuthorizedResolutionCandidate,
   ClassifyHandlerDeps,
@@ -357,6 +359,11 @@ export class ClassifyCore {
     const enrichedSignals = options.signals?.map(enrichSignal);
     const enrichedSignal = options.signal ? enrichSignal(options.signal) : undefined;
     const followupJobIds: string[] = [];
+    const joinCohort = this.cohortJoinTx(tenantId, thread.channel, opener);
+    const onRoutedTx: NonNullable<OpenIncidentOptions['onRoutedTx']> = async (tx, routed) => [
+      ...(options.onRoutedTx ? await options.onRoutedTx(tx, routed) : []),
+      ...(await joinCohort(tx, routed)),
+    ];
     let created: RouteResult;
     try {
       created = await this.routeOrRetry({
@@ -386,10 +393,10 @@ export class ClassifyCore {
         dedupKey: options.dedupKey,
         signal: enrichedSignal,
         signals: enrichedSignals,
-        ...(options.onRoutedTx
+        ...(options.onRoutedTx || opener.author === 'system'
           ? {
               onRoutedTx: async (tx, routed) => {
-                followupJobIds.push(...(await options.onRoutedTx!(tx, routed)));
+                followupJobIds.push(...(await onRoutedTx(tx, routed)));
               },
             }
           : {}),
@@ -406,6 +413,21 @@ export class ClassifyCore {
       return;
     }
     await this.seedEmbedding(tenantId, created.incidentId, scrubbedSeed);
+  }
+
+  /**
+   * Joins a provider alert's new incident to its Slack channel cohort, since alerts that open
+   * incidents together may share a cause. Every opener uses it, so a fail-open burst still groups.
+   * @returns Jobs to publish after the transaction commits.
+   */
+  cohortJoinTx(tenantId: string, channel: string, opener: NonNullable<IncidentSignal['opener']>) {
+    return async (
+      tx: Tx,
+      routed: { reused: boolean; signalId: string | null },
+    ): Promise<string[]> =>
+      opener.author === 'system' && !routed.reused && routed.signalId
+        ? joinSlackAlertCohortTx(tx, this.deps.queue, tenantId, channel, routed.signalId)
+        : [];
   }
 
   messageKey(channel: string, messageId: string): string {

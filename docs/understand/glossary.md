@@ -16,7 +16,8 @@ vocabulary for behaviour that is not built yet.
   matched to a service in your catalog, by the platform or by you.
 
 **Alert cohort**
-: Alerts that arrived from the same connection within one short burst window. Being in a cohort
+: Alerts that arrived from the same connection, or the same Slack channel, within one short burst
+  window. Being in a cohort
   suggests what is worth comparing. It is never evidence that they share a cause.
 
 **Approval**

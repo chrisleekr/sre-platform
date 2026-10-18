@@ -68,6 +68,9 @@ export class DegradedSignalRouter {
     };
     try {
       const signals = this.core.signalsFor(scrubbedCandidate);
+      const opener = this.core.openerFor(candidate, scrubbedText);
+      const joinCohort = this.core.cohortJoinTx(tenantId, candidate.channel, opener);
+      const cohortJobIds: string[] = [];
       const routed = await this.core.routeOrRetry(
         {
           tenantId,
@@ -78,7 +81,7 @@ export class DegradedSignalRouter {
           title: providerAlertTitle(scrubbedText, scrubbedCandidate.observations),
           investigationStatus: 'degraded',
           context: scrubbedCandidate.raw,
-          opener: this.core.openerFor(candidate, scrubbedText),
+          opener,
           origin: {
             surface: 'slack',
             channel: candidate.channel,
@@ -86,9 +89,13 @@ export class DegradedSignalRouter {
           },
           dedupTtlSec: INBOUND_DEDUP_TTL_SEC,
           signals,
+          onRoutedTx: async (tx, routed) => {
+            cohortJobIds.push(...(await joinCohort(tx, routed)));
+          },
         },
         signal,
       );
+      for (const jobId of cohortJobIds) await this.core.publishJob(jobId);
       if (routed.reused && routed.incidentId)
         await this.attachments.foldIntoOwner(
           tenantId,
