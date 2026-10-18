@@ -109,6 +109,24 @@ export function linkableMentions(
   return mentions;
 }
 
+/**
+ * Picks the hypothesis a finding headlines: the leading one, else the first still standing.
+ * @param hypotheses - Ranked hypotheses in model order, or stored model-shaped JSON.
+ */
+export function headlineHypothesis(hypotheses: unknown): string | undefined {
+  if (!Array.isArray(hypotheses)) return undefined;
+  // The schema does not put the leading hypothesis first, and disfavored or disproven ones never
+  // headline.
+  const standing = hypotheses.filter(
+    (item): item is { hypothesis?: unknown; state?: unknown } =>
+      item !== null &&
+      typeof item === 'object' &&
+      !['disfavored', 'disproven'].includes((item as { state?: unknown }).state as string),
+  );
+  const pick = standing.find((item) => item.state === 'leading') ?? standing[0];
+  return typeof pick?.hypothesis === 'string' ? pick.hypothesis : undefined;
+}
+
 /** Durable provenance for an evidence-bearing conclusion in the incident conversation. */
 export interface IncidentFindingPayload {
   runId: string | null;

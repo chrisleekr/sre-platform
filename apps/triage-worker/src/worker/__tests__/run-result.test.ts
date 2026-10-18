@@ -61,3 +61,19 @@ test('the likely cause is the first hypothesis still standing, and links pass th
     incidentFindingPayload(rejected, 'run-1', 'not_promoted', 'investigation_inconclusive'),
   ).not.toHaveProperty('likelyCause');
 });
+
+test('a leading hypothesis headlines the finding even when the model ranked another first', () => {
+  const finding = incidentFindingPayload(
+    {
+      ...rejected,
+      rankedHypotheses: [
+        { hypothesis: 'Plausible idea.', confidence: 40, evidence: 'e', state: 'plausible' },
+        { hypothesis: 'Leading idea.', confidence: 70, evidence: 'e', state: 'leading' },
+      ],
+    },
+    'run-1',
+    'trusted_assessment',
+    'conclusive_assessment',
+  );
+  expect(finding.likelyCause).toBe('Leading idea.');
+});

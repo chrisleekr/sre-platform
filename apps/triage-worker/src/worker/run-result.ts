@@ -1,4 +1,4 @@
-import type { IncidentFindingPayload } from '@sre/contracts';
+import { headlineHypothesis, type IncidentFindingPayload } from '@sre/contracts';
 import type { CompleteInvestigationRunInput } from '@sre/db';
 import type { TriageResult } from '../engine/types';
 import { publicModelText } from '../public-output';
@@ -107,7 +107,7 @@ export function incidentFindingPayload(
   promotion: IncidentFindingPayload['promotion'],
   promotionReason: IncidentFindingPayload['promotionReason'],
 ): IncidentFindingPayload {
-  const likelyCause = leadingHypothesis(result);
+  const likelyCause = headlineHypothesis(result.rankedHypotheses);
   return {
     runId: runId ?? null,
     outcome: result.outcome,
@@ -121,13 +121,6 @@ export function incidentFindingPayload(
     ...(likelyCause ? { likelyCause: publicModelText(likelyCause) } : {}),
     ...(result.links?.length ? { links: result.links } : {}),
   };
-}
-
-/** The first hypothesis still standing; disfavored and disproven ones never headline a finding. */
-function leadingHypothesis(result: TriageResult): string | undefined {
-  return result.rankedHypotheses?.find(
-    (hypothesis) => hypothesis.state !== 'disfavored' && hypothesis.state !== 'disproven',
-  )?.hypothesis;
 }
 
 export function investigationRunResult(result: TriageResult): Record<string, unknown> {

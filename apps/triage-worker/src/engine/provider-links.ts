@@ -1,4 +1,4 @@
-import { linkableMentions, type FindingLink } from '@sre/contracts';
+import { headlineHypothesis, linkableMentions, type FindingLink } from '@sre/contracts';
 import type { InvestigationEvidence, TriageResult } from './types';
 
 const MAX_COMMITS = 8;
@@ -103,9 +103,7 @@ export function providerLinks(
 export function renderedFindingText(result: TriageResult): string {
   return [
     result.summary,
-    result.rankedHypotheses?.find(
-      (hypothesis) => hypothesis.state !== 'disfavored' && hypothesis.state !== 'disproven',
-    )?.hypothesis,
+    headlineHypothesis(result.rankedHypotheses),
     result.impact,
     result.nextStep,
     ...(result.reviewGaps ?? []).slice(0, 3),

@@ -9,7 +9,7 @@ import type {
   InvestigationRunOutcome,
   InvestigationTriggerReason,
 } from '@sre/contracts';
-import { scrubSecrets } from '@sre/contracts';
+import { headlineHypothesis, scrubSecrets } from '@sre/contracts';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Db } from '../client';
 import { withTenant, type Tx } from '../rls';
@@ -428,23 +428,11 @@ export async function getIncidentDetail(
       latestInvestigationRun: {
         ...run,
         gaps: publicRunGaps(run.gaps),
-        likelyCause: publicRunText(standingHypothesis(hypotheses)),
+        likelyCause: publicRunText(headlineHypothesis(hypotheses)),
         impact: publicRunText(run.impact),
       },
     };
   });
-}
-
-/** Stored hypotheses are model-shaped jsonb; disfavored and disproven ones never headline. */
-function standingHypothesis(value: unknown): unknown {
-  if (!Array.isArray(value)) return null;
-  const standing = value.find(
-    (item): item is { hypothesis: unknown } =>
-      item !== null &&
-      typeof item === 'object' &&
-      !['disfavored', 'disproven'].includes((item as { state?: unknown }).state as string),
-  );
-  return standing?.hypothesis ?? null;
 }
 
 function publicRunText(value: unknown): string | null {
