@@ -8,6 +8,7 @@ import {
   incidents,
   jobs,
   memberships,
+  recordIncidentRelation,
   users,
   type HumanMessage,
 } from '@sre/db';
@@ -203,6 +204,25 @@ describe('responder-requested recovery verification', () => {
   });
 
   test.each([
+    {
+      name: 'a case whose response group still has an active alert',
+      setup: async () => {
+        const child = await reportedBeforeVerification();
+        const parent = await trackedIncident(`slack:monitor-${randomUUID()}`);
+        await recordIncidentRelation(app.db, tenantId, {
+          sourceIncidentId: child.incidentId,
+          targetIncidentId: parent.incidentId,
+          type: 'caused_by',
+          rationale: 'Responder-confirmed causal direction.',
+          evidence: ['responder:causal-confirmation'],
+          decidedBy: 'human',
+          decidedByUserId: memberId,
+        });
+        return child.incidentId;
+      },
+      reason:
+        'Reported alerts are resolved. Verification waits for the other incidents in this response group.',
+    },
     {
       name: 'a refused verification',
       setup: async () => {

@@ -73,7 +73,7 @@ export async function requestRecoveryVerification(
         ? // The responder asked for a recheck, so a refused verification still runs one.
           `${RECOVERY_NOT_QUEUED} ${CHECK_INSTEAD}`
         : state.resolved.length > 0
-          ? 'Reported alerts are resolved. Verification waits for the other incidents in this response group.'
+          ? `Reported alerts are resolved. Verification waits for the other incidents in this response group. ${CHECK_INSTEAD}`
           : state.durable
             ? `Recovery verification cannot start: provider-verified alerts stay active until the provider clears them. ${CHECK_INSTEAD}`
             : state.active > 0
