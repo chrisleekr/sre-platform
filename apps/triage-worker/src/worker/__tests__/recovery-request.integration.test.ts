@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { and, eq, sql } from 'drizzle-orm';
 import {
+  createIncident,
   incidentMessages,
   incidentSignals,
   incidents,
@@ -25,6 +26,7 @@ import {
   trackedIncident,
   useRecoveryFixture,
 } from '../../classify-consumer/__tests__/recovery-report.fixture';
+import { RECOVERY_NOT_QUEUED } from '../../recovery-start';
 import { requestRecoveryVerification } from '../recovery-request';
 import type { WorkerRuntime } from '../runtime';
 
@@ -198,6 +200,58 @@ describe('responder-requested recovery verification', () => {
     expect((await statusLines(tracked.incidentId))[0]!.content).toMatch(
       /no recorded recovery report\. Running a check instead; nothing will be resolved\.$/,
     );
+  });
+
+  test.each([
+    {
+      name: 'a refused verification',
+      setup: async () => {
+        const tracked = await reportedBeforeVerification();
+        await admin.db
+          .update(incidents)
+          .set({ recoveryState: 'not_verified' })
+          .where(eq(incidents.id, tracked.incidentId));
+        return tracked.incidentId;
+      },
+      reason: RECOVERY_NOT_QUEUED,
+    },
+    {
+      name: 'a case with no alerts',
+      setup: async () =>
+        (
+          await createIncident(app.db, tenantId, {
+            fingerprint: `manual-${randomUUID()}`,
+            alertSource: 'manual',
+            service: 'checkout',
+            severity: 'sev3',
+          })
+        ).id,
+      reason: 'Recovery verification cannot start: this case has no alerts to verify.',
+    },
+    {
+      name: 'a case that is no longer open',
+      setup: async () => {
+        const tracked = await trackedIncident(`slack:monitor-${randomUUID()}`);
+        await admin.db
+          .update(incidents)
+          .set({ status: 'resolved' })
+          .where(eq(incidents.id, tracked.incidentId));
+        return tracked.incidentId;
+      },
+      reason: 'Recovery verification cannot start: this case is no longer open.',
+    },
+  ])('$name says why and falls back to a check', async ({ setup, reason }) => {
+    const incidentId = await setup();
+    const request = await ask(incidentId, memberId);
+
+    expect(
+      await requestRecoveryVerification(runtime(), resumeJob, incidentId, request, request.id),
+    ).toBe('investigate');
+
+    expect(await recoveryJobs(incidentId)).toHaveLength(0);
+    expect(await statusLines(incidentId)).toEqual([
+      { content: `${reason} Running a check instead; nothing will be resolved.` },
+    ]);
   });
 
   test('newer responder input rolls the request back for reinterpretation', async () => {

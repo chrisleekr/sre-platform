@@ -1,6 +1,7 @@
 import {
   activeResponderTx,
   humanMessageFenceMatchesTx,
+  listResponseGroupSignalsTx,
   withTenant,
   type HumanMessage,
 } from '@sre/db';
@@ -60,17 +61,25 @@ export async function requestRecoveryVerification(
       throw new RetryableError(
         'New input arrived before recovery verification; reinterpret the request.',
       );
+    // Only reached when nothing else explains it: an open case whose group has no alerts at all.
+    const unsignalled = async () =>
+      (await listResponseGroupSignalsTx(tx, job.tenantId, incidentId)).length === 0;
     const content = state.queued
       ? 'Verifying recovery. The incident resolves only if verification confirms it.'
       : state.prepared
-        ? RECOVERY_NOT_QUEUED
+        ? // The responder asked for a recheck, so a refused verification still runs one.
+          `${RECOVERY_NOT_QUEUED} ${CHECK_INSTEAD}`
         : state.resolved.length > 0
           ? 'Reported alerts are resolved. Verification waits for the other incidents in this response group.'
           : state.durable
             ? `Recovery verification cannot start: provider-verified alerts stay active until the provider clears them. ${CHECK_INSTEAD}`
             : state.active > 0
               ? `Recovery verification cannot start: an active alert on this incident has no recorded recovery report. ${CHECK_INSTEAD}`
-              : `Recovery verification cannot start: this case is not open, or another incident in its response group still has an active alert. ${CHECK_INSTEAD}`;
+              : state.closed
+                ? `Recovery verification cannot start: this case is no longer open. ${CHECK_INSTEAD}`
+                : (await unsignalled())
+                  ? `Recovery verification cannot start: this case has no alerts to verify. ${CHECK_INSTEAD}`
+                  : `Recovery verification cannot start: another incident in its response group still has an active alert. ${CHECK_INSTEAD}`;
     const { message } = await append(content);
     return { message, jobId: state.jobId };
   });
