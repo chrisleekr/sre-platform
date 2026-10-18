@@ -3,6 +3,7 @@
 // so every mirrored message replies with thread_ts = the binding's thread id, in the binding's channel.
 // Managed Socket Mode inbound lands in apps/api. The fetch client here is injected for outbound tests.
 import { SLACK_API } from './slack-http';
+import { deepLink, escapeSlackText, findingLines, linkify, oneLine } from './slack-text';
 import type { FetchLike, OutboundMessage, SurfacePoster, SurfaceTarget } from './types';
 
 export { slackChatGetPermalink, slackUsersInfoEmail } from './slack-identity';
@@ -47,22 +48,7 @@ const LIFECYCLE_ACTIONS: Record<
   closed: [{ to: 'open', label: 'Reopen' }],
 };
 
-// Slack mrkdwn treats & < > specially; escape them so untrusted text can't inject markup or a fake link.
-// & MUST be replaced first, or the < and > passes would re-escape the ampersands this pass just emitted.
-// https://docs.slack.dev/messaging/formatting-message-text/#escaping
-const escapeSlackText = (s: string): string =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-const deepLink = (url: string, label: string): string => {
-  const safeUrl = url
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '%3C')
-    .replace(/>/g, '%3E')
-    .replace(/\|/g, '%7C');
-  return `<${safeUrl}|${label}>`;
-};
 const incidentLink = (url: string): string => deepLink(url, 'Open incident');
-const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
 
 const isOpeningLifecycle = (msg: OutboundMessage): boolean =>
   msg.kind === 'lifecycle' && msg.lifecycleFrom == null && msg.lifecycleTo === 'open';
@@ -84,32 +70,30 @@ function render(msg: OutboundMessage, link?: string | null): string {
   }
   const who = msg.author === 'agent' ? '🤖' : msg.author === 'human' ? '👤' : 'ℹ️';
   const takeaway = msg.summary ? truncateTakeaway(msg.summary) : null;
+  const finding = msg.finding;
   const unverified =
-    msg.finding?.promotion === 'not_promoted' &&
-    msg.finding.promotionReason === 'investigation_inconclusive';
-  const findingPrefix = msg.finding
-    ? msg.finding.promotion === 'trusted_assessment'
+    finding?.promotion === 'not_promoted' &&
+    finding.promotionReason === 'investigation_inconclusive';
+  const trusted = finding?.promotion === 'trusted_assessment';
+  const findingPrefix = finding
+    ? trusted
       ? 'Conclusion: '
-      : msg.finding.promotionReason === 'investigation_failed' ||
-          msg.finding.promotionReason === 'budget_exhausted' ||
-          msg.finding.promotionReason === 'missing_capability'
+      : finding.promotionReason === 'investigation_failed' ||
+          finding.promotionReason === 'budget_exhausted' ||
+          finding.promotionReason === 'missing_capability'
         ? 'Blocked: '
         : unverified
           ? 'Unverified: '
           : 'Update: '
     : '';
-  // Any inconclusive finding (engine-inconclusive, reviewer-rejected or review-incomplete) says
-  // what to check next. Model text is flattened so it cannot forge a line such as an incident link.
-  const gaps = unverified
-    ? (msg.finding?.gaps ?? []).slice(0, 3).map((g) => `• ${oneLine(g)}`)
+  const labelled = finding
+    ? findingLines(finding, trusted, unverified || finding.promotionReason === 'missing_capability')
     : [];
-  const openChecks = [
-    ...(unverified && msg.finding?.nextStep ? [`Next step: ${oneLine(msg.finding.nextStep)}`] : []),
-    ...(gaps.length ? ['Still to verify:', ...gaps] : []),
-  ];
+  // Above labelled lines the headline is one line, so model text cannot forge or repeat a label.
+  const headline = takeaway ?? msg.content;
   const raw = msg.recovery
     ? msg.content
-    : [`${findingPrefix}${takeaway ?? msg.content}`, ...openChecks].join('\n');
+    : [`${findingPrefix}${labelled.length ? oneLine(headline) : headline}`, ...labelled].join('\n');
   const body = msg.preformatted ? raw : escapeSlackText(raw);
   // Attribute a human reply synced from the dashboard when a label was resolved: the label is the
   // author's email local-part, never the full address. Falls back to the bare glyph when unresolved.
@@ -117,7 +101,9 @@ function render(msg: OutboundMessage, link?: string | null): string {
     msg.author === 'human' && msg.authorLabel
       ? `${who} ${escapeSlackText(msg.authorLabel)} (via dashboard): ${body}`
       : `${who} ${body}`;
-  const text = head.length > SLACK_TEXT_MAX ? `${head.slice(0, SLACK_TEXT_MAX - 1)}…` : head;
+  const truncated = head.length > SLACK_TEXT_MAX ? `${head.slice(0, SLACK_TEXT_MAX - 1)}…` : head;
+  // Links are added after truncation so a cut can never split one into broken markup.
+  const text = msg.recovery || msg.preformatted ? truncated : linkify(truncated, finding?.links);
   if (!link) return text;
   // A postmortem line links to the postmortem page; the fan-out supplied that URL, not the incident's.
   return msg.kind === 'postmortem'
@@ -127,7 +113,8 @@ function render(msg: OutboundMessage, link?: string | null): string {
 
 /** Split escaped mrkdwn at Slack's section limit without cutting an escape entity. */
 function splitSectionText(text: string): string[] {
-  const tokens = text.match(/&(?:amp|lt|gt);|[\s\S]/gu) ?? [];
+  // A link is one token so a section boundary never splits its markup.
+  const tokens = text.match(/<[^<>\n]*>|&(?:amp|lt|gt);|[\s\S]/gu) ?? [];
   const chunks: string[] = [];
   let chunk = '';
   for (const token of tokens) {

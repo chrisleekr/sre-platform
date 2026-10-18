@@ -57,6 +57,78 @@ export const INCIDENT_FINDING_PROMOTION_REASONS = [
 
 export type IncidentFindingPromotionReason = (typeof INCIDENT_FINDING_PROMOTION_REASONS)[number];
 
+/**
+ * A provider web page for an entity named in a finding, such as a commit or an Argo CD application.
+ * Built by the platform from provider API fields, never from model text, so a model cannot plant a
+ * link in a responder channel.
+ */
+export interface FindingLink {
+  /** What the page is for, so a surface never infers it from the label's shape. */
+  kind: 'commit' | 'application';
+  /** Exact token a surface may link in place, such as a short commit SHA or an application name. */
+  label: string;
+  /** Absolute https URL on the provider. */
+  url: string;
+}
+
+/** A mention a surface can replace with a link; `start` and `end` cover its backticks when it is a whole code span. */
+export interface LinkableMention {
+  token: string;
+  start: number;
+  end: number;
+}
+
+// A lowercase SHA prefix of 7 to 40 characters on its own: not part of a longer word, not inside a
+// link or URL path, and not a URL query or fragment value.
+const SHA_MENTION = '(?<![\\w/|=?#&-])[0-9a-f]{7,40}(?![\\w/-])';
+
+/**
+ * Finds the mentions a surface can link, so the commits the platform picks are the ones Slack shows.
+ * @param text - Text to search, before or after Slack escaping; neither changes backticks.
+ * @param pattern - Global pattern for the token; defaults to a commit SHA prefix.
+ */
+export function linkableMentions(
+  text: string,
+  pattern = new RegExp(SHA_MENTION, 'g'),
+): LinkableMention[] {
+  // Slack does not format inside code, so a mention in a code span counts only when it is the
+  // whole span, and then the span, backticks included, is what the link replaces. Inline code
+  // never crosses a line, so a clipped line with an odd backtick cannot pair with the next one.
+  const spans = [...text.matchAll(/```[\s\S]*?```|`[^`\n]+`/g)].map(
+    (span) => [span.index, span.index + span[0].length] as const,
+  );
+  const mentions: LinkableMention[] = [];
+  for (const match of text.matchAll(pattern)) {
+    const start = match.index;
+    const end = start + match[0].length;
+    const span = spans.find(([from, to]) => start >= from && end <= to);
+    if (!span) mentions.push({ token: match[0], start, end });
+    else if (span[0] === start - 1 && span[1] === end + 1)
+      mentions.push({ token: match[0], start: start - 1, end: end + 1 });
+  }
+  return mentions;
+}
+
+/**
+ * Picks the hypothesis a finding headlines: the leading one, else the first still standing.
+ * @param hypotheses - Ranked hypotheses in model order, or stored model-shaped JSON.
+ * @param leadingOnly - Accept only a leading hypothesis, for a finding that states a verified cause.
+ */
+export function headlineHypothesis(hypotheses: unknown, leadingOnly = false): string | undefined {
+  if (!Array.isArray(hypotheses)) return undefined;
+  // The schema does not put the leading hypothesis first, and disfavored or disproven ones never
+  // headline.
+  const standing = hypotheses.filter(
+    (item): item is { hypothesis?: unknown; state?: unknown } =>
+      item !== null &&
+      typeof item === 'object' &&
+      !['disfavored', 'disproven'].includes((item as { state?: unknown }).state as string),
+  );
+  const pick =
+    standing.find((item) => item.state === 'leading') ?? (leadingOnly ? undefined : standing[0]);
+  return typeof pick?.hypothesis === 'string' ? pick.hypothesis : undefined;
+}
+
 /** Durable provenance for an evidence-bearing conclusion in the incident conversation. */
 export interface IncidentFindingPayload {
   runId: string | null;
@@ -69,6 +141,10 @@ export interface IncidentFindingPayload {
   nextStep: string | null;
   /** Open checks named by the evidence reviewer for an unverified result; absent when none. */
   gaps?: string[];
+  /** Leading hypothesis, else the first standing one; a `trusted_assessment` sets it only when one is leading. */
+  likelyCause?: string;
+  /** Provider pages for entities the finding names; absent when none. */
+  links?: FindingLink[];
 }
 
 export const INCIDENT_FEEDBACK_TARGETS = ['finding', 'entity', 'correlation', 'noise'] as const;

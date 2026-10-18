@@ -343,6 +343,83 @@ test.each(['missing', 'malformed', 'foreign citation', 'unavailable evidence'])(
   },
 );
 
+test('a missing-capability rejection whose recovery correction fails reads as an incomplete review', async () => {
+  const generate = vi.fn(() => ({
+    supported: false,
+    rejection: 'missing_capability',
+    summary: 'Optional cause unsupported.',
+    reason: 'The cause needs data outside the connected systems.',
+    evidenceIds: [evidenceId],
+    // Well formed and admitted, so it parses, but the record it cites failed to read.
+    correctedRecovery: {
+      questions: [],
+      outcome: 'recovered',
+      recovered: true,
+      summary: 'Checkout is healthy.',
+      evidence: [{ name: 'Request success', before: 'High errors', now: 'Objective met' }],
+      evidenceIds: [evidenceId],
+      unknowns: [],
+      nextStep: null,
+      recheckAfterMinutes: null,
+      scheduleReason: null,
+    },
+  }));
+  const result = await reviewInvestigation(
+    makeFakeGenerator(generate),
+    {
+      ...candidate,
+      disposition: 'recovery',
+      // The engine named the gap, so only the failed correction keeps this from blocking.
+      unknowns: [
+        {
+          question: 'No connected tool reads the load balancer logs.',
+          category: 'missing_capability',
+          evidenceKind: null,
+          attemptedEvidenceIds: [],
+        },
+      ],
+    },
+    [{ ...evidence, outcome: 'error', output: null }],
+    new AbortController().signal,
+    input,
+  );
+  expect(result).toMatchObject({
+    outcome: 'inconclusive',
+    recovery: { recovered: false, outcome: 'needs_human' },
+  });
+  expect(result.recovery?.questions?.map((question) => question.category)).toEqual([
+    'partial_evidence',
+  ]);
+});
+
+test('a rejected recovery review keeps its next step to one short line', async () => {
+  const step = `Roll back the deployment.\n${'Validate the error rate, then confirm the rollback. '.repeat(18)}`;
+  const generate = vi.fn(() => ({
+    supported: false,
+    rejection: 'insufficient_evidence',
+    summary: 'Recovery is not proven.',
+    reason: 'No current request success evidence.',
+    evidenceIds: [evidenceId],
+    nextStep: step,
+  }));
+  const result = await reviewInvestigation(
+    makeFakeGenerator(generate),
+    { ...candidate, disposition: 'recovery' },
+    [evidence],
+    new AbortController().signal,
+    input,
+  );
+  const next = result.recovery?.nextStep ?? '';
+  const flat = step.replace(/\s+/g, ' ').trim();
+  expect(next.startsWith('Roll back the deployment. Validate')).toBe(true);
+  expect(next).not.toMatch(/[\r\n]/);
+  expect(next.length).toBeLessThanOrEqual(280);
+  // Cut at a word boundary and marked as cut.
+  expect(next.endsWith('…')).toBe(true);
+  expect(flat[next.length - 1]).toBe(' ');
+  expect(result.recovery?.questions?.map((question) => question.nextAction)).toEqual([next]);
+});
+
 test.each(['foreign', 'unavailable'] as const)(
   'an endorsed original cannot authorize a %s corrected recovery citation',
   async (scenario) => {

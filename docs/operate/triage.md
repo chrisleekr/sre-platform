@@ -61,14 +61,31 @@ A job that fails its last allowed attempt is dead-lettered. The [Work queue](../
 
 ## When evidence review rejects a conclusion
 
-A rejected conclusion is recorded as inconclusive and never replaces the trusted assessment. Its
-causes, hypotheses, impact, and recommended action are withheld. The summary keeps only the facts the
-evidence supports, each missing proof becomes an open check, and the next step is the reviewer's
-safest diagnostic step when it names one. Without a reviewer step, the next step asks the responder
-to review the preserved evidence before relying on the conclusion.
+A rejected conclusion is recorded as inconclusive and never replaces the trusted assessment. The
+summary keeps only the facts the evidence supports, model confidence is zero, and each missing proof
+becomes an open check. When every missing proof is data no connected system can read, such as
+network equipment, ISP, or host-level logs, the run is recorded as blocked by a missing capability
+instead, and the incident asks for that capability rather than showing a degraded investigation.
+This needs the investigation itself to have reported that gap as a missing capability, because only
+the investigation sees which tools are connected; otherwise the rejection is treated as missing
+evidence.
 
-Any inconclusive finding posts to Slack as **Unverified**, followed by its next step and, when the
-evidence review named them, up to three open checks under **Still to verify**.
+What else survives depends on why it was rejected:
+
+| Rejection | Hypotheses, current state, impact |
+| --- | --- |
+| Insufficient evidence | Kept. No hypothesis stays **leading**; the top one is shown as a likely cause. |
+| Missing capability | Kept, as for insufficient evidence. |
+| Contradictory evidence | Withheld, because the content may be false. |
+| Review did not complete | Withheld, because nothing was reviewed. |
+
+The next step is the reviewer's. It keeps the engine's proposed fix when the evidence supports it
+and the fix stays correct whichever open question resolves; otherwise it is the safest diagnostic
+step. Without a reviewer step, the next step asks the responder to review the preserved evidence
+before relying on the conclusion.
+
+Any inconclusive finding posts to Slack as **Unverified**, with its likely cause, impact, next step,
+and up to three open checks on labelled lines. See [Slack](slack.md#what-reaches-slack-and-what-does-not).
 
 Reviewer text longer than its limit is cut at the last complete sentence for short fields, such as
 the summary, an open check, or the next step, when that keeps most of the text. Otherwise, and for

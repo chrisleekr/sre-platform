@@ -1,0 +1,181 @@
+import { expect, test } from 'vitest';
+import { providerLinks, renderedFindingText } from '../provider-links';
+import type { InvestigationEvidence } from '../types';
+
+const sha = '3391576ad9e41f223355bf10d612178f196e1a4e';
+const other = '8759f2b6090db5a77db473d092a14dac4b25f03b';
+
+function record(tool: string, output: unknown, outcome = 'data'): InvestigationEvidence {
+  return { id: crypto.randomUUID(), tool, input: {}, output, createdAt: new Date(), outcome };
+}
+
+test('collects GitLab and GitHub commit pages and the Argo CD application page', () => {
+  const links = providerLinks(
+    [
+      record('gitlab_abc_list_commits', [
+        {
+          id: sha,
+          short_id: '3391576a',
+          web_url: `https://gitlab.example.com/g/app/-/commit/${sha}`,
+        },
+      ]),
+      record('github_def_compare_commits', {
+        commits: [{ sha: other, html_url: `https://github.com/o/app/commit/${other}` }],
+      }),
+      record('argocd_xyz_get_application', {
+        metadata: { name: 'trading-bot', namespace: 'argocd' },
+        webUrl: 'https://argocd.example.com/applications/argocd/trading-bot',
+      }),
+    ],
+    `Rollout ${sha.slice(0, 7)} followed ${other}.`,
+  );
+  expect(links).toEqual([
+    { kind: 'commit', label: '3391576a', url: `https://gitlab.example.com/g/app/-/commit/${sha}` },
+    { kind: 'commit', label: '8759f2b6', url: `https://github.com/o/app/commit/${other}` },
+    {
+      kind: 'application',
+      label: 'trading-bot',
+      url: 'https://argocd.example.com/applications/argocd/trading-bot',
+    },
+  ]);
+});
+
+test('ignores URLs a commit author or an unrelated tool could control', () => {
+  const links = providerLinks(
+    [
+      // A link inside the commit message, and a web_url that does not end in the commit's own SHA.
+      record('gitlab_abc_list_commits', [
+        { id: sha, message: 'see https://evil.example/x', web_url: 'https://evil.example/x' },
+        { id: other, web_url: `http://gitlab.example.com/g/app/-/commit/${other}` },
+      ]),
+      // Same shape from a tool that is not a git connector.
+      record('kubernetes_k8s_get_resource', {
+        id: sha,
+        web_url: `https://gitlab.example.com/g/app/-/commit/${sha}`,
+      }),
+      // A failed read and an Argo app with a credentialed URL.
+      record(
+        'gitlab_abc_get_commit',
+        { id: sha, web_url: `https://gitlab.example.com/g/app/-/commit/${sha}` },
+        'error',
+      ),
+      record('argocd_xyz_get_application', {
+        metadata: { name: 'api' },
+        webUrl: 'https://user:pw@argocd.example.com/applications/argocd/api',
+      }),
+    ],
+    `${sha} and ${other}`,
+  );
+  expect(links).toEqual([]);
+});
+
+const listed = Array.from({ length: 20 }, (_, index) => {
+  const id = (index + 16).toString(16).padStart(2, '0').repeat(20);
+  return { id, web_url: `https://gitlab.example.com/g/app/-/commit/${id}` };
+});
+
+test('keeps the first link per label and stops at eight named commits', () => {
+  const links = providerLinks(
+    [record('gitlab_abc_list_commits', [...listed, { ...listed[0], web_url: listed[1]!.web_url }])],
+    listed.map((commit) => commit.id).join(' '),
+  );
+  expect(links).toHaveLength(8);
+  expect(links[0]).toEqual({
+    kind: 'commit',
+    label: listed[0]!.id.slice(0, 8),
+    url: listed[0]!.web_url,
+  });
+});
+
+test('a long commit list keeps the named commit and the application link', () => {
+  const named = listed[12]!;
+  const links = providerLinks(
+    [
+      record('gitlab_abc_list_commits', listed),
+      record('argocd_xyz_get_application', {
+        metadata: { name: 'trading-bot' },
+        webUrl: 'https://argocd.example.com/applications/argocd/trading-bot',
+      }),
+    ],
+    `The rollout of ${named.id.slice(0, 7)} restarted trading-bot.`,
+  );
+  expect(links).toEqual([
+    { kind: 'commit', label: named.id.slice(0, 8), url: named.web_url },
+    {
+      kind: 'application',
+      label: 'trading-bot',
+      url: 'https://argocd.example.com/applications/argocd/trading-bot',
+    },
+  ]);
+});
+
+test('a commit the finding never names is not linked', () => {
+  expect(
+    providerLinks([record('gitlab_abc_list_commits', listed)], 'Memory pressure on the node.'),
+  ).toEqual([]);
+});
+
+test('the commit a responder sees keeps its link when hidden fields name others', () => {
+  // Later in the evidence than every hidden commit, so it is reached only after them.
+  const seen = listed[15];
+  const hidden = listed.slice(0, 12);
+  const text = renderedFindingText({
+    provider: 'fake',
+    sessionId: 'fake',
+    outcome: 'inconclusive',
+    turnBudget: 1,
+    summary: 'Checkout errors rose after a rollout.',
+    confidence: 0,
+    currentState: `Running ${hidden[0]!.id.slice(0, 7)}.`,
+    rankedHypotheses: [
+      {
+        hypothesis: `Disproven: ${hidden[1]!.id.slice(0, 7)}.`,
+        confidence: 0,
+        evidence: '',
+        state: 'disproven',
+      },
+      { hypothesis: 'The rollout raised load.', confidence: 60, evidence: '', state: 'plausible' },
+      ...hidden.slice(2, 10).map((commit) => ({
+        hypothesis: `Or ${commit.id.slice(0, 7)}.`,
+        confidence: 10,
+        evidence: '',
+        state: 'plausible' as const,
+      })),
+    ],
+    nextStep: `Revert ${seen!.id.slice(0, 7)}.`,
+    reviewGaps: ['One.', 'Two.', 'Three.', `Fourth names ${hidden[11]!.id.slice(0, 7)}.`],
+  });
+
+  expect(providerLinks([record('gitlab_abc_list_commits', listed)], text)).toEqual([
+    { kind: 'commit', label: seen!.id.slice(0, 8), url: seen!.web_url },
+  ]);
+});
+
+test('an uppercase SHA mention takes no link slot, as Slack would not render it', () => {
+  expect(
+    providerLinks(
+      [record('gitlab_abc_list_commits', listed)],
+      `Revert ${listed[10]!.id.slice(0, 7).toUpperCase()}.`,
+    ),
+  ).toEqual([]);
+});
+
+test('a SHA Slack would not link, such as one inside a word or a cited URL, takes no link slot', () => {
+  const sha = listed[10]!.id;
+  expect(
+    providerLinks(
+      [record('gitlab_abc_list_commits', listed)],
+      `See g${sha.slice(0, 7)}, ${sha.slice(0, 8)}_x, https://git.example/commit/${sha} and ?rev=${sha}.`,
+    ),
+  ).toEqual([]);
+});
+
+test('a SHA inside code takes no link slot unless it is the whole code span', () => {
+  const [inside, whole] = [listed[10]!, listed[11]!];
+  expect(
+    providerLinks(
+      [record('gitlab_abc_list_commits', listed)],
+      `Run \`git show ${inside.id.slice(0, 7)}\`; \`${whole.id.slice(0, 8)}\` is the suspect.`,
+    ),
+  ).toEqual([{ kind: 'commit', label: whole.id.slice(0, 8), url: whole.web_url }]);
+});

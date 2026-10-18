@@ -9,7 +9,7 @@ import type {
   InvestigationRunOutcome,
   InvestigationTriggerReason,
 } from '@sre/contracts';
-import { scrubSecrets } from '@sre/contracts';
+import { headlineHypothesis, scrubSecrets } from '@sre/contracts';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Db } from '../client';
 import { withTenant, type Tx } from '../rls';
@@ -39,6 +39,10 @@ export interface LatestInvestigationRun {
   reason: string | null;
   /** Evidence reviewer open checks; read by the incident detail only, never by list projections. */
   gaps?: string[];
+  /** The run's leading hypothesis, else its first standing one, whether or not it was promoted. Detail only. */
+  likelyCause?: string | null;
+  /** The run's impact statement, whether or not it was promoted. Detail only. */
+  impact?: string | null;
   completedAt: string;
 }
 
@@ -61,7 +65,13 @@ const latestInvestigationRunSql = (withGaps = false) => sql<LatestInvestigationR
     'summary', ${investigationRuns.result} ->> 'summary',
     'nextStep', ${investigationRuns.result} ->> 'nextStep',
     'reason', ${investigationRuns.result} ->> 'reason',
-    ${withGaps ? sql`'gaps', ${investigationRuns.result} -> 'gaps',` : sql``}
+    ${
+      withGaps
+        ? sql`'gaps', ${investigationRuns.result} -> 'gaps',
+          'hypotheses', ${investigationRuns.result} -> 'rankedHypotheses',
+          'impact', ${investigationRuns.result} -> 'impact',`
+        : sql``
+    }
     'completedAt', to_char(
       ${investigationRuns.completedAt} at time zone 'UTC',
       'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'
@@ -410,9 +420,24 @@ export async function getIncidentDetail(
       .limit(1);
     const row = rows[0];
     if (!row?.latestInvestigationRun) return row ?? null;
-    const run = row.latestInvestigationRun;
-    return { ...row, latestInvestigationRun: { ...run, gaps: publicRunGaps(run.gaps) } };
+    const { hypotheses, ...run } = row.latestInvestigationRun as LatestInvestigationRun & {
+      hypotheses?: unknown;
+    };
+    return {
+      ...row,
+      latestInvestigationRun: {
+        ...run,
+        gaps: publicRunGaps(run.gaps),
+        likelyCause: publicRunText(headlineHypothesis(hypotheses)),
+        impact: publicRunText(run.impact),
+      },
+    };
   });
+}
+
+function publicRunText(value: unknown): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  return scrubSecrets(value.trim()).slice(0, 1_000);
 }
 
 /** Stored gaps are model-shaped jsonb, so keep only bounded, scrubbed, nonblank strings. */

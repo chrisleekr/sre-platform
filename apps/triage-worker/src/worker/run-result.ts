@@ -1,4 +1,4 @@
-import type { IncidentFindingPayload } from '@sre/contracts';
+import { headlineHypothesis, type IncidentFindingPayload } from '@sre/contracts';
 import type { CompleteInvestigationRunInput } from '@sre/db';
 import type { TriageResult } from '../engine/types';
 import { publicModelText } from '../public-output';
@@ -107,6 +107,11 @@ export function incidentFindingPayload(
   promotion: IncidentFindingPayload['promotion'],
   promotionReason: IncidentFindingPayload['promotionReason'],
 ): IncidentFindingPayload {
+  // Slack labels a trusted finding's cause as verified, so a merely plausible one never fills it.
+  const likelyCause = headlineHypothesis(
+    result.rankedHypotheses,
+    promotion === 'trusted_assessment',
+  );
   return {
     runId: runId ?? null,
     outcome: result.outcome,
@@ -117,6 +122,8 @@ export function incidentFindingPayload(
     impact: result.impact ? publicModelText(result.impact) : null,
     nextStep: result.nextStep ? publicModelText(result.nextStep) : null,
     ...(result.reviewGaps?.length ? { gaps: result.reviewGaps.map(publicModelText) } : {}),
+    ...(likelyCause ? { likelyCause: publicModelText(likelyCause) } : {}),
+    ...(result.links?.length ? { links: result.links } : {}),
   };
 }
 
