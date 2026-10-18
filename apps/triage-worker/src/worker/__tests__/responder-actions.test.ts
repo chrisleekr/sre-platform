@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { INVESTIGATION_RETRY_ORIGIN_PREFIX } from '@sre/contracts';
 import type { HumanMessage } from '@sre/db';
@@ -59,7 +60,7 @@ function message(originSurface: string, originMessageId: string | null): HumanMe
   };
 }
 
-async function process(input: HumanMessage) {
+async function process(input: HumanMessage, earlier: HumanMessage[] = []) {
   const checkpoint = vi.fn(async () => undefined);
   const pending = await processResponderActions(
     runtime,
@@ -68,7 +69,7 @@ async function process(input: HumanMessage) {
     [input],
     1,
     new AbortController().signal,
-    { newer: [input], pending: [], base: null, checkpoint },
+    { newer: [input], pending: earlier, base: null, checkpoint },
   );
   return { pending, checkpoint };
 }
@@ -98,12 +99,14 @@ test('a retry origin id arriving from another surface is still classified', asyn
 });
 
 test.each([
-  { outcome: 'handled' as const, investigated: false },
-  { outcome: 'investigate' as const, investigated: true },
-  { outcome: 'forbidden' as const, investigated: false },
+  // A handled request answers everything before it, and a check answers it in their place.
+  { outcome: 'handled' as const, kept: 'none' },
+  { outcome: 'investigate' as const, kept: 'request' },
+  // A forbidden request did nothing, so the earlier question still waits for an answer.
+  { outcome: 'forbidden' as const, kept: 'earlier' },
 ])(
   'a recovery verification request is $outcome without a lifecycle transition',
-  async ({ outcome, investigated }) => {
+  async ({ outcome, kept }) => {
     generate.mockResolvedValueOnce({
       kind: 'verify_recovery',
       target: 'current',
@@ -112,7 +115,8 @@ test.each([
     });
     vi.mocked(requestRecoveryVerification).mockResolvedValueOnce(outcome);
     const typed = message('dashboard', 'dashboard:typed');
-    const { pending } = await process(typed);
+    const earlier = { ...message('dashboard', 'dashboard:earlier'), id: randomUUID() };
+    const { pending } = await process(typed, [earlier]);
     expect(requestRecoveryVerification).toHaveBeenCalledWith(
       runtime,
       job,
@@ -120,7 +124,7 @@ test.each([
       typed,
       typed.id,
     );
-    expect(pending).toEqual(investigated ? [typed] : []);
+    expect(pending).toEqual({ none: [], request: [typed], earlier: [earlier] }[kept]);
     expect(runtime.deps.hub.transitionIncident).not.toHaveBeenCalled();
   },
 );

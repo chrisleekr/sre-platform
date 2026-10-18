@@ -15,6 +15,9 @@ const FORBIDDEN =
 
 type Outcome = 'handled' | 'investigate' | 'forbidden';
 
+// The posted line is the only durable record of a request's outcome, so a redelivery reads the
+// outcome back from it: FORBIDDEN is forbidden, a line ending in CHECK_INSTEAD investigates, and
+// anything else was handled. Changing either constant's wording changes how redeliveries route.
 const outcomeOf = (content: string): Outcome =>
   content === FORBIDDEN ? 'forbidden' : content.endsWith(CHECK_INSTEAD) ? 'investigate' : 'handled';
 
