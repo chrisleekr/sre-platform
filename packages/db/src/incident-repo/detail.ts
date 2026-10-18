@@ -39,7 +39,7 @@ export interface LatestInvestigationRun {
   reason: string | null;
   /** Evidence reviewer open checks; read by the incident detail only, never by list projections. */
   gaps?: string[];
-  /** The run's first standing hypothesis, whether or not it was promoted. Detail only. */
+  /** The run's leading hypothesis, else its first standing one, whether or not it was promoted. Detail only. */
   likelyCause?: string | null;
   /** The run's impact statement, whether or not it was promoted. Detail only. */
   impact?: string | null;

@@ -141,7 +141,7 @@ export interface IncidentFindingPayload {
   nextStep: string | null;
   /** Open checks named by the evidence reviewer for an unverified result; absent when none. */
   gaps?: string[];
-  /** Leading hypothesis in one sentence. Trusted only when `promotion` is `trusted_assessment`. */
+  /** Leading hypothesis, else the first standing one; a `trusted_assessment` sets it only when one is leading. */
   likelyCause?: string;
   /** Provider pages for entities the finding names; absent when none. */
   links?: FindingLink[];
