@@ -47,6 +47,7 @@ export async function startReportedRecoveryTx(
     resolved,
     active,
     durable,
+    closed: closed === true,
     prepared: recovery !== null,
     queued: jobId !== null || coalesced === true,
     jobId,
