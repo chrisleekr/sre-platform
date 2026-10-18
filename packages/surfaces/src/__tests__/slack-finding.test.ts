@@ -425,6 +425,28 @@ test('a clipped line never ends on half of a surrogate pair', async () => {
   expect(calls[0]!.body.text).toContain(`Do: ${'a'.repeat(398)}…`);
 });
 
+test('an application named like a label word never links inside the label', async () => {
+  const { fetch, calls } = fixture.fakeFetch({ ok: true, ts: '1' });
+  await makeSlackPoster(fetch).post(
+    { token: 'B', channel: 'C' },
+    'ROOT',
+    fixture.msg({
+      kind: 'finding',
+      content: 'x',
+      summary: 'Sync failed.',
+      finding: {
+        ...inconclusive,
+        nextStep: null,
+        likelyCause: 'The cause app ran out of memory.',
+        links: [{ kind: 'application', label: 'cause', url: argoUrl }],
+      },
+    }),
+  );
+  expect(calls[0]!.body.text).toContain(
+    `Likely cause: The <${argoUrl}|cause> app ran out of memory.`,
+  );
+});
+
 test('a SHA inside a URL the model cited stays as written', async () => {
   const { fetch, calls } = fixture.fakeFetch({ ok: true, ts: '1' });
   await makeSlackPoster(fetch).post(
