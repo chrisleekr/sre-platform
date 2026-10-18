@@ -244,17 +244,36 @@ test('more than five gaps are all kept as unknowns and a blank next step falls b
   expect(result.nextStep).toBe('Review the preserved evidence before relying on this conclusion.');
 });
 
-test('a missing-capability rejection blocks the run and keeps the demoted hypotheses', async () => {
-  const generator = makeFakeGenerator(() => ({
+const capabilityGap = {
+  question: 'No connected tool reads hypervisor logs.',
+  category: 'missing_capability' as const,
+  evidenceKind: null,
+  attemptedEvidenceIds: [],
+};
+const missingCapabilityReview = () =>
+  makeFakeGenerator(() => ({
     supported: false,
     rejection: 'missing_capability',
     summary: 'Grafana was OOMKilled at 09:12Z.',
     gaps: ['Read the hypervisor memory balloon log for 09:00 to 09:15Z.'],
     evidenceIds: [evidenceId],
   }));
+
+test('a missing-capability rejection without the engine naming that gap reads as unproven', async () => {
   const result = await reviewInvestigation(
-    generator,
+    missingCapabilityReview(),
     candidate,
+    evidence,
+    new AbortController().signal,
+  );
+  expect(result.outcome).toBe('inconclusive');
+  expect(result.unknowns?.at(-1)?.category).toBe('partial_evidence');
+});
+
+test('a missing-capability rejection blocks the run and keeps the demoted hypotheses', async () => {
+  const result = await reviewInvestigation(
+    missingCapabilityReview(),
+    { ...candidate, unknowns: [priorGap, capabilityGap] },
     evidence,
     new AbortController().signal,
   );

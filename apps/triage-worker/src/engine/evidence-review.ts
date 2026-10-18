@@ -203,7 +203,13 @@ export async function reviewInvestigation(
     // Set only once the review completed: a throw above means the review itself failed, so its
     // rejection must not classify the result as a contradiction or a missing capability.
     contradictory = !review.supported && review.rejection === 'contradictory_evidence';
-    blocked = !review.supported && review.rejection === 'missing_capability';
+    // The reviewer sees evidence, not the connected tool catalog, so a configured tool that was never
+    // called looks missing to it. Only the engine, which had the catalog, can say a capability is
+    // absent; without its missing-capability gap the rejection reads as insufficient evidence.
+    blocked =
+      !review.supported &&
+      review.rejection === 'missing_capability' &&
+      (candidate.unknowns ?? []).some((unknown) => unknown.category === 'missing_capability');
     reviewed = true;
   } catch (error) {
     if (signal.aborted) throw signal.reason;

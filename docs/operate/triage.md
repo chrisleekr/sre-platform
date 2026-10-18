@@ -66,6 +66,9 @@ summary keeps only the facts the evidence supports, model confidence is zero, an
 becomes an open check. When every missing proof is data no connected system can read, such as
 network equipment, ISP, or host-level logs, the run is recorded as blocked by a missing capability
 instead, and the incident asks for that capability rather than showing a degraded investigation.
+This needs the investigation itself to have reported that gap as a missing capability, because only
+the investigation sees which tools are connected; otherwise the rejection is treated as missing
+evidence.
 
 What else survives depends on why it was rejected:
 

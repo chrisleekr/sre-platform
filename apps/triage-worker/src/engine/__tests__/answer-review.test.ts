@@ -366,7 +366,19 @@ test('a missing-capability rejection whose recovery correction fails reads as an
   }));
   const result = await reviewInvestigation(
     makeFakeGenerator(generate),
-    { ...candidate, disposition: 'recovery' },
+    {
+      ...candidate,
+      disposition: 'recovery',
+      // The engine named the gap, so only the failed correction keeps this from blocking.
+      unknowns: [
+        {
+          question: 'No connected tool reads the load balancer logs.',
+          category: 'missing_capability',
+          evidenceKind: null,
+          attemptedEvidenceIds: [],
+        },
+      ],
+    },
     [{ ...evidence, outcome: 'error', output: null }],
     new AbortController().signal,
     input,
