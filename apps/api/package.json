@@ -10,7 +10,7 @@
     "start": "bun run src/index.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/server": "2.0.0",
+    "@modelcontextprotocol/server": "2.3.1",
     "@slack/socket-mode": "2.0.7",
     "@sre/agent-tools": "workspace:*",
     "@sre/alerts": "workspace:*",
@@ -24,8 +24,8 @@
     "@sre/slo": "workspace:*",
     "@sre/surfaces": "workspace:*",
     "@sre/topology": "workspace:*",
-    "drizzle-orm": "^0.45.3",
-    "hono": "^4.13.8",
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.13.13",
     "ioredis": "^6.0.0",
     "jose": "^6.2.12",
     "smee-client": "^5.0.0",
