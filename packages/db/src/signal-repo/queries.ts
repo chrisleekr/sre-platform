@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, isNull, like, lt, lte, ne } from 'drizzle-orm';
 import type { Db } from '../client';
 import { withTenant, type Executor, type Tx } from '../rls';
-import { incidentSignals, incidents } from '../schema';
+import { ACTIVE_STATUSES, incidentSignals, incidents } from '../schema';
 
 import { applySignalObservationTx } from './observation';
 import type { SignalApplyResult, SignalObservation } from './recovery';
@@ -261,14 +261,15 @@ export async function listSignalsByExternalRoot(
 }
 
 /**
- * Finds active Slack episodes for stable monitor identities from one authenticated producer.
+ * Finds active Slack episodes of open incidents for stable monitor identities from one authenticated
+ * producer.
  *
  * @param db - Database connection used for the operation.
  * @param tenantId - Tenant that owns the signals.
  * @param channel - Slack channel containing the observations.
  * @param producerId - Authenticated Slack producer identity.
  * @param monitorKeys - Stable monitor identities to match.
- * @param options - `includeResolved` also returns resolved episodes; the caller checks the incident.
+ * @param options - `includeResolved` also returns resolved episodes.
  */
 export async function listActiveSlackSignalsByMonitorKeys(
   db: Executor,
@@ -293,7 +294,14 @@ export async function listActiveSlackSignalsByMonitorKeys(
           options.includeResolved ? undefined : ne(incidentSignals.state, 'resolved'),
           inArray(incidentSignals.monitorKey, keys),
           like(incidentSignals.lastEventKey, `%:producer:${producerId}`),
-          inArray(incidentSignals.incidentId, visibleIncidentIds(tx)),
+          // Only open incidents: resolved episodes of a monitor accumulate across closed ones.
+          inArray(
+            incidentSignals.incidentId,
+            tx
+              .select({ id: incidents.id })
+              .from(incidents)
+              .where(and(isNull(incidents.archivedAt), inArray(incidents.status, ACTIVE_STATUSES))),
+          ),
         ),
       )
       .orderBy(desc(incidentSignals.lastSeenAt), desc(incidentSignals.id)),

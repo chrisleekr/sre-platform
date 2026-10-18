@@ -7,6 +7,7 @@ import {
   incidentMessages,
   incidentSignals,
   incidents,
+  jobs,
   listProviderRecoveryReports,
 } from '@sre/db';
 import type { InboundCandidate } from '@sre/connectors';
@@ -95,6 +96,43 @@ describe('Slack recovery verification', () => {
       .from(incidents)
       .where(eq(incidents.id, tracked.incidentId));
     expect(incident!.status).toBe('open');
+  });
+
+  test('a later notice on an already cleared incident leaves a scheduled recheck alone', async () => {
+    const monitorKey = `slack:monitor-${randomUUID()}`;
+    const tracked = await trackedIncident(monitorKey);
+    const { handle } = handler();
+    await handle(job(resolvedCandidate(monitorKey)));
+    // A monitoring cycle schedules its next check ahead.
+    const scheduled = new Date(Date.now() + 60 * 60 * 1000);
+    await admin.db
+      .update(jobs)
+      .set({ availableAt: scheduled })
+      .where(
+        and(
+          eq(jobs.type, 'recovery.verify'),
+          sql`${jobs.payload} ->> 'incidentId' = ${tracked.incidentId}`,
+        ),
+      );
+
+    const later = resolvedCandidate(monitorKey);
+    await handle(job(later));
+
+    const rows = await admin.db
+      .select({ availableAt: jobs.availableAt, status: jobs.status })
+      .from(jobs)
+      .where(
+        and(
+          eq(jobs.type, 'recovery.verify'),
+          sql`${jobs.payload} ->> 'incidentId' = ${tracked.incidentId}`,
+        ),
+      );
+    expect(rows).toEqual([{ availableAt: scheduled, status: 'queued' }]);
+    // The check is still pending, so the notice reads as verifying rather than refused.
+    expect(await reportMessages(tracked.incidentId)).toEqual([
+      { author: 'system', content: VERIFYING },
+      { author: 'system', content: VERIFYING },
+    ]);
   });
 
   test('one notice covers every earlier post of the same monitor', async () => {

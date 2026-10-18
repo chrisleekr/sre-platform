@@ -277,3 +277,44 @@ test('active Slack monitor lookup includes advisory unknown signals and excludes
   ]);
   expect(rows.map((row) => row.id)).toEqual([advisory.signal.id]);
 });
+
+test('a resolved-inclusive monitor lookup skips episodes of incidents that are no longer open', async () => {
+  const channel = `C-CLOSED-${randomUUID().slice(0, 8)}`;
+  const observe = async (suffix: string) => {
+    const incident = await createIncident(app.db, tenantId, {
+      fingerprint: `closed-${randomUUID()}`,
+      alertSource: 'slack',
+      service: 'checkout',
+      severity: 'sev3',
+    });
+    const observed = await applySignalObservation(app.db, tenantId, {
+      incidentId: incident.id,
+      surface: 'slack',
+      channel,
+      externalMessageId: `message-${suffix}`,
+      state: 'resolved',
+      summary: `Cleared ${suffix}`,
+      contentHash: `content-${suffix}`,
+      monitorKey: 'monitor:repeating',
+      eventKey: `slack:${channel}:message-${suffix}:producer:bot:B1`,
+      eventAt: new Date('2026-08-26T05:00:00.000Z'),
+    });
+    return { incidentId: incident.id, signalId: observed.signal.id };
+  };
+  const open = await observe('open');
+  const closed = await observe('closed');
+  await admin.db
+    .update(incidents)
+    .set({ status: 'resolved' })
+    .where(eq(incidents.id, closed.incidentId));
+
+  const rows = await listActiveSlackSignalsByMonitorKeys(
+    app.db,
+    tenantId,
+    channel,
+    'bot:B1',
+    ['monitor:repeating'],
+    { includeResolved: true },
+  );
+  expect(rows.map((row) => row.id)).toEqual([open.signalId]);
+});
