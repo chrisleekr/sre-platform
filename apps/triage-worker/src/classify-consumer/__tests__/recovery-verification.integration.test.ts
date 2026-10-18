@@ -9,8 +9,10 @@ import {
   incidents,
   jobs,
   listProviderRecoveryReports,
+  recordIncidentRelation,
 } from '@sre/db';
 import type { InboundCandidate } from '@sre/connectors';
+import { RECOVERY_NOT_QUEUED } from '../../recovery-start';
 import {
   CHANNEL,
   PRODUCER,
@@ -132,6 +134,63 @@ describe('Slack recovery verification', () => {
     expect(await reportMessages(tracked.incidentId)).toEqual([
       { author: 'system', content: VERIFYING },
       { author: 'system', content: VERIFYING },
+    ]);
+  });
+
+  test('a notice on an incident whose recovery was judged not verified queues nothing', async () => {
+    const monitorKey = `slack:monitor-${randomUUID()}`;
+    const tracked = await trackedIncident(monitorKey);
+    await admin.db
+      .update(incidents)
+      .set({ recoveryState: 'not_verified' })
+      .where(eq(incidents.id, tracked.incidentId));
+    const { handle } = handler();
+
+    await handle(job(resolvedCandidate(monitorKey)));
+
+    expect(await signalStates(tracked.incidentId)).toEqual([
+      { state: 'resolved', clearProvenance: 'unknown' },
+    ]);
+    expect(await recoveryJobs(tracked.incidentId)).toEqual([]);
+    expect(await reportMessages(tracked.incidentId)).toEqual([
+      {
+        author: 'system',
+        content: `Provider reported recovery in Slack at 2026-09-20T00:05:00.000Z. ${RECOVERY_NOT_QUEUED}`,
+      },
+    ]);
+  });
+
+  test('a notice on a causal child waits while its parent still has an active alert', async () => {
+    const child = await trackedIncident(`slack:monitor-${randomUUID()}`);
+    const parent = await trackedIncident(`slack:monitor-${randomUUID()}`);
+    await recordIncidentRelation(app.db, tenantId, {
+      sourceIncidentId: child.incidentId,
+      targetIncidentId: parent.incidentId,
+      type: 'caused_by',
+      rationale: 'Responder-confirmed causal direction.',
+      evidence: ['responder:causal-confirmation'],
+      decidedBy: 'human',
+      decidedByUserId: randomUUID(),
+    });
+    const [childSignal] = await admin.db
+      .select({ monitorKey: incidentSignals.monitorKey })
+      .from(incidentSignals)
+      .where(eq(incidentSignals.id, child.signalId));
+    const { handle } = handler();
+
+    await handle(job(resolvedCandidate(childSignal!.monitorKey!)));
+
+    expect((await signalStates(child.incidentId)).map((signal) => signal.state)).toEqual([
+      'resolved',
+    ]);
+    expect(await recoveryJobs(child.incidentId)).toEqual([]);
+    expect(await recoveryJobs(parent.incidentId)).toEqual([]);
+    expect(await reportMessages(child.incidentId)).toEqual([
+      {
+        author: 'system',
+        content:
+          'Provider reported recovery in Slack at 2026-09-20T00:05:00.000Z. Verification waits for the other incidents in this response group.',
+      },
     ]);
   });
 

@@ -8,6 +8,7 @@ import {
   applySignalObservation,
   createIncident,
   incidentMessages,
+  incidentRelations,
   incidentSignals,
   inboundSideEffects,
   incidents,
@@ -66,6 +67,7 @@ export function useRecoveryFixture(): void {
       await admin.db.delete(alertCohortMembers).where(scoped);
       await admin.db.delete(alertCohorts).where(scoped);
       await admin.db.delete(incidentSignals).where(scoped);
+      await admin.db.delete(incidentRelations).where(scoped);
       await admin.db.delete(incidents).where(scoped);
       await admin.db.delete(tenantSignalPolicies).where(scoped);
       await admin.db.delete(tenants).where(sql`id in (${tenantId}, ${foreignTenantId})`);

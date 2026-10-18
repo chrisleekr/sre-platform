@@ -170,13 +170,14 @@ async function listProviderRecoveryReportsTx(
  * @param tx - Tenant transaction; takes response-group work, incident, then signal locks.
  * @param tenantId - Owning tenant.
  * @param incidentId - Incident the reports were linked to.
- * @returns The resolved signal ids, and how many signals were active before.
+ * @returns The resolved signal ids, how many signals were active before, and `closed` when the
+ * incident is no longer open, so the caller does not read it as already cleared.
  */
 export async function resolveReportedSignalsTx(
   tx: Tx,
   tenantId: string,
   incidentId: string,
-): Promise<{ resolved: string[]; active: number; durable: boolean }> {
+): Promise<{ resolved: string[]; active: number; durable: boolean; closed?: true }> {
   // Recovery verification then checks the service. The clear is recorded as `unknown` provenance:
   // Slack text is not provider proof, so a `provider_clear` incident still refuses it and a
   // `verified_recovery` incident resolves only after verification. Partial coverage changes nothing.
@@ -188,7 +189,7 @@ export async function resolveReportedSignalsTx(
     .limit(1)
     .for('update');
   if (!incident || incident.archivedAt || !['open', 'mitigated'].includes(incident.status))
-    return { resolved: [], active: 0, durable: false };
+    return { resolved: [], active: 0, durable: false, closed: true };
   const active = await tx
     .select({
       id: incidentSignals.id,

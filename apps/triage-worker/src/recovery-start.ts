@@ -18,12 +18,16 @@ export async function startReportedRecoveryTx(
   tenantId: string,
   incidentId: string,
 ) {
-  const { resolved, active, durable } = await resolveReportedSignalsTx(tx, tenantId, incidentId);
+  const { resolved, active, durable, closed } = await resolveReportedSignalsTx(
+    tx,
+    tenantId,
+    incidentId,
+  );
   // Verification starts only when every signal in the response group is resolved. With nothing left
   // active, an earlier clear already decided it. Only a clear that changed a signal queues: merging
   // into the job would make a scheduled recheck due now and spend the check budget early.
   const recovery =
-    resolved.length > 0 || (active === 0 && !durable)
+    resolved.length > 0 || (active === 0 && !durable && !closed)
       ? await prepareResponseGroupRecoveryTx(tx, tenantId, incidentId)
       : null;
   const { jobId, coalesced } = !recovery
