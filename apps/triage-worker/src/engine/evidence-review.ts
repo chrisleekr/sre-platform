@@ -55,11 +55,17 @@ function incompleteReviewSummary(reason: string): string {
   return `Evidence review did not complete: ${reason} The evidence and prior assessment remain available.`;
 }
 
-/** Caps every hypothesis at plausible so an unproven conclusion never reads as the leading cause. */
+/**
+ * Caps every hypothesis at plausible so an unproven conclusion never reads as the leading cause. The
+ * leading one moves first, because once demoted only its position keeps it as the likely cause.
+ */
 function demoteHypotheses(
   hypotheses: TriageResult['rankedHypotheses'],
 ): NonNullable<TriageResult['rankedHypotheses']> {
-  return (hypotheses ?? []).map((hypothesis) =>
+  const ranked = [...(hypotheses ?? [])].sort(
+    (a, b) => Number(b.state === 'leading') - Number(a.state === 'leading'),
+  );
+  return ranked.map((hypothesis) =>
     hypothesis.state === undefined || hypothesis.state === 'leading'
       ? { ...hypothesis, state: 'plausible' as const }
       : hypothesis,

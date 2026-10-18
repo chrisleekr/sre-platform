@@ -290,3 +290,30 @@ test('a missing-capability rejection blocks the run and keeps the demoted hypoth
     attemptedEvidenceIds: [evidenceId],
   });
 });
+
+test('demotion moves the leading hypothesis first, so it still headlines once every state reads plausible', async () => {
+  const generator = makeFakeGenerator(() => ({
+    supported: false,
+    rejection: 'insufficient_evidence',
+    summary: 'Grafana was OOMKilled at 09:12Z.',
+    evidenceIds: [evidenceId],
+  }));
+  const result = await reviewInvestigation(
+    generator,
+    {
+      ...candidate,
+      rankedHypotheses: [
+        { hypothesis: 'Disk pressure', confidence: 30, evidence: 'e', state: 'plausible' },
+        { hypothesis: 'Limit too low', confidence: 90, evidence: 'OOMKilled', state: 'leading' },
+      ],
+    },
+    evidence,
+    new AbortController().signal,
+  );
+  expect(
+    result.rankedHypotheses?.map((hypothesis) => [hypothesis.hypothesis, hypothesis.state]),
+  ).toEqual([
+    ['Limit too low', 'plausible'],
+    ['Disk pressure', 'plausible'],
+  ]);
+});
