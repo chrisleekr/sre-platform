@@ -3,6 +3,7 @@ import { scrubSecrets } from '@sre/agent-tools';
 import * as z from 'zod';
 import { providerLinks, renderedFindingText } from './provider-links';
 import { recordedEvidenceTool } from './recorded-evidence';
+import { NEXT_STEP_MAX_CHARACTERS } from './report-recovery';
 import { boundedEvidenceReview, EvidenceReviewFailure } from './evidence-review-budget';
 import {
   ProviderRateLimitError,
@@ -235,6 +236,11 @@ export async function reviewInvestigation(
     ? 'Evidence review found an unresolved contradiction but named no specific check.'
     : 'Evidence review found the conclusion unsupported but named no specific missing proof.';
   if (candidate.disposition === 'recovery') {
+    // A recovery next step is one short line in the recovery report; the reviewer's fix can be long.
+    const recoveryStep = reviewNextStep
+      ?.replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, NEXT_STEP_MAX_CHARACTERS);
     const attemptedEvidenceIds = [...(currentAttemptIds ?? allowed)]
       .filter((id) => allowed.has(id))
       .slice(0, 20);
@@ -248,7 +254,7 @@ export async function reviewInvestigation(
       evidenceKind: null,
       attemptedEvidenceIds,
       resolutionRelevance: 'blocking' as const,
-      nextAction: reviewNextStep ?? recoveryNextAction,
+      nextAction: recoveryStep || recoveryNextAction,
     }));
     return {
       ...candidate,
@@ -263,7 +269,7 @@ export async function reviewInvestigation(
         evidenceIds: cited,
         unknowns: questions.map((question) => question.question),
         questions,
-        nextStep: reviewNextStep ?? null,
+        nextStep: recoveryStep || null,
         recheckAfterMinutes: null,
         scheduleReason: null,
       },

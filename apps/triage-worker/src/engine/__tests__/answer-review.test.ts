@@ -380,6 +380,30 @@ test('a missing-capability rejection whose recovery correction fails reads as an
   ]);
 });
 
+test('a rejected recovery review keeps its next step to one short line', async () => {
+  const step = `Roll back the deployment.\n${'Validate the error rate, then confirm the rollback. '.repeat(18)}`;
+  const generate = vi.fn(() => ({
+    supported: false,
+    rejection: 'insufficient_evidence',
+    summary: 'Recovery is not proven.',
+    reason: 'No current request success evidence.',
+    evidenceIds: [evidenceId],
+    nextStep: step,
+  }));
+  const result = await reviewInvestigation(
+    makeFakeGenerator(generate),
+    { ...candidate, disposition: 'recovery' },
+    [evidence],
+    new AbortController().signal,
+    input,
+  );
+  const next = result.recovery?.nextStep ?? '';
+  expect(next.startsWith('Roll back the deployment. Validate')).toBe(true);
+  expect(next).not.toMatch(/[\r\n]/);
+  expect(next.length).toBeLessThanOrEqual(280);
+  expect(result.recovery?.questions?.map((question) => question.nextAction)).toEqual([next]);
+});
+
 test.each(['foreign', 'unavailable'] as const)(
   'an endorsed original cannot authorize a %s corrected recovery citation',
   async (scenario) => {
