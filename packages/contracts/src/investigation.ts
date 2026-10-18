@@ -92,8 +92,9 @@ export function linkableMentions(
   pattern = new RegExp(SHA_MENTION, 'g'),
 ): LinkableMention[] {
   // Slack does not format inside code, so a mention in a code span counts only when it is the
-  // whole span, and then the span, backticks included, is what the link replaces.
-  const spans = [...text.matchAll(/```[\s\S]*?```|`[^`]+`/g)].map(
+  // whole span, and then the span, backticks included, is what the link replaces. Inline code
+  // never crosses a line, so a clipped line with an odd backtick cannot pair with the next one.
+  const spans = [...text.matchAll(/```[\s\S]*?```|`[^`\n]+`/g)].map(
     (span) => [span.index, span.index + span[0].length] as const,
   );
   const mentions: LinkableMention[] = [];

@@ -367,6 +367,25 @@ test('a mention that is a whole code span becomes the link, and one inside code 
   );
 });
 
+test('an unclosed backtick on one line does not pair with a code span on the next', async () => {
+  const { fetch, calls } = fixture.fakeFetch({ ok: true, ts: '1' });
+  await makeSlackPoster(fetch).post(
+    { token: 'B', channel: 'C' },
+    'ROOT',
+    fixture.msg({
+      kind: 'finding',
+      content: 'x',
+      summary: 'Run `git revert',
+      finding: {
+        ...inconclusive,
+        nextStep: 'Revert `3391576a` first.',
+        links: [{ kind: 'commit', label: '3391576a', url: commitUrl }],
+      },
+    }),
+  );
+  expect(calls[0]!.body.text).toContain(`Do: Revert <${commitUrl}|3391576a> first.`);
+});
+
 test('a SHA inside a URL the model cited stays as written', async () => {
   const { fetch, calls } = fixture.fakeFetch({ ok: true, ts: '1' });
   await makeSlackPoster(fetch).post(
