@@ -138,3 +138,12 @@ test('the commit a responder sees keeps its link when hidden fields name others'
     { label: seen!.id.slice(0, 8), url: seen!.web_url },
   ]);
 });
+
+test('an uppercase SHA mention takes no link slot, as Slack would not render it', () => {
+  expect(
+    providerLinks(
+      [record('gitlab_abc_list_commits', listed)],
+      `Revert ${listed[10]!.id.slice(0, 7).toUpperCase()}.`,
+    ),
+  ).toEqual([]);
+});

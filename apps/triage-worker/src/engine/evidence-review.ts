@@ -243,10 +243,7 @@ export async function reviewInvestigation(
     : 'Evidence review found the conclusion unsupported but named no specific missing proof.';
   if (candidate.disposition === 'recovery') {
     // A recovery next step is one short line in the recovery report; the reviewer's fix can be long.
-    const recoveryStep = reviewNextStep
-      ?.replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, NEXT_STEP_MAX_CHARACTERS);
+    const recoveryStep = reviewNextStep && clipLine(reviewNextStep, NEXT_STEP_MAX_CHARACTERS);
     const attemptedEvidenceIds = [...(currentAttemptIds ?? allowed)]
       .filter((id) => allowed.has(id))
       .slice(0, 20);
@@ -424,4 +421,13 @@ export function reviewedEngine(engine: TriageEngine, generator: StructuredGenera
     verifyRecovery: (input, runtime) =>
       run(input, runtime, (bound) => engine.verifyRecovery(input, bound)),
   };
+}
+
+/** Flattens text to one line within max UTF-16 units, cut at a word boundary, never mid-surrogate. */
+function clipLine(text: string, max: number): string {
+  const line = text.replace(/\s+/g, ' ').trim();
+  if (line.length <= max) return line;
+  const cut = line.slice(0, max - 1).replace(/[\uD800-\uDBFF]$/u, '');
+  const space = cut.lastIndexOf(' ');
+  return `${space > max / 2 ? cut.slice(0, space) : cut}…`;
 }

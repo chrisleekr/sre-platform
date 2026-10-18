@@ -62,8 +62,9 @@ export function providerLinks(
   evidence: readonly InvestigationEvidence[],
   findingText: string,
 ): FindingLink[] {
-  // Any hex run of 7 to 40 characters that the text names on its own, as a SHA prefix.
-  const named = findingText.toLowerCase().match(/(?<![0-9a-f])[0-9a-f]{7,40}(?![0-9a-f])/g) ?? [];
+  // Any lowercase hex run of 7 to 40 characters that the text names on its own, as a SHA prefix.
+  // Lowercase only, as Slack's linkify matches it: an uppercase mention would take a slot unrendered.
+  const named = findingText.match(/(?<![0-9a-fA-F])[0-9a-f]{7,40}(?![0-9a-fA-F])/g) ?? [];
   const commits = new Map<string, FindingLink>();
   const applications = new Map<string, FindingLink>();
   const add = (into: Map<string, FindingLink>, max: number, link: FindingLink | null) => {

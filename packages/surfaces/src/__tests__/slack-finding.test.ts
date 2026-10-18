@@ -284,6 +284,23 @@ test('a link name never matches inside an escape entity', async () => {
   );
 });
 
+test('a SHA inside a URL the model cited stays as written', async () => {
+  const { fetch, calls } = fixture.fakeFetch({ ok: true, ts: '1' });
+  await makeSlackPoster(fetch).post(
+    { token: 'B', channel: 'C' },
+    'ROOT',
+    fixture.msg({
+      kind: 'finding',
+      content: 'x',
+      summary: 'See https://git.example/b?rev=3391576a and #3391576a; 3391576a is the suspect.',
+      finding: { ...inconclusive, nextStep: null, links: [{ label: '3391576a', url: commitUrl }] },
+    }),
+  );
+  expect(calls[0]!.body.text).toBe(
+    `🤖 Unverified: See https://git.example/b?rev=3391576a and #3391576a; <${commitUrl}|3391576a> is the suspect.`,
+  );
+});
+
 test('a section boundary never splits the incident link on an approval post', async () => {
   const { fetch, calls } = fixture.fakeFetch({ ok: true, ts: '1' });
   const incidentUrl = 'https://app.example.com/incidents/i1';

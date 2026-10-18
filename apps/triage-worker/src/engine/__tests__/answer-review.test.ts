@@ -410,9 +410,13 @@ test('a rejected recovery review keeps its next step to one short line', async (
     input,
   );
   const next = result.recovery?.nextStep ?? '';
+  const flat = step.replace(/\s+/g, ' ').trim();
   expect(next.startsWith('Roll back the deployment. Validate')).toBe(true);
   expect(next).not.toMatch(/[\r\n]/);
   expect(next.length).toBeLessThanOrEqual(280);
+  // Cut at a word boundary and marked as cut.
+  expect(next.endsWith('…')).toBe(true);
+  expect(flat[next.length - 1]).toBe(' ');
   expect(result.recovery?.questions?.map((question) => question.nextAction)).toEqual([next]);
 });
 

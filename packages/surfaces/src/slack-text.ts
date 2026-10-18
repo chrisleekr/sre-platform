@@ -55,10 +55,11 @@ export function linkify(text: string, links: readonly FindingLink[] | undefined)
       : item.label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     // Not inside an existing link or URL path, and not part of a longer word. A SHA may follow a
     // range dot (`a..b`); a name may not, so a hostname or file name never links. A name never
-    // follows `&`, so it cannot match inside an escape entity such as `&lt;`.
+    // follows `&`, so it cannot match inside an escape entity such as `&lt;`. Neither follows `=`,
+    // `?` or `#`, so a value inside a URL the model cited, such as `?rev=<sha>`, stays as written.
     const pattern = isSha
-      ? new RegExp(`(?<![\\w/|-])(${token})(?![\\w/-])`, 'g')
-      : new RegExp(`(?<![\\w./|&-])(${token})(?![\\w/-]|\\.\\w)`, 'g');
+      ? new RegExp(`(?<![\\w/|=?#&-])(${token})(?![\\w/-])`, 'g')
+      : new RegExp(`(?<![\\w./|=?#&-])(${token})(?![\\w/-]|\\.\\w)`, 'g');
     // The first mention that is this commit: another SHA can share the 7-character prefix.
     const match = [...out.matchAll(pattern)].find(
       (candidate) => !isSha || item.label.startsWith(candidate[1]!.slice(0, 8)),
