@@ -127,3 +127,25 @@ test('a trusted assessment keeps its own labels and ignores the run cause', () =
   expect(view.queryByText('Untrusted cause.')).toBeNull();
   expect(view.queryByText('Likely cause, not verified')).toBeNull();
 });
+
+test('a provider-resolved incident keeps the run impact marked as not verified', () => {
+  const view = render(
+    <IncidentDecisionBrief
+      workspace={{
+        ...workspace,
+        incident: {
+          ...workspace.incident,
+          resolutionBasis: 'provider_clear',
+          latestInvestigationRun: { ...run, impact: 'Dashboards were down for 4 minutes.' },
+        },
+      }}
+      onSelectEvidence={vi.fn()}
+      getCredentials={async () => ({ kind: 'bearer' as const, token: 'test' })}
+      onChanged={vi.fn()}
+    />,
+  );
+  expect(view.getByText('Impact at last assessment, not verified')).toBeTruthy();
+  expect(view.getByText('Dashboards were down for 4 minutes.')).toBeTruthy();
+  // The caption dates the trusted assessment, which this impact does not come from.
+  expect(view.queryByText(/Historical assessment evidence/)).toBeNull();
+});

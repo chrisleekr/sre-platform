@@ -176,14 +176,16 @@ export function IncidentDecisionBrief({
       <dl className="mt-4 grid gap-3 md:grid-cols-2">
         <div className="rounded-md bg-surface-subtle p-3">
           <dt className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-            {recoveryIsCurrent || providerResolved
-              ? 'Impact at last assessment'
-              : unverifiedImpact
-                ? 'Impact, not verified'
+            {unverifiedImpact
+              ? recoveryIsCurrent || providerResolved
+                ? 'Impact at last assessment, not verified'
+                : 'Impact, not verified'
+              : recoveryIsCurrent || providerResolved
+                ? 'Impact at last assessment'
                 : 'Impact'}
           </dt>
           <dd className="mt-1 break-words text-sm font-medium text-ink">{impact}</dd>
-          {(recoveryIsCurrent || providerResolved) && (
+          {(recoveryIsCurrent || providerResolved) && !unverifiedImpact && (
             <p className="mt-1 text-xs text-ink-muted">
               Historical assessment evidence
               {incident.assessmentUpdatedAt ? (
