@@ -73,10 +73,13 @@ export async function matchOpenProducerSignals(
 // The adapter marks a message resolved when any line carries a resolved header, which a grouped
 // message listing both firing and resolved alerts also does. Only a message that opens with one
 // reports the whole message recovered.
-function opensWithHeader(text: string, state: 'resolved' | 'firing'): boolean {
+function opensWithResolvedHeader(text: string): boolean {
   const first = text.split('\n').find((line) => line.trim() !== '') ?? '';
-  return new RegExp(`^\\s*(?:<[^|>\\n]+\\|)?\\[\\s*${state}\\b`, 'i').test(first);
+  return /^\s*(?:<[^|>\n]+\|)?\[\s*resolved\b/i.test(first);
 }
+
+// Anywhere in the text, behind an emoji, bold or a title line: an alert the message still shows firing.
+const FIRING_HEADER = /\[\s*firing(?:\s*:\s*\d+)?\s*\]/i;
 
 /** Links a Slack recovery notice to the one incident it describes and starts verification. */
 export class RecoveryReports {
@@ -85,9 +88,8 @@ export class RecoveryReports {
   /**
    * Finds the one open incident a recovery notice describes. Scope is `root` only for an edit whose
    * message opens with a resolved header, so the whole message recovered; otherwise `signal`,
-   * covering just the matched signal. A message or edit that still opens firing yet lists a
-   * resolved alert cannot say which of its alerts recovered, so it stays advisory, as does any
-   * edit without a resolved header. Resolved signals of an open
+   * covering just the matched signal. A message that still shows a firing alert cannot say which
+   * of its alerts recovered, so it stays advisory, as does any edit without a resolved header. Resolved signals of an open
    * incident still match, so a redelivered notice whose first delivery already resolved them links
    * to the same incident.
    * @param tenantId - Owning tenant.
@@ -97,8 +99,8 @@ export class RecoveryReports {
     tenantId: string,
     candidate: InboundCandidate,
   ): Promise<{ incidentId: string; signalId: string; scope: 'root' | 'signal' } | null> {
-    const root = opensWithHeader(candidate.text, 'resolved');
-    if (opensWithHeader(candidate.text, 'firing') || (candidate.isEdit && !root)) return null;
+    const root = opensWithResolvedHeader(candidate.text);
+    if (FIRING_HEADER.test(candidate.text) || (candidate.isEdit && !root)) return null;
     const matched = await matchOpenProducerSignals(this.core, tenantId, candidate, {
       includeResolved: true,
     });

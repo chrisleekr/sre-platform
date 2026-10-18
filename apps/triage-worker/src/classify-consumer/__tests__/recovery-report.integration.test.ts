@@ -74,12 +74,16 @@ describe('Slack recovery notices', () => {
     expect(await recoveryJobs(tracked.incidentId)).toEqual([]);
   });
 
-  test('a new post that opens firing and lists a resolved alert stays advisory', async () => {
+  test.each([
+    '[FIRING:1] Checkout latency is high.\nResolved: Checkout error rate is high.',
+    ':fire: [FIRING:1] Checkout latency is high.\nResolved: Checkout error rate is high.',
+    '*[FIRING:1]* Checkout latency is high.\nResolved: Checkout error rate is high.',
+    'Prometheus\n[FIRING:1] Checkout latency is high.\nResolved: Checkout error rate is high.',
+  ])('a new post that still shows a firing alert stays advisory: %s', async (text) => {
     const monitorKey = `slack:monitor-${randomUUID()}`;
     const tracked = await trackedIncident(monitorKey);
     const { handle, onOutcome } = handler();
     // The adapter reads the message as resolved; its observation still names the firing monitor.
-    const text = '[FIRING:1] Checkout latency is high.\nResolved: Checkout error rate is high.';
     const candidate = resolvedCandidate(monitorKey, {
       text,
       contentHash: createHash('sha256').update(text).digest('hex'),
