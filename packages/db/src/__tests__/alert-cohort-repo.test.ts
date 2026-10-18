@@ -105,6 +105,8 @@ test('a join without observedAt is stamped once the scope lock is held', async (
   const source = await dataSource(`cohort-lock-${randomUUID().slice(0, 8)}`);
   const holder = await episode(source, randomUUID(), new Date());
   const waiter = await episode(source, randomUUID(), new Date());
+  let locked!: () => void;
+  const holding = new Promise<void>((resolve) => (locked = resolve));
   const joinNow = (signalId: string, holdMs: number) =>
     withTenant(app.db, tenantId, async (tx) => {
       const cohort = await joinAlertCohortTx(tx, tenantId, {
@@ -114,12 +116,16 @@ test('a join without observedAt is stamped once the scope lock is held', async (
         windowMs: 120_000,
       });
       // Hold the scope lock so the other join has to wait for it.
-      if (holdMs) await tx.execute(sql`select pg_sleep(${holdMs / 1000})`);
+      if (holdMs) {
+        locked();
+        await tx.execute(sql`select pg_sleep(${holdMs / 1000})`);
+      }
       return cohort;
     });
 
   const first = joinNow(holder.id, 300);
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  // The waiter starts only once the holder's transaction has the lock.
+  await holding;
   const [held, waited] = await Promise.all([first, joinNow(waiter.id, 0)]);
 
   expect(waited.id).toBe(held.id);
