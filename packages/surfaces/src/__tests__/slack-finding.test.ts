@@ -386,6 +386,45 @@ test('an unclosed backtick on one line does not pair with a code span on the nex
   expect(calls[0]!.body.text).toContain(`Do: Revert <${commitUrl}|3391576a> first.`);
 });
 
+test('a later label never matches inside a link inserted for an earlier one', async () => {
+  const { fetch, calls } = fixture.fakeFetch({ ok: true, ts: '1' });
+  await makeSlackPoster(fetch).post(
+    { token: 'B', channel: 'C' },
+    'ROOT',
+    fixture.msg({
+      kind: 'finding',
+      content: 'x',
+      summary: 'Commit 3391576a broke the https rollout.',
+      finding: {
+        ...inconclusive,
+        nextStep: null,
+        links: [
+          { kind: 'commit', label: '3391576a', url: commitUrl },
+          { kind: 'application', label: 'https', url: argoUrl },
+        ],
+      },
+    }),
+  );
+  expect(calls[0]!.body.text).toBe(
+    `🤖 Unverified: Commit <${commitUrl}|3391576a> broke the <${argoUrl}|https> rollout.`,
+  );
+});
+
+test('a clipped line never ends on half of a surrogate pair', async () => {
+  const { fetch, calls } = fixture.fakeFetch({ ok: true, ts: '1' });
+  await makeSlackPoster(fetch).post(
+    { token: 'B', channel: 'C' },
+    'ROOT',
+    fixture.msg({
+      kind: 'finding',
+      content: 'x',
+      summary: 'Memory is high.',
+      finding: { ...inconclusive, nextStep: `${'a'.repeat(398)}😀😀` },
+    }),
+  );
+  expect(calls[0]!.body.text).toContain(`Do: ${'a'.repeat(398)}…`);
+});
+
 test('a SHA inside a URL the model cited stays as written', async () => {
   const { fetch, calls } = fixture.fakeFetch({ ok: true, ts: '1' });
   await makeSlackPoster(fetch).post(

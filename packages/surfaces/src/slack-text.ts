@@ -31,7 +31,8 @@ const LINKS_MAX = 4;
 function clip(text: string, max: number): string {
   const line = oneLine(text);
   if (line.length <= max) return line;
-  const cut = line.slice(0, max - 1);
+  // Never end on the first half of a surrogate pair, which Slack renders as a replacement glyph.
+  const cut = line.slice(0, max - 1).replace(/[\uD800-\uDBFF]$/u, '');
   const space = cut.lastIndexOf(' ');
   return `${space > max / 2 ? cut.slice(0, space) : cut}…`;
 }
@@ -60,13 +61,18 @@ export function linkify(text: string, links: readonly FindingLink[] | undefined)
           `(?<![\\w./|=?#&-])${item.label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w/-]|\\.\\w)`,
           'g',
         );
+    // Escaping turns every model `<` into `&lt;`, so each `<…>` left is a link inserted above.
+    const inserted = [...out.matchAll(/<[^>]*>/g)].map(
+      (link) => [link.index, link.index + link[0].length] as const,
+    );
     // A mention of this commit: another SHA can share the 7-character prefix, so a mention that
     // matches all 8 label characters wins over an earlier 7-character one.
     const candidates = linkableMentions(out, pattern).filter(
       (candidate) =>
-        !isSha ||
-        (candidate.token.startsWith(item.label.slice(0, 7)) &&
-          item.label.startsWith(candidate.token.slice(0, 8))),
+        !inserted.some(([from, to]) => candidate.start < to && candidate.end > from) &&
+        (!isSha ||
+          (candidate.token.startsWith(item.label.slice(0, 7)) &&
+            item.label.startsWith(candidate.token.slice(0, 8)))),
     );
     const match = candidates.find((candidate) => candidate.token.length >= 8) ?? candidates[0];
     if (match) {
