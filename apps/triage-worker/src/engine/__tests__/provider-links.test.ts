@@ -30,9 +30,13 @@ test('collects GitLab and GitHub commit pages and the Argo CD application page',
     `Rollout ${sha.slice(0, 7)} followed ${other}.`,
   );
   expect(links).toEqual([
-    { label: '3391576a', url: `https://gitlab.example.com/g/app/-/commit/${sha}` },
-    { label: '8759f2b6', url: `https://github.com/o/app/commit/${other}` },
-    { label: 'trading-bot', url: 'https://argocd.example.com/applications/argocd/trading-bot' },
+    { kind: 'commit', label: '3391576a', url: `https://gitlab.example.com/g/app/-/commit/${sha}` },
+    { kind: 'commit', label: '8759f2b6', url: `https://github.com/o/app/commit/${other}` },
+    {
+      kind: 'application',
+      label: 'trading-bot',
+      url: 'https://argocd.example.com/applications/argocd/trading-bot',
+    },
   ]);
 });
 
@@ -76,7 +80,11 @@ test('keeps the first link per label and stops at eight named commits', () => {
     listed.map((commit) => commit.id).join(' '),
   );
   expect(links).toHaveLength(8);
-  expect(links[0]).toEqual({ label: listed[0]!.id.slice(0, 8), url: listed[0]!.web_url });
+  expect(links[0]).toEqual({
+    kind: 'commit',
+    label: listed[0]!.id.slice(0, 8),
+    url: listed[0]!.web_url,
+  });
 });
 
 test('a long commit list keeps the named commit and the application link', () => {
@@ -92,8 +100,12 @@ test('a long commit list keeps the named commit and the application link', () =>
     `The rollout of ${named.id.slice(0, 7)} restarted trading-bot.`,
   );
   expect(links).toEqual([
-    { label: named.id.slice(0, 8), url: named.web_url },
-    { label: 'trading-bot', url: 'https://argocd.example.com/applications/argocd/trading-bot' },
+    { kind: 'commit', label: named.id.slice(0, 8), url: named.web_url },
+    {
+      kind: 'application',
+      label: 'trading-bot',
+      url: 'https://argocd.example.com/applications/argocd/trading-bot',
+    },
   ]);
 });
 
@@ -135,7 +147,7 @@ test('the commit a responder sees keeps its link when hidden fields name others'
   });
 
   expect(providerLinks([record('gitlab_abc_list_commits', listed)], text)).toEqual([
-    { label: seen!.id.slice(0, 8), url: seen!.web_url },
+    { kind: 'commit', label: seen!.id.slice(0, 8), url: seen!.web_url },
   ]);
 });
 

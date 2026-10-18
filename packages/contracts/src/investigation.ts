@@ -63,6 +63,8 @@ export type IncidentFindingPromotionReason = (typeof INCIDENT_FINDING_PROMOTION_
  * link in a responder channel.
  */
 export interface FindingLink {
+  /** What the page is for, so a surface never infers it from the label's shape. */
+  kind: 'commit' | 'application';
   /** Exact token a surface may link in place, such as a short commit SHA or an application name. */
   label: string;
   /** Absolute https URL on the provider. */

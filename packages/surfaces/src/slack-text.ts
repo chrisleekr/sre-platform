@@ -49,8 +49,8 @@ export function linkify(text: string, links: readonly FindingLink[] | undefined)
   const unmatched: FindingLink[] = [];
   for (const item of links) {
     // The payload is stored JSON: re-check what the builder guaranteed before rendering it.
-    if (!item.url.startsWith('https://')) continue;
-    const isSha = /^[0-9a-f]{8}$/.test(item.label);
+    const isSha = item.kind === 'commit';
+    if (!item.url.startsWith('https://') || (isSha && !/^[0-9a-f]{8}$/.test(item.label))) continue;
     // Not inside an existing link or URL path, and not part of a longer word. A name may not follow
     // a dot, so a hostname or file name never links, nor `&`, so it cannot match inside an escape
     // entity such as `&lt;`, nor `=`, `?` or `#`, so a value inside a cited URL stays as written.

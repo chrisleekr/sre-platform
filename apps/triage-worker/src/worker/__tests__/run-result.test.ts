@@ -1,3 +1,4 @@
+import type { FindingLink } from '@sre/contracts';
 import { expect, test } from 'vitest';
 import type { TriageResult } from '../../engine/types';
 import { incidentFindingPayload, investigationRunResult } from '../run-result';
@@ -37,7 +38,9 @@ test('a result without reviewer gaps records no gaps key', () => {
 });
 
 test('the likely cause is the first hypothesis still standing, and links pass through', () => {
-  const links = [{ label: '3391576a', url: 'https://gitlab.example.com/g/a/-/commit/3391576a' }];
+  const links: FindingLink[] = [
+    { kind: 'commit', label: '3391576a', url: 'https://gitlab.example.com/g/a/-/commit/3391576a' },
+  ];
   const finding = incidentFindingPayload(
     {
       ...rejected,

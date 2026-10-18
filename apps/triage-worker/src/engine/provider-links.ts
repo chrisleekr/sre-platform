@@ -37,7 +37,7 @@ function commitLink(node: Record<string, unknown>): { sha: string; link: Finding
   if (!sha) return null;
   const url = httpsUrl(node.web_url) ?? httpsUrl(node.html_url);
   if (!url || !url.pathname.endsWith(`/commit/${sha}`)) return null;
-  return { sha, link: { label: sha.slice(0, 8), url: url.toString() } };
+  return { sha, link: { kind: 'commit', label: sha.slice(0, 8), url: url.toString() } };
 }
 
 /** The Argo CD connector adds `webUrl` from its configured base; the name labels the link. */
@@ -46,7 +46,7 @@ function applicationLink(output: unknown): FindingLink | null {
   const name = output.metadata.name;
   const url = httpsUrl(output.webUrl);
   if (typeof name !== 'string' || !APPLICATION_NAME.test(name) || !url) return null;
-  return { label: name, url: url.toString() };
+  return { kind: 'application', label: name, url: url.toString() };
 }
 
 /**

@@ -200,13 +200,18 @@ test('links the first mention of each provider entity and lists only unmentioned
         likelyCause: 'Commits 8759f2b6..3391576 re-added old bytes.',
         nextStep: 'Revert, then re-sync.',
         links: [
-          { label: '3391576a', url: commitUrl },
+          { kind: 'commit', label: '3391576a', url: commitUrl },
           {
+            kind: 'commit',
             label: '40f1a393',
             url: 'https://gitlab.example.com/group/app/-/commit/40f1a3930000000000000000000000000000000a',
           },
-          { label: 'trading-bot', url: argoUrl },
-          { label: 'other-app', url: 'http://argocd.internal/applications/argocd/other-app' },
+          { kind: 'application', label: 'trading-bot', url: argoUrl },
+          {
+            kind: 'application',
+            label: 'other-app',
+            url: 'http://argocd.internal/applications/argocd/other-app',
+          },
         ],
       },
     }),
@@ -234,8 +239,8 @@ test('a different commit sharing the first seven characters is not linked', asyn
         ...inconclusive,
         nextStep: null,
         links: [
-          { label: '3391576a', url: commitUrl },
-          { label: 'trading-bot', url: argoUrl },
+          { kind: 'commit', label: '3391576a', url: commitUrl },
+          { kind: 'application', label: 'trading-bot', url: argoUrl },
         ],
       },
     }),
@@ -257,7 +262,11 @@ test('a later mention of the commit links when an earlier SHA shares its prefix'
       kind: 'finding',
       content: 'x',
       summary: 'Commit 3391576b is unrelated; 3391576a is the suspect.',
-      finding: { ...inconclusive, nextStep: null, links: [{ label: '3391576a', url: commitUrl }] },
+      finding: {
+        ...inconclusive,
+        nextStep: null,
+        links: [{ kind: 'commit', label: '3391576a', url: commitUrl }],
+      },
     }),
   );
   expect(calls[0]!.body.text).toBe(
@@ -274,7 +283,11 @@ test('a link name never matches inside an escape entity', async () => {
       kind: 'finding',
       content: 'x',
       summary: 'Latency < 200ms & errors > 1%.',
-      finding: { ...inconclusive, nextStep: null, links: [{ label: 'lt', url: argoUrl }] },
+      finding: {
+        ...inconclusive,
+        nextStep: null,
+        links: [{ kind: 'application', label: 'lt', url: argoUrl }],
+      },
     }),
   );
   expect(calls[0]!.body.text).toBe(
@@ -293,11 +306,36 @@ test('the mention that matches all 8 label characters links over an earlier 7-ch
       kind: 'finding',
       content: 'x',
       summary: '3391576 is unrelated; 3391576a is the suspect.',
-      finding: { ...inconclusive, nextStep: null, links: [{ label: '3391576a', url: commitUrl }] },
+      finding: {
+        ...inconclusive,
+        nextStep: null,
+        links: [{ kind: 'commit', label: '3391576a', url: commitUrl }],
+      },
     }),
   );
   expect(calls[0]!.body.text).toBe(
     `🤖 Unverified: 3391576 is unrelated; <${commitUrl}|3391576a> is the suspect.`,
+  );
+});
+
+test('an application named like a SHA is linked by its whole name, never as a commit', async () => {
+  const { fetch, calls } = fixture.fakeFetch({ ok: true, ts: '1' });
+  await makeSlackPoster(fetch).post(
+    { token: 'B', channel: 'C' },
+    'ROOT',
+    fixture.msg({
+      kind: 'finding',
+      content: 'x',
+      summary: 'Commit deadbee is unrelated.',
+      finding: {
+        ...inconclusive,
+        nextStep: null,
+        links: [{ kind: 'application', label: 'deadbeef', url: argoUrl }],
+      },
+    }),
+  );
+  expect(calls[0]!.body.text).toBe(
+    ['🤖 Unverified: Commit deadbee is unrelated.', `Links: <${argoUrl}|deadbeef>`].join('\n'),
   );
 });
 
@@ -310,7 +348,11 @@ test('a SHA inside a URL the model cited stays as written', async () => {
       kind: 'finding',
       content: 'x',
       summary: 'See https://git.example/b?rev=3391576a and #3391576a; 3391576a is the suspect.',
-      finding: { ...inconclusive, nextStep: null, links: [{ label: '3391576a', url: commitUrl }] },
+      finding: {
+        ...inconclusive,
+        nextStep: null,
+        links: [{ kind: 'commit', label: '3391576a', url: commitUrl }],
+      },
     }),
   );
   expect(calls[0]!.body.text).toBe(
