@@ -47,42 +47,53 @@ export class PushHandler {
     const fingerprint = fingerprintFor(candidate);
     const { scrubbedText, scrubbedCandidate } = scrubInboundCandidate(candidate);
     // Slack presentation is advisory. Native or connector-read evidence uses the provider intake.
-    // A recovery notice is linked and shown on its incident, never applied to lifecycle.
+    // A recovery notice that covers every active alert starts recovery verification; the incident
+    // resolves only when verification confirms recovery, never from Slack text alone.
     if (scrubbedCandidate.signalState === 'resolved' || scrubbedCandidate.isEdit) {
-      let reported: { incidentId: string; signalId: string; scope: 'root' | 'signal' } | null =
-        null;
-      if (scrubbedCandidate.signalState === 'resolved') {
-        const linked = await this.supersession.fenced(candidate, job, () =>
-          this.reports.link(tenantId, scrubbedCandidate),
-        );
-        if (!linked.executed) return;
-        reported = linked.value;
-      }
-      await persistDeterministicDisposition({
-        core: this.core,
-        candidate,
-        scrubbedCandidate,
-        job,
-        scrubbedText,
-        disposition: 'log',
-        reason: reported
-          ? 'Provider reported recovery in Slack; an operator confirms resolution.'
-          : 'Connector verification is required before this notification can change provider lifecycle.',
-        ...(reported
-          ? {
-              correlated: {
-                // The scope decides which signals the report covers when the workspace reads it.
-                decision:
-                  reported.scope === 'root'
-                    ? PROVIDER_RECOVERY_REPORT_ROOT_DECISION
-                    : PROVIDER_RECOVERY_REPORT_DECISION,
-                incidentId: reported.incidentId,
-                signalId: reported.signalId,
-              },
-            }
-          : {}),
+      const resolved = scrubbedCandidate.signalState === 'resolved';
+      // One fenced pass: the fence records this event as decided when it returns, so a second pass
+      // for the same event would read as superseded and skip its work.
+      const routed = await this.supersession.fenced(candidate, job, async () => {
+        // An alert message edited back to firing withdraws the recovery its earlier edit reported.
+        let reported: Awaited<ReturnType<RecoveryReports['link']>> = null;
+        if (resolved) reported = await this.reports.link(tenantId, scrubbedCandidate);
+        // Only a firing edit: an unclassifiable rewrite says nothing about the alert's state.
+        else if (scrubbedCandidate.signalState === 'firing')
+          await this.reports.reopen(tenantId, scrubbedCandidate);
+        await persistDeterministicDisposition({
+          core: this.core,
+          candidate,
+          scrubbedCandidate,
+          job,
+          scrubbedText,
+          disposition: 'log',
+          reason: reported
+            ? 'Provider reported recovery in Slack; recovery verification decides resolution.'
+            : 'Connector verification is required before this notification can change provider lifecycle.',
+          ...(reported
+            ? {
+                correlated: {
+                  // The scope decides which signals the report covers when the workspace reads it.
+                  decision:
+                    reported.scope === 'root'
+                      ? PROVIDER_RECOVERY_REPORT_ROOT_DECISION
+                      : PROVIDER_RECOVERY_REPORT_DECISION,
+                  incidentId: reported.incidentId,
+                  signalId: reported.signalId,
+                },
+              }
+            : {}),
+        });
+        // After the report is recorded, so this notice counts toward the incident's coverage.
+        if (reported) await this.reports.settle(tenantId, reported.incidentId, scrubbedCandidate);
+        return reported;
       });
-      await this.outcome(candidate, job, reported ? 'resolution_reported' : 'resolution_unmatched');
+      if (!routed.executed) return;
+      await this.outcome(
+        candidate,
+        job,
+        routed.value ? 'resolution_reported' : 'resolution_unmatched',
+      );
       return;
     }
     // A repeat of a tracked monitor is an occurrence of that incident, not a new one. It is

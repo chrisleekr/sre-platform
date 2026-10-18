@@ -112,7 +112,8 @@ describe('Valkey Streams queue', () => {
     const coalesced = await __fixture.db.db.transaction((tx) =>
       __fixture.q.insertRecoveryTx(tx, __fixture.tenant, incidentId, 3, 'signal-a:4:resolved'),
     );
-    expect(coalesced.jobId).toBeNull();
+    // Distinguishes a merge into the queued check from a refused one, which also returns no job id.
+    expect(coalesced).toEqual({ jobId: null, coalesced: true });
     const queued = (await __fixture.db.db.select().from(jobs).where(eq(jobs.id, first.jobId!)))[0]!;
     expect(queued.payload).toEqual({
       incidentId,

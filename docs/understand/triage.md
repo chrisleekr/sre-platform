@@ -180,13 +180,18 @@ cannot be silently logged; it requires at least a reviewable ticket. Manual repo
 also retain verified recovery. Existing cases retain their recorded policy, and reusing an incident
 never silently changes it. An operator can change the policy explicitly.
 
-A Slack recovery notice, an edited alert message or a model suggestion that a message resolves an
-alert is logged and never changes a signal. Suppressing a Slack notification never changes a signal
-either. A recovery notice from the same bot in the same channel is linked to the one open incident
-whose alert it names, found by the edited message's thread root or by the alert's monitor identity.
-The incident conversation then records that the provider reported recovery in Slack, and the
-workspace asks a responder to confirm resolution. A notice that matches no open incident, or more
-than one, is only logged. Only connector-verified or native provider recovery counts as provider recovery evidence;
+An edited alert message or a model suggestion that a message resolves an alert is logged and never
+changes a signal. Suppressing a Slack notification never changes a signal either. A recovery notice
+from the same bot in the same channel is linked to the one open incident whose alert it names, found
+by the edited message's thread root or by the alert's monitor identity, and the incident conversation
+records it. When the incident's reports then cover every active alert, and every one of those
+alerts came from Slack rather than a connector or native provider delivery, the platform marks them
+recovered and starts recovery verification. A provider-established alert is cleared only by
+provider or connector evidence. The incident resolves only if verification
+confirms the service recovered; Slack text alone never resolves it. Until every active alert is
+covered, the notice stays a report. If the alert fires again in Slack while the incident is open, the
+alert is active again and verification stops. A notice that matches no open incident, or more than
+one, is only logged. Only connector-verified or native provider recovery counts as provider recovery evidence;
 legacy clears and operator corrections do not. Under provider-clear policy, missing authority keeps
 the case open with an explicit blocker.
 Pending approvals prevent automatic resolution under either policy.

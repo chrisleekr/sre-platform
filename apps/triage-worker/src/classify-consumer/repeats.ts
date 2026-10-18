@@ -27,7 +27,14 @@ export class RepeatNotifications {
       candidate.observations?.some((observation) => observation.state !== 'firing')
     )
       return null;
-    const signals = await matchOpenProducerSignals(this.core, tenantId, candidate);
+    // A resolved signal still counts while its incident is open: a re-fire during recovery
+    // verification belongs to that incident, and its new signal stops the verification.
+    const matched = await matchOpenProducerSignals(this.core, tenantId, candidate, {
+      includeResolved: true,
+    });
+    // An active episode wins, so an older open incident holding a resolved one cannot split it.
+    const active = matched.filter((signal) => signal.state !== 'resolved');
+    const signals = active.length > 0 ? active : matched;
     // A grouped message can mix a tracked alert with a new one; the new alert needs classification.
     const tracked = new Set(signals.map((signal) => signal.monitorKey));
     if (candidate.observations?.some((observation) => !tracked.has(observation.monitorKey ?? null)))

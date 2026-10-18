@@ -1,7 +1,7 @@
 import { ClassifyAttachments } from '../classify-consumer/attachments';
 import { randomUUID } from 'node:crypto';
 import { afterEach, expect, test, vi } from 'vitest';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { slackInboundConnector, type InboundCandidate } from '@sre/connectors';
 import {
   SEMANTIC_DISPOSITION_CONTRACT_VERSION,
@@ -276,7 +276,7 @@ test('an unverified provider-shaped firing retains strict recovery policy', asyn
 });
 
 test.each(['unavailable', 'missing'] as const)(
-  'unverified provider notifications remain advisory when classification is %s',
+  'a provider recovery notice starts verification but never resolves the incident when classification is %s',
   async (failure) => {
     const { down, up } = episode();
     const classifier = runtime(undefined, failure === 'missing');
@@ -297,19 +297,29 @@ test.each(['unavailable', 'missing'] as const)(
     expect(before).toEqual([expect.objectContaining({ state: 'unknown', clearProvenance: null })]);
     const calls = classifier.execute.mock.calls.length;
     await classifier.deliver(up);
+    // The notice spends no model call; it only hands the advisory signal to recovery verification.
     expect(classifier.execute).toHaveBeenCalledTimes(calls);
     expect(
       await fixture.admin.db
         .select()
         .from(incidentSignals)
         .where(eq(incidentSignals.incidentId, incident.id)),
-    ).toEqual(before);
+    ).toEqual([
+      expect.objectContaining({ id: before[0]!.id, state: 'resolved', clearProvenance: 'unknown' }),
+    ]);
     expect(
       await fixture.admin.db
         .select()
         .from(jobs)
-        .where(and(eq(jobs.tenantId, fixture.tenantId), eq(jobs.type, 'recovery.verify'))),
-    ).toHaveLength(0);
+        .where(
+          and(
+            eq(jobs.tenantId, fixture.tenantId),
+            eq(jobs.type, 'recovery.verify'),
+            sql`${jobs.payload} ->> 'incidentId' = ${incident.id}`,
+          ),
+        ),
+    ).toHaveLength(1);
+    expect(await incidentFor(down)).toMatchObject({ status: 'open', resolutionBasis: null });
   },
 );
 

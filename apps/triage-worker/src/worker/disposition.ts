@@ -308,7 +308,7 @@ export class WorkerDisposition {
       ...(outcome === 'recovered'
         ? {
             autoResolve: {
-              reason: 'Provider signals cleared and recovery verification passed.',
+              reason: 'Alert signals cleared and recovery verification passed.',
               transitionKey: context.transitionKey,
             },
           }

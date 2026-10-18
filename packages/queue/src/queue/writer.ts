@@ -264,7 +264,7 @@ export class QueueWriter {
       availableAt?: Date;
       scheduleReason?: string;
     } = {},
-  ): Promise<{ jobId: string | null }> {
+  ): Promise<{ jobId: string | null; coalesced?: true }> {
     await this.fenceIncidentJobTx(tx, {
       tenantId,
       type: 'recovery.verify',
@@ -371,7 +371,8 @@ export class QueueWriter {
           ),
         )
         .returning({ id: jobs.id });
-      if (refreshed[0]) return { jobId: null };
+      // No new job, but a check is still queued; callers must not report verification as refused.
+      if (refreshed[0]) return { jobId: null, coalesced: true };
       // The conflicting queued row was claimed between INSERT and UPDATE. Retry the insert once so the
       // newer fences become the processing job's queued successor instead of disappearing.
     }
