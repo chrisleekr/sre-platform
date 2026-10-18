@@ -339,6 +339,34 @@ test('an application named like a SHA is linked by its whole name, never as a co
   );
 });
 
+test('a mention that is a whole code span becomes the link, and one inside code stays as written', async () => {
+  const { fetch, calls } = fixture.fakeFetch({ ok: true, ts: '1' });
+  await makeSlackPoster(fetch).post(
+    { token: 'B', channel: 'C' },
+    'ROOT',
+    fixture.msg({
+      kind: 'finding',
+      content: 'x',
+      summary:
+        'Run `git revert 3391576a` and `kubectl get app trading-bot`; `3391576a` is the suspect.',
+      finding: {
+        ...inconclusive,
+        nextStep: null,
+        links: [
+          { kind: 'commit', label: '3391576a', url: commitUrl },
+          { kind: 'application', label: 'trading-bot', url: argoUrl },
+        ],
+      },
+    }),
+  );
+  expect(calls[0]!.body.text).toBe(
+    [
+      `🤖 Unverified: Run \`git revert 3391576a\` and \`kubectl get app trading-bot\`; <${commitUrl}|3391576a> is the suspect.`,
+      `Links: <${argoUrl}|trading-bot>`,
+    ].join('\n'),
+  );
+});
+
 test('a SHA inside a URL the model cited stays as written', async () => {
   const { fetch, calls } = fixture.fakeFetch({ ok: true, ts: '1' });
   await makeSlackPoster(fetch).post(

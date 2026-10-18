@@ -169,3 +169,13 @@ test('a SHA Slack would not link, such as one inside a word or a cited URL, take
     ),
   ).toEqual([]);
 });
+
+test('a SHA inside code takes no link slot unless it is the whole code span', () => {
+  const [inside, whole] = [listed[10]!, listed[11]!];
+  expect(
+    providerLinks(
+      [record('gitlab_abc_list_commits', listed)],
+      `Run \`git show ${inside.id.slice(0, 7)}\`; \`${whole.id.slice(0, 8)}\` is the suspect.`,
+    ),
+  ).toEqual([{ kind: 'commit', label: whole.id.slice(0, 8), url: whole.web_url }]);
+});

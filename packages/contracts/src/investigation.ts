@@ -71,12 +71,42 @@ export interface FindingLink {
   url: string;
 }
 
+/** A mention a surface can replace with a link; `start` and `end` cover its backticks when it is a whole code span. */
+export interface LinkableMention {
+  token: string;
+  start: number;
+  end: number;
+}
+
+// A lowercase SHA prefix of 7 to 40 characters on its own: not part of a longer word, not inside a
+// link or URL path, and not a URL query or fragment value.
+const SHA_MENTION = '(?<![\\w/|=?#&-])[0-9a-f]{7,40}(?![\\w/-])';
+
 /**
- * A lowercase commit SHA prefix of 7 to 40 characters written on its own: not part of a longer word,
- * not inside a link or URL path, and not a URL query or fragment value. The platform picks the
- * commits to link with it and surfaces link with it, so a mention one side counts the other renders.
+ * Finds the mentions a surface can link, so the commits the platform picks are the ones Slack shows.
+ * @param text - Text to search, before or after Slack escaping; neither changes backticks.
+ * @param pattern - Global pattern for the token; defaults to a commit SHA prefix.
  */
-export const SHA_MENTION = /(?<![\w/|=?#&-])[0-9a-f]{7,40}(?![\w/-])/g;
+export function linkableMentions(
+  text: string,
+  pattern = new RegExp(SHA_MENTION, 'g'),
+): LinkableMention[] {
+  // Slack does not format inside code, so a mention in a code span counts only when it is the
+  // whole span, and then the span, backticks included, is what the link replaces.
+  const spans = [...text.matchAll(/```[\s\S]*?```|`[^`]+`/g)].map(
+    (span) => [span.index, span.index + span[0].length] as const,
+  );
+  const mentions: LinkableMention[] = [];
+  for (const match of text.matchAll(pattern)) {
+    const start = match.index;
+    const end = start + match[0].length;
+    const span = spans.find(([from, to]) => start >= from && end <= to);
+    if (!span) mentions.push({ token: match[0], start, end });
+    else if (span[0] === start - 1 && span[1] === end + 1)
+      mentions.push({ token: match[0], start: start - 1, end: end + 1 });
+  }
+  return mentions;
+}
 
 /** Durable provenance for an evidence-bearing conclusion in the incident conversation. */
 export interface IncidentFindingPayload {

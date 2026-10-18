@@ -1,4 +1,4 @@
-import { SHA_MENTION, type FindingLink } from '@sre/contracts';
+import { linkableMentions, type FindingLink } from '@sre/contracts';
 import type { InvestigationEvidence, TriageResult } from './types';
 
 const MAX_COMMITS = 8;
@@ -63,7 +63,7 @@ export function providerLinks(
   findingText: string,
 ): FindingLink[] {
   // The pattern surfaces link with, so a mention that would render unlinked takes no slot.
-  const named = findingText.match(SHA_MENTION) ?? [];
+  const named = linkableMentions(findingText).map((mention) => mention.token);
   const commits = new Map<string, FindingLink>();
   const applications = new Map<string, FindingLink>();
   const add = (into: Map<string, FindingLink>, max: number, link: FindingLink | null) => {

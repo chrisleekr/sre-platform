@@ -1,5 +1,5 @@
 // Slack mrkdwn text helpers shared by the outbound adapter: escaping, links, and finding lines.
-import { SHA_MENTION } from '@sre/contracts';
+import { linkableMentions } from '@sre/contracts';
 import type { OutboundMessage } from './types';
 
 type Finding = NonNullable<OutboundMessage['finding']>;
@@ -55,22 +55,22 @@ export function linkify(text: string, links: readonly FindingLink[] | undefined)
     // a dot, so a hostname or file name never links, nor `&`, so it cannot match inside an escape
     // entity such as `&lt;`, nor `=`, `?` or `#`, so a value inside a cited URL stays as written.
     const pattern = isSha
-      ? SHA_MENTION
+      ? undefined
       : new RegExp(
           `(?<![\\w./|=?#&-])${item.label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w/-]|\\.\\w)`,
           'g',
         );
     // A mention of this commit: another SHA can share the 7-character prefix, so a mention that
     // matches all 8 label characters wins over an earlier 7-character one.
-    const candidates = [...out.matchAll(pattern)].filter(
+    const candidates = linkableMentions(out, pattern).filter(
       (candidate) =>
         !isSha ||
-        (candidate[0].startsWith(item.label.slice(0, 7)) &&
-          item.label.startsWith(candidate[0].slice(0, 8))),
+        (candidate.token.startsWith(item.label.slice(0, 7)) &&
+          item.label.startsWith(candidate.token.slice(0, 8))),
     );
-    const match = candidates.find((candidate) => candidate[0].length >= 8) ?? candidates[0];
+    const match = candidates.find((candidate) => candidate.token.length >= 8) ?? candidates[0];
     if (match) {
-      out = `${out.slice(0, match.index)}${deepLink(item.url, match[0])}${out.slice(match.index + match[0].length)}`;
+      out = `${out.slice(0, match.start)}${deepLink(item.url, match.token)}${out.slice(match.end)}`;
     } else if (!isSha) unmatched.push(item);
   }
   if (unmatched.length === 0) return out;
