@@ -20,11 +20,11 @@ export async function joinSlackAlertCohortTx(
 ): Promise<string[]> {
   // Processing time, not event or receipt time: under a classify backlog an earlier-stamped window
   // can close and be analyzed before later members of the same burst are processed. The cost is that
-  // a burst processed more than one window apart splits into separate cohorts.
+  // a burst processed more than one window apart splits into separate cohorts. No observedAt: the
+  // repo stamps it under the scope lock, so concurrent workers cannot open overlapping windows.
   const cohort = await joinAlertCohortTx(tx, tenantId, {
     sourceScopeKey: `slack:${channel}`,
     signalId,
-    observedAt: new Date(),
     windowMs: DEFAULT_COHORT_WINDOW_MS,
   });
   if (cohort.state !== 'collecting') return [];

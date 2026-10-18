@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, expect, test } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import {
   alertCohortMembers,
   alertCohorts,
@@ -100,6 +100,35 @@ function join(dataSourceId: string, signalId: string, observedAt: Date, windowMs
     }),
   );
 }
+
+test('a join without observedAt is stamped once the scope lock is held', async () => {
+  const source = await dataSource(`cohort-lock-${randomUUID().slice(0, 8)}`);
+  const holder = await episode(source, randomUUID(), new Date());
+  const waiter = await episode(source, randomUUID(), new Date());
+  const joinNow = (signalId: string, holdMs: number) =>
+    withTenant(app.db, tenantId, async (tx) => {
+      const cohort = await joinAlertCohortTx(tx, tenantId, {
+        sourceScopeKey: `connector:${source}`,
+        dataSourceId: source,
+        signalId,
+        windowMs: 120_000,
+      });
+      // Hold the scope lock so the other join has to wait for it.
+      if (holdMs) await tx.execute(sql`select pg_sleep(${holdMs / 1000})`);
+      return cohort;
+    });
+
+  const first = joinNow(holder.id, 300);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const [held, waited] = await Promise.all([first, joinNow(waiter.id, 0)]);
+
+  expect(waited.id).toBe(held.id);
+  const [stored] = await admin.db.select().from(alertCohorts).where(eq(alertCohorts.id, held.id));
+  // The waiting join was stamped after the holder released the lock, not when it started.
+  expect(stored!.lastAlertAt.getTime() - stored!.windowStartedAt.getTime()).toBeGreaterThanOrEqual(
+    250,
+  );
+});
 
 test('cohorts use fixed source-scoped boundaries and idempotent membership', async () => {
   const sourceA = await dataSource(`cohort-a-${randomUUID().slice(0, 8)}`);

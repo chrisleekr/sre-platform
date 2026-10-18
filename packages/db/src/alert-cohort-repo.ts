@@ -7,7 +7,8 @@ export interface CohortMembershipInput {
   sourceScopeKey: string;
   dataSourceId?: string | null;
   signalId: string;
-  observedAt: Date;
+  /** Omit to stamp with the database clock once the scope lock is held, so concurrent joins order. */
+  observedAt?: Date;
   windowMs: number;
 }
 
@@ -28,6 +29,13 @@ export async function joinAlertCohortTx(tx: Tx, tenantId: string, input: CohortM
   await tx.execute(
     sql`select pg_advisory_xact_lock(hashtextextended(${`${tenantId}:${input.sourceScopeKey}:cohort`}, 0))`,
   );
+  const observedAt =
+    input.observedAt ??
+    new Date(
+      (
+        (await tx.execute(sql`select clock_timestamp() as at`)) as unknown as Array<{ at: Date }>
+      )[0]!.at,
+    );
   const existingMembership = await tx
     .select({ cohortId: alertCohortMembers.cohortId })
     .from(alertCohortMembers)
@@ -50,8 +58,8 @@ export async function joinAlertCohortTx(tx: Tx, tenantId: string, input: CohortM
       and(
         eq(alertCohorts.sourceScopeKey, input.sourceScopeKey),
         eq(alertCohorts.state, 'collecting'),
-        lte(alertCohorts.windowStartedAt, input.observedAt),
-        gte(alertCohorts.windowEndsAt, input.observedAt),
+        lte(alertCohorts.windowStartedAt, observedAt),
+        gte(alertCohorts.windowEndsAt, observedAt),
       ),
     )
     .orderBy(desc(alertCohorts.windowStartedAt))
@@ -68,9 +76,9 @@ export async function joinAlertCohortTx(tx: Tx, tenantId: string, input: CohortM
           sourceScopeKey: input.sourceScopeKey,
           dataSourceId: input.dataSourceId ?? null,
           anchorSignalId: input.signalId,
-          windowStartedAt: input.observedAt,
-          windowEndsAt: new Date(input.observedAt.getTime() + input.windowMs),
-          lastAlertAt: input.observedAt,
+          windowStartedAt: observedAt,
+          windowEndsAt: new Date(observedAt.getTime() + input.windowMs),
+          lastAlertAt: observedAt,
         })
         .returning()
     )[0]!;
@@ -79,10 +87,10 @@ export async function joinAlertCohortTx(tx: Tx, tenantId: string, input: CohortM
     .insert(alertCohortMembers)
     .values({ tenantId, cohortId: cohort.id, signalId: input.signalId })
     .onConflictDoNothing();
-  if (input.observedAt > cohort.lastAlertAt) {
+  if (observedAt > cohort.lastAlertAt) {
     await tx
       .update(alertCohorts)
-      .set({ lastAlertAt: input.observedAt, updatedAt: sql`now()` })
+      .set({ lastAlertAt: observedAt, updatedAt: sql`now()` })
       .where(eq(alertCohorts.id, cohort.id));
   }
   return cohort;
