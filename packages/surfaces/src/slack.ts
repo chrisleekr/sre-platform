@@ -86,7 +86,9 @@ function render(msg: OutboundMessage, link?: string | null): string {
           ? 'Unverified: '
           : 'Update: '
     : '';
-  const labelled = finding ? findingLines(finding, trusted, unverified) : [];
+  const labelled = finding
+    ? findingLines(finding, trusted, unverified || finding.promotionReason === 'missing_capability')
+    : [];
   const raw = msg.recovery
     ? msg.content
     : [`${findingPrefix}${takeaway ?? msg.content}`, ...labelled].join('\n');

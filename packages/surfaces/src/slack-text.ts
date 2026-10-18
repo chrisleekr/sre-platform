@@ -76,9 +76,10 @@ export function linkify(text: string, links: readonly FindingLink[] | undefined)
  * always reads as likely. A responder reply is a chat answer, not an assessment, so it gets none.
  * @param finding - Finding provenance carried by the hub message.
  * @param trusted - Whether the finding is the trusted assessment.
- * @param unverified - Whether the finding is an inconclusive investigation result.
+ * @param showGaps - Whether the finding's gaps are open checks: an inconclusive result, or a blocked
+ * one whose gaps name the data no connected tool can read.
  */
-export function findingLines(finding: Finding, trusted: boolean, unverified: boolean): string[] {
+export function findingLines(finding: Finding, trusted: boolean, showGaps: boolean): string[] {
   if (finding.promotion === 'conversation_only') return [];
   return [
     ...(finding.likelyCause
@@ -86,7 +87,7 @@ export function findingLines(finding: Finding, trusted: boolean, unverified: boo
       : []),
     ...(finding.impact ? [`Impact: ${clip(finding.impact, LINE_MAX)}`] : []),
     ...(finding.nextStep ? [`Do: ${clip(finding.nextStep, NEXT_STEP_MAX)}`] : []),
-    ...(unverified && finding.gaps?.length
+    ...(showGaps && finding.gaps?.length
       ? [
           `Verify: ${finding.gaps
             .slice(0, 3)

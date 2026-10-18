@@ -4,7 +4,7 @@ import { createFixture } from './slack.fixture';
 
 const fixture = createFixture();
 
-test('renders a missing-capability finding as a concise blocker', async () => {
+test('renders a missing-capability finding as a blocker that names the missing data', async () => {
   const { fetch, calls } = fixture.fakeFetch({ ok: true, ts: '1' });
   await makeSlackPoster(fetch).post(
     { token: 'B', channel: 'C' },
@@ -22,12 +22,18 @@ test('renders a missing-capability finding as a concise blocker', async () => {
         currentState: null,
         impact: null,
         nextStep: 'Grant workload log access or inspect the logs manually.',
+        gaps: ['Container logs for checkout-api.', 'Node kernel log.'],
       },
     }),
     'https://app.example.com/incidents/i1',
   );
-  expect(calls[0]!.body.text).toContain(
-    'Blocked: Kubernetes logs are unavailable for this workload.',
+  expect(calls[0]!.body.text).toBe(
+    [
+      '🤖 Blocked: Kubernetes logs are unavailable for this workload.',
+      'Do: Grant workload log access or inspect the logs manually.',
+      'Verify: Container logs for checkout-api. · Node kernel log.',
+      'Incident: <https://app.example.com/incidents/i1|Open incident>',
+    ].join('\n'),
   );
 });
 
