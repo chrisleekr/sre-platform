@@ -103,6 +103,8 @@ export function providerLinks(
 export function renderedFindingText(result: TriageResult): string {
   return [
     result.summary,
+    // Promotion is decided after links are built, so this cannot apply the trusted-finding rule that
+    // hides a non-leading hypothesis. Including it costs a commit slot only past the cap.
     headlineHypothesis(result.rankedHypotheses),
     result.impact,
     result.nextStep,
