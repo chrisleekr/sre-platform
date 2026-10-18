@@ -69,6 +69,13 @@ export interface FindingLink {
   url: string;
 }
 
+/**
+ * A lowercase commit SHA prefix of 7 to 40 characters written on its own: not part of a longer word,
+ * not inside a link or URL path, and not a URL query or fragment value. The platform picks the
+ * commits to link with it and surfaces link with it, so a mention one side counts the other renders.
+ */
+export const SHA_MENTION = /(?<![\w/|=?#&-])[0-9a-f]{7,40}(?![\w/-])/g;
+
 /** Durable provenance for an evidence-bearing conclusion in the incident conversation. */
 export interface IncidentFindingPayload {
   runId: string | null;

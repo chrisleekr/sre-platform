@@ -147,3 +147,13 @@ test('an uppercase SHA mention takes no link slot, as Slack would not render it'
     ),
   ).toEqual([]);
 });
+
+test('a SHA Slack would not link, such as one inside a word or a cited URL, takes no link slot', () => {
+  const sha = listed[10]!.id;
+  expect(
+    providerLinks(
+      [record('gitlab_abc_list_commits', listed)],
+      `See g${sha.slice(0, 7)}, ${sha.slice(0, 8)}_x, https://git.example/commit/${sha} and ?rev=${sha}.`,
+    ),
+  ).toEqual([]);
+});

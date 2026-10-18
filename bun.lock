@@ -236,6 +236,7 @@
       "name": "@sre/surfaces",
       "version": "0.0.0",
       "dependencies": {
+        "@sre/contracts": "workspace:*",
         "@sre/db": "workspace:*",
         "@sre/hub": "workspace:*",
       },

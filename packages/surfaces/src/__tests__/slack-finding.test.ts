@@ -197,7 +197,7 @@ test('links the first mention of each provider entity and lists only unmentioned
       summary: 'Deploy blocked.',
       finding: {
         ...inconclusive,
-        likelyCause: 'Commits 8759f2b6..3391576 re-added old bytes; 3391576a is the suspect.',
+        likelyCause: 'Commits 8759f2b6..3391576 re-added old bytes.',
         nextStep: 'Revert, then re-sync.',
         links: [
           { label: '3391576a', url: commitUrl },
@@ -214,7 +214,7 @@ test('links the first mention of each provider entity and lists only unmentioned
   expect(calls[0]!.body.text).toBe(
     [
       '🤖 Unverified: Deploy blocked.',
-      `Likely cause: Commits 8759f2b6..<${commitUrl}|3391576> re-added old bytes; 3391576a is the suspect.`,
+      `Likely cause: Commits 8759f2b6..<${commitUrl}|3391576> re-added old bytes.`,
       'Do: Revert, then re-sync.',
       `Links: <${argoUrl}|trading-bot>`,
     ].join('\n'),
@@ -281,6 +281,23 @@ test('a link name never matches inside an escape entity', async () => {
     ['🤖 Unverified: Latency &lt; 200ms &amp; errors &gt; 1%.', `Links: <${argoUrl}|lt>`].join(
       '\n',
     ),
+  );
+});
+
+test('the mention that matches all 8 label characters links over an earlier 7-character one', async () => {
+  const { fetch, calls } = fixture.fakeFetch({ ok: true, ts: '1' });
+  await makeSlackPoster(fetch).post(
+    { token: 'B', channel: 'C' },
+    'ROOT',
+    fixture.msg({
+      kind: 'finding',
+      content: 'x',
+      summary: '3391576 is unrelated; 3391576a is the suspect.',
+      finding: { ...inconclusive, nextStep: null, links: [{ label: '3391576a', url: commitUrl }] },
+    }),
+  );
+  expect(calls[0]!.body.text).toBe(
+    `🤖 Unverified: 3391576 is unrelated; <${commitUrl}|3391576a> is the suspect.`,
   );
 });
 

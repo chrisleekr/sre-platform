@@ -1,4 +1,5 @@
 // Slack mrkdwn text helpers shared by the outbound adapter: escaping, links, and finding lines.
+import { SHA_MENTION } from '@sre/contracts';
 import type { OutboundMessage } from './types';
 
 type Finding = NonNullable<OutboundMessage['finding']>;
@@ -50,22 +51,26 @@ export function linkify(text: string, links: readonly FindingLink[] | undefined)
     // The payload is stored JSON: re-check what the builder guaranteed before rendering it.
     if (!item.url.startsWith('https://')) continue;
     const isSha = /^[0-9a-f]{8}$/.test(item.label);
-    const token = isSha
-      ? `${item.label.slice(0, 7)}[0-9a-f]{0,33}`
-      : item.label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    // Not inside an existing link or URL path, and not part of a longer word. A SHA may follow a
-    // range dot (`a..b`); a name may not, so a hostname or file name never links. A name never
-    // follows `&`, so it cannot match inside an escape entity such as `&lt;`. Neither follows `=`,
-    // `?` or `#`, so a value inside a URL the model cited, such as `?rev=<sha>`, stays as written.
+    // Not inside an existing link or URL path, and not part of a longer word. A name may not follow
+    // a dot, so a hostname or file name never links, nor `&`, so it cannot match inside an escape
+    // entity such as `&lt;`, nor `=`, `?` or `#`, so a value inside a cited URL stays as written.
     const pattern = isSha
-      ? new RegExp(`(?<![\\w/|=?#&-])(${token})(?![\\w/-])`, 'g')
-      : new RegExp(`(?<![\\w./|=?#&-])(${token})(?![\\w/-]|\\.\\w)`, 'g');
-    // The first mention that is this commit: another SHA can share the 7-character prefix.
-    const match = [...out.matchAll(pattern)].find(
-      (candidate) => !isSha || item.label.startsWith(candidate[1]!.slice(0, 8)),
+      ? SHA_MENTION
+      : new RegExp(
+          `(?<![\\w./|=?#&-])${item.label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w/-]|\\.\\w)`,
+          'g',
+        );
+    // A mention of this commit: another SHA can share the 7-character prefix, so a mention that
+    // matches all 8 label characters wins over an earlier 7-character one.
+    const candidates = [...out.matchAll(pattern)].filter(
+      (candidate) =>
+        !isSha ||
+        (candidate[0].startsWith(item.label.slice(0, 7)) &&
+          item.label.startsWith(candidate[0].slice(0, 8))),
     );
+    const match = candidates.find((candidate) => candidate[0].length >= 8) ?? candidates[0];
     if (match) {
-      out = `${out.slice(0, match.index)}${deepLink(item.url, match[1]!)}${out.slice(match.index + match[1]!.length)}`;
+      out = `${out.slice(0, match.index)}${deepLink(item.url, match[0])}${out.slice(match.index + match[0].length)}`;
     } else if (!isSha) unmatched.push(item);
   }
   if (unmatched.length === 0) return out;

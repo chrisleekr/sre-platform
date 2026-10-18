@@ -5,6 +5,7 @@
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
+    "@sre/contracts": "workspace:*",
     "@sre/db": "workspace:*",
     "@sre/hub": "workspace:*"
   },

@@ -1,4 +1,4 @@
-import type { FindingLink } from '@sre/contracts';
+import { SHA_MENTION, type FindingLink } from '@sre/contracts';
 import type { InvestigationEvidence, TriageResult } from './types';
 
 const MAX_COMMITS = 8;
@@ -62,9 +62,8 @@ export function providerLinks(
   evidence: readonly InvestigationEvidence[],
   findingText: string,
 ): FindingLink[] {
-  // Any lowercase hex run of 7 to 40 characters that the text names on its own, as a SHA prefix.
-  // Lowercase only, as Slack's linkify matches it: an uppercase mention would take a slot unrendered.
-  const named = findingText.match(/(?<![0-9a-fA-F])[0-9a-f]{7,40}(?![0-9a-fA-F])/g) ?? [];
+  // The pattern surfaces link with, so a mention that would render unlinked takes no slot.
+  const named = findingText.match(SHA_MENTION) ?? [];
   const commits = new Map<string, FindingLink>();
   const applications = new Map<string, FindingLink>();
   const add = (into: Map<string, FindingLink>, max: number, link: FindingLink | null) => {
