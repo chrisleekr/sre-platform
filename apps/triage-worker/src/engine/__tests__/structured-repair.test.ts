@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import * as z from 'zod';
 import { evidenceSliceSchema, reviewRecoverySchema } from '../evidence-review-contracts';
+import { evidenceReviewSchema } from '../evidence-review';
 import { parseWithLengthRepair } from '../structured-repair';
 
 const note = (text: string, evidenceIds = [crypto.randomUUID()]) => ({
@@ -122,6 +123,18 @@ describe('parseWithLengthRepair', () => {
     const parsed = parseWithLengthRepair(schema, { summary: `v1.2.3 ${'x'.repeat(200)}` });
     expect(parsed.summary.endsWith('…')).toBe(true);
     expect(parsed.summary).toHaveLength(100);
+  });
+
+  test("cuts a long review next step at a sentence, so Slack's Do: line never clips it mid-sentence", () => {
+    const step = `${'Scale the deployment back to two replicas. '.repeat(15)}Then watch latency.`;
+    const parsed = parseWithLengthRepair(evidenceReviewSchema, {
+      supported: false,
+      summary: 'Checkout latency is still high.',
+      nextStep: step,
+      evidenceIds: [],
+    });
+    expect(parsed.nextStep!.length).toBeLessThanOrEqual(400);
+    expect(parsed.nextStep!.endsWith('replicas.')).toBe(true);
   });
 
   test('does not repair numeric limits', () => {

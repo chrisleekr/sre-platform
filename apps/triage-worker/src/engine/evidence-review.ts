@@ -26,9 +26,7 @@ export const evidenceReviewSchema = z.object({
   // Strict provider tools drop count and min-length limits, so these bounds are loose and blank
   // entries are dropped after parsing rather than failing an otherwise valid review.
   gaps: z.array(z.string().max(240)).max(20).optional(),
-  // A kept fix carries risk, validation and rollback; the bound stays loose so a long one does not
-  // fail the whole review. The instruction asks for 400 characters.
-  nextStep: z.string().max(1_000).optional(),
+  nextStep: z.string().max(400).optional(),
   evidenceIds: z.array(z.uuid()).max(30),
 });
 
