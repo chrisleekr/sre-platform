@@ -342,8 +342,8 @@ function emitBlock(path: string, name: string, body: string): void {
 function main(): void {
   const check = process.argv.includes('--check');
 
-  // Rendered once and reused: each render runs the coverage check, so rendering a second time for
-  // the CLAUDE.md block would report every missing note twice.
+  // Rendered once and reused: each render runs the coverage check, so rendering again for another
+  // output would report every missing note twice.
   const workspaces = renderWorkspaces(discoverWorkspaces());
   const gates = renderGates(discoverGates());
 
@@ -355,8 +355,6 @@ function main(): void {
     emit(`docs/_generated/connector-tools/${type}.md`, body);
 
   emit('docs/_generated/ci-gates.md', gates);
-  emitBlock('CLAUDE.md', 'workspaces', workspaces);
-  emitBlock('CLAUDE.md', 'ci-gates', gates);
   emitBlock('CONTRIBUTING.md', 'ci-gates', gates);
 
   // A partial the generator no longer produces would otherwise stay committed and keep rendering

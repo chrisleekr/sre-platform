@@ -67,6 +67,6 @@ sign-in, the optional Kubernetes port-forward tunnels, and `bun run db:reset`.
 ## Explore the project
 
 - [User and operator guide](docs/index.md)
-- [Workspace layout](CLAUDE.md)
+- [Workspace layout](docs/build/index.md)
 - [Domain glossary](CONTEXT.md)
 - [Contributing](CONTRIBUTING.md)
