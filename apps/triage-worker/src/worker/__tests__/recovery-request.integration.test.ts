@@ -65,7 +65,11 @@ const resumeJob = {
   attempts: 1,
 };
 
-async function ask(incidentId: string, authorUserId: string): Promise<HumanMessage> {
+async function ask(
+  incidentId: string,
+  authorUserId: string,
+  createdAt?: Date,
+): Promise<HumanMessage> {
   const [row] = await admin.db
     .insert(incidentMessages)
     .values({
@@ -76,6 +80,7 @@ async function ask(incidentId: string, authorUserId: string): Promise<HumanMessa
       content: 'Recheck and close if resolved',
       authorUserId,
       originSurface: 'dashboard',
+      ...(createdAt ? { createdAt } : {}),
     })
     .returning();
   return {
@@ -277,7 +282,8 @@ describe('responder-requested recovery verification', () => {
   test('newer responder input rolls the request back for reinterpretation', async () => {
     const tracked = await reportedBeforeVerification();
     const request = await ask(tracked.incidentId, memberId);
-    await ask(tracked.incidentId, memberId);
+    // Timestamps are millisecond precision and ties break on a random id, so make the newer one later.
+    await ask(tracked.incidentId, memberId, new Date(request.createdAt.getTime() + 1));
 
     await expect(
       requestRecoveryVerification(runtime(), resumeJob, tracked.incidentId, request, request.id),
