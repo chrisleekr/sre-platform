@@ -18,8 +18,9 @@ export async function joinSlackAlertCohortTx(
   channel: string,
   signalId: string,
 ): Promise<string[]> {
-  // Receipt time, not event time: under a classify backlog an event-time window can close and be
-  // analyzed before later members of the same burst are processed.
+  // Processing time, not event or receipt time: under a classify backlog an earlier-stamped window
+  // can close and be analyzed before later members of the same burst are processed. The cost is that
+  // a burst processed more than one window apart splits into separate cohorts.
   const cohort = await joinAlertCohortTx(tx, tenantId, {
     sourceScopeKey: `slack:${channel}`,
     signalId,

@@ -261,8 +261,10 @@ incident tracks, or that matches no open incident or more than one, is classifie
 repeat whose incident closes before it is attached.
 
 Alerts that arrive close together enter a fixed comparison cohort, scoped to one connection, or to
-one Slack channel for alerts posted there. A Slack cohort groups alerts by when the platform
-received them, so a burst delayed by a classification backlog still lands together. The cohort is
+one Slack channel for alerts posted there. A Slack cohort groups alerts by when classification opens
+their incidents, not by when they were posted, so the cohort cannot be analysed before a delayed
+member is processed. A burst whose members are processed more than two minutes apart, for example
+behind a long backlog, can split into more than one cohort. The cohort is
 sealed before one budget-admitted model call sees at most five incidents. It can suggest that a pair
 may be related or record that they are unrelated. Timing cannot establish direction or merge records.
 

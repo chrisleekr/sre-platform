@@ -11,6 +11,7 @@ import {
   retrieveNearestActive,
   setIncidentEmbedding,
   type IncidentSummary,
+  type Tx,
 } from '@sre/db';
 import type { HubMessage } from '@sre/hub';
 import { RetryableError } from '@sre/queue';
@@ -358,21 +359,11 @@ export class ClassifyCore {
     const enrichedSignals = options.signals?.map(enrichSignal);
     const enrichedSignal = options.signal ? enrichSignal(options.signal) : undefined;
     const followupJobIds: string[] = [];
-    const onRoutedTx: NonNullable<OpenIncidentOptions['onRoutedTx']> = async (tx, routed) => {
-      const jobIds = options.onRoutedTx ? await options.onRoutedTx(tx, routed) : [];
-      // Provider alerts that open incidents together may share a cause.
-      if (opener.author === 'system' && !routed.reused && routed.signalId)
-        jobIds.push(
-          ...(await joinSlackAlertCohortTx(
-            tx,
-            this.deps.queue,
-            tenantId,
-            thread.channel,
-            routed.signalId,
-          )),
-        );
-      return jobIds;
-    };
+    const joinCohort = this.cohortJoinTx(tenantId, thread.channel, opener);
+    const onRoutedTx: NonNullable<OpenIncidentOptions['onRoutedTx']> = async (tx, routed) => [
+      ...(options.onRoutedTx ? await options.onRoutedTx(tx, routed) : []),
+      ...(await joinCohort(tx, routed)),
+    ];
     let created: RouteResult;
     try {
       created = await this.routeOrRetry({
@@ -422,6 +413,21 @@ export class ClassifyCore {
       return;
     }
     await this.seedEmbedding(tenantId, created.incidentId, scrubbedSeed);
+  }
+
+  /**
+   * Joins a provider alert's new incident to its Slack channel cohort, since alerts that open
+   * incidents together may share a cause. Every opener uses it, so a fail-open burst still groups.
+   * @returns Jobs to publish after the transaction commits.
+   */
+  cohortJoinTx(tenantId: string, channel: string, opener: NonNullable<IncidentSignal['opener']>) {
+    return async (
+      tx: Tx,
+      routed: { reused: boolean; signalId: string | null },
+    ): Promise<string[]> =>
+      opener.author === 'system' && !routed.reused && routed.signalId
+        ? joinSlackAlertCohortTx(tx, this.deps.queue, tenantId, channel, routed.signalId)
+        : [];
   }
 
   messageKey(channel: string, messageId: string): string {
