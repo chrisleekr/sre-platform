@@ -265,6 +265,25 @@ test('a later mention of the commit links when an earlier SHA shares its prefix'
   );
 });
 
+test('a link name never matches inside an escape entity', async () => {
+  const { fetch, calls } = fixture.fakeFetch({ ok: true, ts: '1' });
+  await makeSlackPoster(fetch).post(
+    { token: 'B', channel: 'C' },
+    'ROOT',
+    fixture.msg({
+      kind: 'finding',
+      content: 'x',
+      summary: 'Latency < 200ms & errors > 1%.',
+      finding: { ...inconclusive, nextStep: null, links: [{ label: 'lt', url: argoUrl }] },
+    }),
+  );
+  expect(calls[0]!.body.text).toBe(
+    ['🤖 Unverified: Latency &lt; 200ms &amp; errors &gt; 1%.', `Links: <${argoUrl}|lt>`].join(
+      '\n',
+    ),
+  );
+});
+
 test('a section boundary never splits the incident link on an approval post', async () => {
   const { fetch, calls } = fixture.fakeFetch({ ok: true, ts: '1' });
   const incidentUrl = 'https://app.example.com/incidents/i1';
