@@ -85,8 +85,10 @@ export class RecoveryReports {
   /**
    * Finds the one open incident a recovery notice describes. Scope is `root` only for an edit whose
    * message opens with a resolved header, so the whole message recovered; otherwise `signal`,
-   * covering just the matched signal. Resolved signals of an open incident still match, so a
-   * redelivered notice whose first delivery already resolved them links to the same incident.
+   * covering just the matched signal. An edit that still opens firing yet lists a resolved alert
+   * cannot say which of its alerts recovered, so it stays advisory. Resolved signals of an open
+   * incident still match, so a redelivered notice whose first delivery already resolved them links
+   * to the same incident.
    * @param tenantId - Owning tenant.
    * @param candidate - Scrubbed resolved candidate.
    */
@@ -94,6 +96,8 @@ export class RecoveryReports {
     tenantId: string,
     candidate: InboundCandidate,
   ): Promise<{ incidentId: string; signalId: string; scope: 'root' | 'signal' } | null> {
+    const root = opensWithResolvedHeader(candidate.text);
+    if (candidate.isEdit && !root) return null;
     const matched = await matchOpenProducerSignals(this.core, tenantId, candidate, {
       includeResolved: true,
     });
@@ -104,7 +108,7 @@ export class RecoveryReports {
     return {
       incidentId: signal.incidentId,
       signalId: signal.id,
-      scope: candidate.isEdit && opensWithResolvedHeader(candidate.text) ? 'root' : 'signal',
+      scope: candidate.isEdit && root ? 'root' : 'signal',
     };
   }
 

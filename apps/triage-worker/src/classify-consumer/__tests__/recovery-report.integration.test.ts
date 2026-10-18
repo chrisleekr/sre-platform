@@ -10,8 +10,10 @@ import {
   foreignTenantId,
   handler,
   job,
+  recoveryJobs,
   reportMessages,
   resolvedCandidate,
+  signalStates,
   trackedIncident,
   useRecoveryFixture,
 } from './recovery-report.fixture';
@@ -44,9 +46,9 @@ describe('Slack recovery notices', () => {
     ]);
   });
 
-  test('an edit that opens firing and lists a resolved alert records signal scope', async () => {
+  test('an edit that opens firing and lists a resolved alert stays advisory', async () => {
     const tracked = await trackedIncident(`slack:monitor-${randomUUID()}`);
-    const { handle } = handler();
+    const { handle, onOutcome } = handler();
     const text = '[FIRING:1] Checkout latency is high.\nResolved: Checkout error rate is high.';
     const candidate = resolvedCandidate('unused', {
       externalId: tracked.root,
@@ -59,12 +61,17 @@ describe('Slack recovery notices', () => {
 
     await handle(job(candidate));
 
+    // The message still shows an alert firing and cannot say which one recovered.
+    expect(onOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: 'resolution_unmatched' }),
+    );
     expect(await disposition(candidate.eventKey)).toEqual([
-      expect.objectContaining({
-        correlationDecision: 'recovery_reported',
-        correlatedSignalId: tracked.signalId,
-      }),
+      expect.objectContaining({ correlationDecision: null, correlatedSignalId: null }),
     ]);
+    expect(await signalStates(tracked.incidentId)).toEqual([
+      { state: 'unknown', clearProvenance: null },
+    ]);
+    expect(await recoveryJobs(tracked.incidentId)).toEqual([]);
   });
 
   test('the link and message do not depend on disposition recording', async () => {

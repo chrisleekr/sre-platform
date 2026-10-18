@@ -265,6 +265,39 @@ describe('Slack recovery verification', () => {
     expect((await recoveryJobs(tracked.incidentId)).map((row) => row.status)).toEqual(['queued']);
   });
 
+  test('a later unclassifiable edit of the alert message leaves the recovery in place', async () => {
+    const monitorKey = `slack:monitor-${randomUUID()}`;
+    const tracked = await trackedIncident(monitorKey);
+    const { handle } = handler();
+    await handle(job(resolvedCandidate(monitorKey)));
+    // A rewrite the adapter cannot read as firing or resolved, after the 00:05 notice.
+    const eventAt = '2026-09-20T00:07:00.000Z';
+    const version = String(Date.parse(eventAt) * 1000);
+    const eventKey = `slack:${CHANNEL}:${tracked.root}:edit:${version}:producer:${PRODUCER}`;
+    const text = 'Checkout error rate dashboard link updated.';
+
+    await handle(
+      job(
+        resolvedCandidate(monitorKey, {
+          externalId: tracked.root,
+          eventKey,
+          eventAt,
+          eventVersion: version,
+          isEdit: true,
+          text,
+          signalState: 'unknown',
+          contentHash: createHash('sha256').update(text).digest('hex'),
+          observations: [],
+        }),
+      ),
+    );
+
+    expect(await signalStates(tracked.incidentId)).toEqual([
+      { state: 'resolved', clearProvenance: 'unknown' },
+    ]);
+    expect((await recoveryJobs(tracked.incidentId)).map((row) => row.status)).toEqual(['queued']);
+  });
+
   test('a notice does not cover a post of the same monitor from another bot', async () => {
     const monitorKey = `slack:monitor-${randomUUID()}`;
     const first = await trackedIncident(monitorKey);

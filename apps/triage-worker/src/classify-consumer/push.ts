@@ -57,7 +57,9 @@ export class PushHandler {
         // An alert message edited back to firing withdraws the recovery its earlier edit reported.
         let reported: Awaited<ReturnType<RecoveryReports['link']>> = null;
         if (resolved) reported = await this.reports.link(tenantId, scrubbedCandidate);
-        else await this.reports.reopen(tenantId, scrubbedCandidate);
+        // Only a firing edit: an unclassifiable rewrite says nothing about the alert's state.
+        else if (scrubbedCandidate.signalState === 'firing')
+          await this.reports.reopen(tenantId, scrubbedCandidate);
         await persistDeterministicDisposition({
           core: this.core,
           candidate,
