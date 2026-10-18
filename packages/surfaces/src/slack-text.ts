@@ -62,7 +62,7 @@ export function linkify(text: string, links: readonly FindingLink[] | undefined)
           'g',
         );
     // Escaping turns every model `<` into `&lt;`, so each `<…>` left is a link inserted above.
-    const inserted = [...out.matchAll(/<[^>]*>/g)].map(
+    const inserted = [...out.matchAll(/<[^<>\n]*>/g)].map(
       (link) => [link.index, link.index + link[0].length] as const,
     );
     // A mention of this commit: another SHA can share the 7-character prefix, so a mention that
