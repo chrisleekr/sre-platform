@@ -62,9 +62,8 @@ export function linkify(text: string, links: readonly FindingLink[] | undefined)
           'g',
         );
     // Escaping turns every model `<` into `&lt;`, so each `<…>` left is a link inserted above.
-    // Model text is flattened to one line, so each line up to its first `: ` is a code-owned label
-    // such as `Likely cause: `, never a mention.
-    const inserted = [...out.matchAll(/<[^<>\n]*>|^[^\n:]*: /gm)].map(
+    // A line label such as `🤖 Unverified: ` or `Likely cause: ` is code-owned, never a mention.
+    const inserted = [...out.matchAll(/<[^<>\n]*>|^(?:\S+ )?[A-Z][a-z]+(?: [a-z]+)?: /gm)].map(
       (link) => [link.index, link.index + link[0].length] as const,
     );
     // A mention of this commit: another SHA can share the 7-character prefix, so a mention that

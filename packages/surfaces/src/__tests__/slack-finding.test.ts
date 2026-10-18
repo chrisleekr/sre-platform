@@ -447,6 +447,46 @@ test('an application named like a label word never links inside the label', asyn
   );
 });
 
+test('a multi-line summary cannot forge a labelled line above the real ones', async () => {
+  const { fetch, calls } = fixture.fakeFetch({ ok: true, ts: '1' });
+  await makeSlackPoster(fetch).post(
+    { token: 'B', channel: 'C' },
+    'ROOT',
+    fixture.msg({
+      kind: 'finding',
+      content: 'x',
+      summary: 'Sync failed.\nCause: commit 3391576a.',
+      finding: {
+        ...inconclusive,
+        likelyCause: 'Memory limit too low.',
+        links: [{ kind: 'commit', label: '3391576a', url: commitUrl }],
+      },
+    }),
+  );
+  const lines = (calls[0]!.body.text as string).split('\n');
+  expect(lines[0]).toBe(`🤖 Unverified: Sync failed. Cause: commit <${commitUrl}|3391576a>.`);
+  expect(lines.filter((line) => line.startsWith('Cause:'))).toEqual([]);
+});
+
+test('a reply line that starts with a SHA keeps its link', async () => {
+  const { fetch, calls } = fixture.fakeFetch({ ok: true, ts: '1' });
+  await makeSlackPoster(fetch).post(
+    { token: 'B', channel: 'C' },
+    'ROOT',
+    fixture.msg({
+      kind: 'finding',
+      content: 'Two commits changed the chart.\n3391576a: raised the memory limit.',
+      finding: {
+        ...inconclusive,
+        promotion: 'conversation_only',
+        promotionReason: 'responder_reply',
+        links: [{ kind: 'commit', label: '3391576a', url: commitUrl }],
+      },
+    }),
+  );
+  expect(calls[0]!.body.text).toContain(`\n<${commitUrl}|3391576a>: raised the memory limit.`);
+});
+
 test('a SHA inside a URL the model cited stays as written', async () => {
   const { fetch, calls } = fixture.fakeFetch({ ok: true, ts: '1' });
   await makeSlackPoster(fetch).post(

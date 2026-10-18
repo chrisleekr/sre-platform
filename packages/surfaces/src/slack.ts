@@ -3,7 +3,7 @@
 // so every mirrored message replies with thread_ts = the binding's thread id, in the binding's channel.
 // Managed Socket Mode inbound lands in apps/api. The fetch client here is injected for outbound tests.
 import { SLACK_API } from './slack-http';
-import { deepLink, escapeSlackText, findingLines, linkify } from './slack-text';
+import { deepLink, escapeSlackText, findingLines, linkify, oneLine } from './slack-text';
 import type { FetchLike, OutboundMessage, SurfacePoster, SurfaceTarget } from './types';
 
 export { slackChatGetPermalink, slackUsersInfoEmail } from './slack-identity';
@@ -89,9 +89,11 @@ function render(msg: OutboundMessage, link?: string | null): string {
   const labelled = finding
     ? findingLines(finding, trusted, unverified || finding.promotionReason === 'missing_capability')
     : [];
+  // Above labelled lines the headline is one line, so model text cannot forge or repeat a label.
+  const headline = takeaway ?? msg.content;
   const raw = msg.recovery
     ? msg.content
-    : [`${findingPrefix}${takeaway ?? msg.content}`, ...labelled].join('\n');
+    : [`${findingPrefix}${labelled.length ? oneLine(headline) : headline}`, ...labelled].join('\n');
   const body = msg.preformatted ? raw : escapeSlackText(raw);
   // Attribute a human reply synced from the dashboard when a label was resolved: the label is the
   // author's email local-part, never the full address. Falls back to the bare glyph when unresolved.
