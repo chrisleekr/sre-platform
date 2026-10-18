@@ -77,3 +77,18 @@ test('a leading hypothesis headlines the finding even when the model ranked anot
   );
   expect(finding.likelyCause).toBe('Leading idea.');
 });
+
+test('a trusted finding names a cause only when a hypothesis is leading', () => {
+  const finding = incidentFindingPayload(
+    {
+      ...rejected,
+      rankedHypotheses: [
+        { hypothesis: 'Plausible idea.', confidence: 40, evidence: 'e', state: 'plausible' },
+      ],
+    },
+    'run-1',
+    'trusted_assessment',
+    'conclusive_assessment',
+  );
+  expect(finding).not.toHaveProperty('likelyCause');
+});

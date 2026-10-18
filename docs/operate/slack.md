@@ -45,7 +45,7 @@ finding has it:
 
 | Line | What it says |
 | --- | --- |
-| **Cause** or **Likely cause** | The leading hypothesis. It reads **Likely cause** unless the finding is a trusted conclusion. |
+| **Cause** or **Likely cause** | The leading hypothesis, or otherwise the first one not ruled out. A trusted conclusion shows **Cause** only for a leading hypothesis; every other finding reads **Likely cause**. |
 | **Impact** | Who or what is affected. |
 | **Do** | The recommended action, or the next diagnostic step when no fix is supported yet. |
 | **Verify** | Up to three open checks named by the evidence review. |

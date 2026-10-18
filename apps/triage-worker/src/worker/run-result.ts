@@ -107,7 +107,11 @@ export function incidentFindingPayload(
   promotion: IncidentFindingPayload['promotion'],
   promotionReason: IncidentFindingPayload['promotionReason'],
 ): IncidentFindingPayload {
-  const likelyCause = headlineHypothesis(result.rankedHypotheses);
+  // Slack labels a trusted finding's cause as verified, so a merely plausible one never fills it.
+  const likelyCause = headlineHypothesis(
+    result.rankedHypotheses,
+    promotion === 'trusted_assessment',
+  );
   return {
     runId: runId ?? null,
     outcome: result.outcome,

@@ -112,8 +112,9 @@ export function linkableMentions(
 /**
  * Picks the hypothesis a finding headlines: the leading one, else the first still standing.
  * @param hypotheses - Ranked hypotheses in model order, or stored model-shaped JSON.
+ * @param leadingOnly - Accept only a leading hypothesis, for a finding that states a verified cause.
  */
-export function headlineHypothesis(hypotheses: unknown): string | undefined {
+export function headlineHypothesis(hypotheses: unknown, leadingOnly = false): string | undefined {
   if (!Array.isArray(hypotheses)) return undefined;
   // The schema does not put the leading hypothesis first, and disfavored or disproven ones never
   // headline.
@@ -123,7 +124,8 @@ export function headlineHypothesis(hypotheses: unknown): string | undefined {
       typeof item === 'object' &&
       !['disfavored', 'disproven'].includes((item as { state?: unknown }).state as string),
   );
-  const pick = standing.find((item) => item.state === 'leading') ?? standing[0];
+  const pick =
+    standing.find((item) => item.state === 'leading') ?? (leadingOnly ? undefined : standing[0]);
   return typeof pick?.hypothesis === 'string' ? pick.hypothesis : undefined;
 }
 
