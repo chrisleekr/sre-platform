@@ -56,10 +56,13 @@ export function linkify(text: string, links: readonly FindingLink[] | undefined)
     // Not inside an existing link or URL path, and not part of a longer word. A SHA may follow a
     // range dot (`a..b`); a name may not, so a hostname or file name never links.
     const pattern = isSha
-      ? new RegExp(`(?<![\\w/|-])(${token})(?![\\w/-])`)
-      : new RegExp(`(?<![\\w./|-])(${token})(?![\\w/-]|\\.\\w)`);
-    const match = pattern.exec(out);
-    if (match && (!isSha || item.label.startsWith(match[1]!.slice(0, 8)))) {
+      ? new RegExp(`(?<![\\w/|-])(${token})(?![\\w/-])`, 'g')
+      : new RegExp(`(?<![\\w./|-])(${token})(?![\\w/-]|\\.\\w)`, 'g');
+    // The first mention that is this commit: another SHA can share the 7-character prefix.
+    const match = [...out.matchAll(pattern)].find(
+      (candidate) => !isSha || item.label.startsWith(candidate[1]!.slice(0, 8)),
+    );
+    if (match) {
       out = `${out.slice(0, match.index)}${deepLink(item.url, match[1]!)}${out.slice(match.index + match[1]!.length)}`;
     } else if (!isSha) unmatched.push(item);
   }

@@ -1,5 +1,5 @@
 import type { FindingLink } from '@sre/contracts';
-import type { InvestigationEvidence } from './types';
+import type { InvestigationEvidence, TriageResult } from './types';
 
 const MAX_COMMITS = 8;
 const MAX_APPLICATIONS = 4;
@@ -92,4 +92,22 @@ export function providerLinks(
     walk(item.output, 0);
   }
   return [...commits.values(), ...applications.values()];
+}
+
+/**
+ * The finding text Slack renders: the summary, the leading hypothesis, impact, next step and the
+ * first three review gaps. Only commits named here are linked, so a commit named only in a field
+ * Slack hides cannot fill the cap ahead of one a responder sees.
+ * @param result - Reviewed engine result.
+ */
+export function renderedFindingText(result: TriageResult): string {
+  return [
+    result.summary,
+    result.rankedHypotheses?.find(
+      (hypothesis) => hypothesis.state !== 'disfavored' && hypothesis.state !== 'disproven',
+    )?.hypothesis,
+    result.impact,
+    result.nextStep,
+    ...(result.reviewGaps ?? []).slice(0, 3),
+  ].join('\n');
 }

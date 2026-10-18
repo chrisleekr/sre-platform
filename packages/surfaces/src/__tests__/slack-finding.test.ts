@@ -248,6 +248,23 @@ test('a different commit sharing the first seven characters is not linked', asyn
   );
 });
 
+test('a later mention of the commit links when an earlier SHA shares its prefix', async () => {
+  const { fetch, calls } = fixture.fakeFetch({ ok: true, ts: '1' });
+  await makeSlackPoster(fetch).post(
+    { token: 'B', channel: 'C' },
+    'ROOT',
+    fixture.msg({
+      kind: 'finding',
+      content: 'x',
+      summary: 'Commit 3391576b is unrelated; 3391576a is the suspect.',
+      finding: { ...inconclusive, nextStep: null, links: [{ label: '3391576a', url: commitUrl }] },
+    }),
+  );
+  expect(calls[0]!.body.text).toBe(
+    `🤖 Unverified: Commit 3391576b is unrelated; <${commitUrl}|3391576a> is the suspect.`,
+  );
+});
+
 test('a section boundary never splits the incident link on an approval post', async () => {
   const { fetch, calls } = fixture.fakeFetch({ ok: true, ts: '1' });
   const incidentUrl = 'https://app.example.com/incidents/i1';

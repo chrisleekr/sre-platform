@@ -1,7 +1,7 @@
 import { reviewRecoverySchema } from './evidence-review-contracts';
 import { scrubSecrets } from '@sre/agent-tools';
 import * as z from 'zod';
-import { providerLinks } from './provider-links';
+import { providerLinks, renderedFindingText } from './provider-links';
 import { recordedEvidenceTool } from './recorded-evidence';
 import { boundedEvidenceReview, EvidenceReviewFailure } from './evidence-review-budget';
 import {
@@ -401,16 +401,7 @@ export function reviewedEngine(engine: TriageEngine, generator: StructuredGenera
       input,
       currentAttemptIds,
     );
-    // The text Slack renders from the finding, so only commits it names are linked.
-    const findingText = [
-      reviewed.summary,
-      reviewed.currentState,
-      reviewed.impact,
-      reviewed.nextStep,
-      ...(reviewed.reviewGaps ?? []),
-      ...(reviewed.rankedHypotheses ?? []).map((hypothesis) => hypothesis.hypothesis),
-    ].join('\n');
-    const links = providerLinks(evidence, findingText);
+    const links = providerLinks(evidence, renderedFindingText(reviewed));
     return links.length > 0 ? { ...reviewed, links } : reviewed;
   };
   return {

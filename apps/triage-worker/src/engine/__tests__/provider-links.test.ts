@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { providerLinks } from '../provider-links';
+import { providerLinks, renderedFindingText } from '../provider-links';
 import type { InvestigationEvidence } from '../types';
 
 const sha = '3391576ad9e41f223355bf10d612178f196e1a4e';
@@ -101,4 +101,40 @@ test('a commit the finding never names is not linked', () => {
   expect(
     providerLinks([record('gitlab_abc_list_commits', listed)], 'Memory pressure on the node.'),
   ).toEqual([]);
+});
+
+test('the commit a responder sees keeps its link when hidden fields name others', () => {
+  // Later in the evidence than every hidden commit, so it is reached only after them.
+  const seen = listed[15];
+  const hidden = listed.slice(0, 12);
+  const text = renderedFindingText({
+    provider: 'fake',
+    sessionId: 'fake',
+    outcome: 'inconclusive',
+    turnBudget: 1,
+    summary: 'Checkout errors rose after a rollout.',
+    confidence: 0,
+    currentState: `Running ${hidden[0]!.id.slice(0, 7)}.`,
+    rankedHypotheses: [
+      {
+        hypothesis: `Disproven: ${hidden[1]!.id.slice(0, 7)}.`,
+        confidence: 0,
+        evidence: '',
+        state: 'disproven',
+      },
+      { hypothesis: 'The rollout raised load.', confidence: 60, evidence: '', state: 'plausible' },
+      ...hidden.slice(2, 10).map((commit) => ({
+        hypothesis: `Or ${commit.id.slice(0, 7)}.`,
+        confidence: 10,
+        evidence: '',
+        state: 'plausible' as const,
+      })),
+    ],
+    nextStep: `Revert ${seen!.id.slice(0, 7)}.`,
+    reviewGaps: ['One.', 'Two.', 'Three.', `Fourth names ${hidden[11]!.id.slice(0, 7)}.`],
+  });
+
+  expect(providerLinks([record('gitlab_abc_list_commits', listed)], text)).toEqual([
+    { label: seen!.id.slice(0, 8), url: seen!.web_url },
+  ]);
 });
