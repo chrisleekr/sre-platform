@@ -41,6 +41,7 @@ function batch() {
       name: 'service',
       fullPath: 'platform/service',
       webUrl: 'https://gitlab.example.com/platform/service',
+      containerRegistryImagePrefix: 'registry.example.com/platform/service',
       archived: false,
     }),
     snapshot('gitlab-event', {
@@ -115,6 +116,7 @@ test('atomically saves polling evidence, deployments, catalog and project cursor
   expect(rows[0]).toMatchObject({ providerId: '12', source: 'gitlab' });
   const [project] = await withTenant(app.db, tenantId, (tx) => tx.select().from(gitlabProjects));
   expect(project).toMatchObject({
+    containerRegistryImagePrefix: 'registry.example.com/platform/service',
     pollCursor: { turn: 1, pipeline: { page: 2, pending: true } },
     pollActive: true,
     pollSucceededAt: observedAt,

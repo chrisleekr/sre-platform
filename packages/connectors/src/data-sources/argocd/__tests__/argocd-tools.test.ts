@@ -236,7 +236,7 @@ describe('get_resource_tree + get_application_events', () => {
   });
 });
 
-describe('get_managed_resources (drift diff scrubbing)', () => {
+describe('get_managed_resources (drift diff parsing)', () => {
   const managedResp = {
     items: [
       {
@@ -260,7 +260,7 @@ describe('get_managed_resources (drift diff scrubbing)', () => {
     ],
   };
 
-  test('redacts Secret data in every state, keeps keys/metadata, marks unparseable', async () => {
+  test('parses every state with values intact, trims metadata, keeps unparseable text', async () => {
     const { impl, calls } = scopedFetch({ json: managedResp }, 'team-a');
     const out = (await toolNamed(apiConn(impl, true), 'get_managed_resources').run({
       name: 'api',
@@ -275,18 +275,17 @@ describe('get_managed_resources (drift diff scrubbing)', () => {
       metadata: Record<string, unknown>;
     };
     const live = secret.liveState as { data: Record<string, string> };
-    expect(target.data.password).toBe('[REDACTED]'); // value gone, key kept
-    expect(live.data.password).toBe('[REDACTED]');
+    expect(target.data.password).toBe('aGk=');
+    expect(live.data.password).toBe('c2VjcmV0');
     expect(target.metadata.managedFields).toBeUndefined();
     expect(secret.kind).toBe('Secret'); // envelope metadata preserved
     expect(secret.name).toBe('db');
 
     const cm = out.items[1]!;
-    expect(cm.normalizedLiveState).toBe('[unparseable manifest omitted]');
+    expect(cm.normalizedLiveState).toBe('not-json{');
   });
 
-  test('scrubs a manifest-bearing field outside the known state list', async () => {
-    // A future/unknown field that carries a manifest must not slip through the fixed state list.
+  test('parses a manifest-bearing field outside the known state list', async () => {
     const resp = {
       items: [
         {
@@ -301,7 +300,7 @@ describe('get_managed_resources (drift diff scrubbing)', () => {
       items: Array<Record<string, unknown>>;
     };
     const item = out.items[0]!;
-    expect((item.extraState as { data: Record<string, string> }).data.token).toBe('[REDACTED]');
+    expect((item.extraState as { data: Record<string, string> }).data.token).toBe('c2VjcmV0');
     expect(item.name).toBe('db'); // a plain scalar field is untouched
   });
 });

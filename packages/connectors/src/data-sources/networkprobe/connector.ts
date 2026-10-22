@@ -84,6 +84,11 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 
 // -------- pure helpers (fully unit-tested) --------
 
+/** The SSRF guard refused the target. The category lets the dispatcher name it without the message. */
+class TargetNotAllowedError extends Error {
+  readonly failureCategory = 'target_not_allowed';
+}
+
 /**
  * Resolve-once-validate-pin. A literal IP is validated directly (no DNS); a hostname is resolved and
  * EVERY address validated, so a split DNS answer of [public, private] is rejected wholesale (an
@@ -100,19 +105,19 @@ export async function resolvePublicTarget(
     .replace(/^\[|\]$/g, '');
   if (!h || /\s/.test(h)) throw new Error('networkprobe: invalid host');
   if (h === 'localhost' || h.endsWith('.localhost'))
-    throw new Error('networkprobe: host not allowed');
+    throw new TargetNotAllowedError('networkprobe: host not allowed');
 
   if (isLiteralIp(h)) {
     const canonical = canonicalizeLiteral(h);
     if (isBlockedIp(canonical))
-      throw new Error('networkprobe: host resolves to a non-public address');
+      throw new TargetNotAllowedError('networkprobe: host resolves to a non-public address');
     return { host: canonical, ips: [canonical] };
   }
 
   const ips = await withTimeout(lookup(h), DNS_TIMEOUT_MS, 'networkprobe: dns');
   if (ips.length === 0) throw new Error('networkprobe: host does not resolve');
   if (ips.some((ip) => isBlockedIp(ip)))
-    throw new Error('networkprobe: host resolves to a non-public address');
+    throw new TargetNotAllowedError('networkprobe: host resolves to a non-public address');
   return { host: h, ips };
 }
 

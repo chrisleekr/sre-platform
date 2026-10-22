@@ -332,6 +332,7 @@ describe('github connector — shape', () => {
   it.each([
     [{}, 'permission_denied'],
     [{ 'x-ratelimit-remaining': '0' }, 'rate_limited'],
+    [{ 'x-ratelimit-remaining': '4999', 'retry-after': '60' }, 'rate_limited'],
   ] as const)('classifies a bounded 403 from its actual headers', async (headers, category) => {
     const fetchImpl = (async (input: Parameters<typeof fetch>[0]) => {
       const url = String(input);

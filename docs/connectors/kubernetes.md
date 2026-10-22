@@ -215,29 +215,31 @@ total cluster coverage from a small, auditable surface:
 
 --8<-- "_generated/connector-tools/kubernetes.md"
 
+The first investigation pass reads pods and Warning events from one namespace: the monitored
+namespace when one is set, otherwise the namespaces of the incident's resolved resources, otherwise
+namespaces named by the alert itself (an Alertmanager `namespace` label, or the namespace printed in
+alert text such as `Job gitlab/foo`), otherwise the incident service name. A Slack channel
+placeholder such as `slack:C0123` is never used as a namespace, and an alert-supplied value that
+is not a valid Kubernetes namespace name is skipped; with none left, that pass reads nodes only. An
+invalid monitored namespace fails the read instead. When the alert named a node by its scrape
+address or name, the node list narrows to nodes whose `InternalIP` or name matches. When no node
+matches, for example an address from another cluster, every node is listed.
+
 Every path segment the engine controls is charset-validated before any request is built, so a
 crafted value like `../secrets/x` is rejected before a fetch. Requests carry the token in a header
 and never in the address, pin your CA, time out after eight seconds, and refuse redirects.
 
 ## Secrets in results
 
-Two independent layers, so a gap in either does not expose secret material.
+Your cluster's own permissions are the main control. The manifest binds the built-in `view` role,
+which excludes secrets, plus a narrow supplement for the read-only kinds triage actually needs. The
+manifest's token cannot read secrets, and the connector refuses Secret reads even if a broader token
+is supplied.
 
-```mermaid
-flowchart LR
-    Cluster["Your cluster"] --> RBAC["Layer 1<br/>the bound role<br/>cannot read Secrets"]
-    RBAC --> Redact["Layer 2<br/>values replaced,<br/>keys kept"]
-    Redact --> Engine["What the<br/>investigation sees"]
-```
-
-1. **Your cluster's own permissions.** The manifest binds the built-in `view` role, which excludes
-   secrets, plus a narrow supplement for the read-only kinds triage actually needs. The token cannot
-   read secrets at all.
-2. **Redaction inside the platform.** Every result is scrubbed anyway. Secret and config map
-   **values** are replaced and their keys kept. Inline container environment values are replaced,
-   and references to a secret are kept. Which redaction applies is decided by what was asked for,
-   not by what the API server said it returned, so it still applies if the response is unusual. The
-   investigation reasons from shape and key names; the values never leave the connector.
+The platform does not redact results. Config map data and inline container environment values are
+returned as the API server sends them and reach the model provider, the evidence store, and Slack.
+Keep credentials out of config maps and inline environment values, or do not grant the token read
+access to them. Only bulky `managedFields` and last-applied annotations are dropped, to save space.
 
 ## After it is connected
 

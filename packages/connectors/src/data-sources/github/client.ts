@@ -169,9 +169,12 @@ export async function boundedPage(
   if (!response.ok) {
     const remainingHeader = response.headers.get('x-ratelimit-remaining');
     const rateLimit = rateLimitEvidence(response.headers);
+    // A secondary rate limit is a 403 with quota left, often carrying only retry-after.
     const failureCategory =
       response.status === 429 ||
-      (response.status === 403 && remainingHeader !== null && Number(remainingHeader) === 0)
+      (response.status === 403 &&
+        (response.headers.has('retry-after') ||
+          (remainingHeader !== null && Number(remainingHeader) === 0)))
         ? 'rate_limited'
         : response.status === 401 || response.status === 403 || response.status === 404
           ? 'permission_denied'

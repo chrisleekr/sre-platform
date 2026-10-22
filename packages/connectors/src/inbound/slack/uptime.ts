@@ -7,9 +7,10 @@ export function uptimeNotification(
 ): { state: 'firing' | 'resolved'; url?: string } | null {
   // StatusCake appends zero or more bracketed reasons, such as [HTTP 522] [Unexpected Status Code]
   // or [Timeout / Connection Refused]. Identity comes from the URL only, never from the reasons.
+  // A push check has no URL, and its empty URL slot leaves two spaces before "went".
   const notices = [
     ...text.matchAll(
-      /(?:^|\n)Website \| Your site '([^'\n]*)'(?: \(([^)\n]+)\))? went (Up|Down)(?: \[[^\]\n]+\])*(?=\s|$)/g,
+      /(?:^|\n)Website \| Your site '([^'\n]*)'(?:[ \t]{1,4}\(([^)\n]+)\))?[ \t]{1,4}went (Up|Down)(?: \[[^\]\n]+\])*(?=\s|$)/g,
     ),
   ];
   if (notices.length === 0) return null;

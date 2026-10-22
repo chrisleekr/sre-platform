@@ -17,7 +17,7 @@ import {
   apiGetPathIsDenied,
   parseLogStream,
   projectApplicationForInvestigation,
-  scrubManagedResources,
+  parseManagedResources,
   summarizeApp,
 } from './projection';
 import {
@@ -70,10 +70,9 @@ export function atool<S extends z.ZodType>(def: {
  * with a single bearer token and SSRF confinement. HTTP is restricted to internal networks.
  * Every per-app tool validates the name (and appNamespace) it interpolates before any fetch, so a
  * crafted value cannot traverse the path. `get_managed_resources` returns the live-vs-desired drift
- * diff scrubbed of Secret values (the one manifest-bearing surface); `api_get` is a GET-only
+ * diff with manifests parsed (the one manifest-bearing surface); `api_get` is a GET-only
  * passthrough over the rest but refuses raw Applications, global inventory, and manifest-bearing
- * endpoints. Log output is bounded and relies on the dispatch layer's single
- * redaction choke point, the same accepted limit as k8s pod logs.
+ * endpoints. Log output is bounded. No output is redacted.
  */
 export function makeArgoCdTools(
   config: ConnectorConfig,
@@ -156,7 +155,7 @@ export function makeArgoCdTools(
       name: 'get_managed_resources',
       description:
         'Get the live-vs-desired drift diff for an application (what has drifted from Git, the "why is ' +
-        'it OutOfSync" detail). Secret and ConfigMap values and container env values are redacted. ' +
+        'it OutOfSync" detail). Manifest values are returned unredacted. ' +
         'appNamespace is needed only when the name is in several namespaces; ' +
         "if a call without it fails, call list_applications and retry with the application's namespace.",
       inputSchema: z.object({ name: z.string(), appNamespace: z.string().optional() }),
@@ -171,7 +170,7 @@ export function makeArgoCdTools(
           `/api/v1/applications/${encodeURIComponent(app)}/managed-resources`,
           { appNamespace: namespace },
         );
-        return scrubManagedResources(data);
+        return parseManagedResources(data);
       },
     }),
     atool({

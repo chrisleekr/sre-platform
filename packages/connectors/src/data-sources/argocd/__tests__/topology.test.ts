@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest';
 import { conn, fakeFetch, multiCfg } from './test-helpers';
+import { imageRepositoryRefs } from '../topology';
 
 const application = {
   metadata: { uid: 'app-uid', name: 'checkout', namespace: 'argocd' },
@@ -146,6 +147,65 @@ test('keeps deployed repository paths distinct and links exact managed resources
   ).toBe(true);
   expect(calls.some((call) => call.url.includes('/foreign/'))).toBe(false);
   expect(JSON.stringify(result)).not.toContain('secret-uid');
+});
+
+test('running images declare registry paths as application source, never a Helm chart feed', async () => {
+  const pod = (uid: string, images: string[]) => ({
+    kind: 'Pod',
+    name: uid,
+    namespace: 'shop',
+    uid,
+    images,
+  });
+  const { impl } = fakeFetch((url) => ({
+    json: url.includes('resource-tree')
+      ? {
+          nodes: [
+            pod('proxy-pod', [
+              `registry.example/team/proxy/proxy:1.2.3@sha256:${'a'.repeat(64)}`,
+              'valkey/valkey:8',
+            ]),
+            pod('worker-pod', ['registry.example/team/worker:2']),
+          ],
+        }
+      : {
+          items: [
+            {
+              ...application,
+              spec: {
+                ...application.spec,
+                sources: [
+                  {
+                    repoURL: 'https://git.example/api/v4/projects/53/packages/helm/devel',
+                    chart: 'proxy',
+                  },
+                ],
+              },
+              // The application summary mixes sibling images, so it never declares a source.
+              status: { summary: { images: ['registry.example/team/summary-only:1'] } },
+            },
+          ],
+        },
+  }));
+  const relations = (await conn(impl).topology!.discover()).collections[0]!.relations.filter(
+    (r) => r.kind === 'deployed_from',
+  );
+  expect(
+    relations.map((r) => [JSON.parse(r.from.id)[1], r.to.authority, r.to.id, r.attributes?.role]),
+  ).toEqual([
+    ['proxy-pod', 'oci:registry.example', 'team/proxy', 'application_source'],
+    ['proxy-pod', 'oci:registry.example', 'team/proxy/proxy', 'application_source'],
+    ['proxy-pod', 'oci:docker.io', 'valkey/valkey', 'application_source'],
+    ['worker-pod', 'oci:registry.example', 'team/worker', 'application_source'],
+  ]);
+});
+
+test.each([
+  ['registry.example:5000/a/b/c/d/e:tag', ['a/b', 'a/b/c', 'a/b/c/d']],
+  ['nginx', ['library/nginx']],
+  ['registry.example/Bad Path', []],
+])('image %s yields bounded repository prefixes', (image, ids) => {
+  expect(imageRepositoryRefs(image).map((ref) => ref.id)).toEqual(ids);
 });
 
 test('missing resource-tree permission preserves application evidence as partial', async () => {

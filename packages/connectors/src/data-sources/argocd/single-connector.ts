@@ -191,12 +191,23 @@ export function makeSingleArgoCdConnector(
           note: `no argocd application named '${query.service}'`,
         },
       });
-      if (!isValidName(query.service)) return noApplication();
+      const namespaces = query.scope?.namespaces ?? [];
+      const named = isValidName(query.service);
+      if (!named && !namespaces.length) return noApplication();
       try {
         const c = await connect(config, lookup);
-        const matches = (await readApplications(config, fetchImpl, c)).filter(
-          (application) => str(obj(obj(application).metadata).name) === query.service,
-        );
+        const applications = await readApplications(config, fetchImpl, c);
+        let matches = named
+          ? applications.filter(
+              (application) => str(obj(obj(application).metadata).name) === query.service,
+            )
+          : [];
+        // Without an application name, match the apps that deploy into the incident's scope namespaces.
+        const byNamespace = !matches.length && namespaces.length > 0;
+        if (byNamespace)
+          matches = applications.filter((application) =>
+            namespaces.includes(str(obj(obj(obj(application).spec).destination).namespace) ?? ''),
+          );
         if (matches.length === 0) return noApplication();
         if (matches.length > 1)
           return {
@@ -204,8 +215,12 @@ export function makeSingleArgoCdConnector(
             data: {
               service: query.service,
               windowMinutes: query.windowMinutes,
-              note: `multiple scoped argocd applications are named '${query.service}'`,
-              applications: matches.map(summarizeApp),
+              note: byNamespace
+                ? `multiple scoped argocd applications deploy to namespace ${namespaces.join(', ')}`
+                : `multiple scoped argocd applications are named '${query.service}'`,
+              // A shared namespace can hold many apps; the seed only needs enough to disambiguate.
+              applications: matches.slice(0, 10).map(summarizeApp),
+              ...(matches.length > 10 ? { truncated: matches.length - 10 } : {}),
             },
           };
         const app = matches[0]!;

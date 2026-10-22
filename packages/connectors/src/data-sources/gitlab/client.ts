@@ -195,6 +195,21 @@ export async function getBootstrapArray(
  * must equal the SSRF-checked base origin, and the pathname must stay under `/api/v4/`. Query values
  * go through URLSearchParams (percent-encoded), never string concatenation; `per_page` is clamped.
  */
+/**
+ * True when any path segment is `hooks` (project, group and system webhooks). A hook's URL includes
+ * the platform's own relay channel URL, which is stored encrypted and must not reach tool output.
+ * Segments are decoded first so `%68ooks` cannot slip past; an undecodable segment is refused.
+ */
+export function isDeniedGitLabPath(pathname: string): boolean {
+  return pathname.split('/').some((segment) => {
+    try {
+      return decodeURIComponent(segment).toLowerCase() === 'hooks';
+    } catch {
+      return true;
+    }
+  });
+}
+
 export function buildApiUrl(
   base: string,
   path: string,

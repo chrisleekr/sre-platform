@@ -233,10 +233,11 @@ relationship came from and lets a responder confirm the resolved repository for 
 
 ## Secrets in results
 
-This connector has no redaction rules of its own, and does not need any. GitHub never returns the
-value of an Actions secret, and Actions variables are not secret by definition, so there is no
-endpoint returning structured secrets to redact. Job logs are free text and go through the same
-general redaction every tool result does.
+The platform does not redact results. GitHub never returns the value of an Actions secret. Job
+logs are free text and reach the model provider, the evidence store, and Slack as GitHub returns
+them, so keep credentials out of job output.
+
+Repository files read with `get_content` come back as UTF-8 text. Binary files stay Base64 encoded.
 
 ## Event delivery health
 

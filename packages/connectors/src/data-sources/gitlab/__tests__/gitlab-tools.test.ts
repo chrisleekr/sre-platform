@@ -70,13 +70,35 @@ describe('makeGitLabTools', () => {
     expect(out).toHaveLength(1);
   });
 
-  it('api_get redacts CI variable values via the sanitizer', async () => {
+  it('api_get returns CI variable values unredacted', async () => {
     const fetchImpl = fakeToolFetch(() => jsonRes(200, [{ key: 'K', value: 'secret' }]));
     const c = makeGitLabConnector(cfg({ settings: { projectId: 42 } }), fetchImpl, publicLookup);
     const out = (await toolByName(c, 'api_get').run({
       path: 'projects/42/variables',
     })) as Array<Record<string, unknown>>;
-    expect(out[0]!.value).toBe('[REDACTED]');
+    expect(out[0]!.value).toBe('secret');
+  });
+
+  it.each([
+    'projects/42/hooks',
+    'projects/42/hooks/7',
+    'groups/7/hooks',
+    'hooks',
+    'projects/42/%68ooks/',
+  ])('api_get refuses webhook path %s without fetching', async (path) => {
+    let fetches = 0;
+    const c = makeGitLabConnector(
+      cfg({ settings: { projectId: 42 } }),
+      fakeToolFetch(() => {
+        fetches += 1;
+        return jsonRes(200, []);
+      }),
+      publicLookup,
+    );
+    await expect(toolByName(c, 'api_get').run({ path })).rejects.toThrow(
+      /webhook paths are not permitted/,
+    );
+    expect(fetches).toBe(0);
   });
 
   it('api_get rejects a host-escaping path', async () => {
@@ -293,6 +315,28 @@ describe('group-scoped GitLab connector', () => {
         path,
       }),
     ).rejects.toThrow(/project API path/);
+    expect(fetches).toBe(0);
+  });
+
+  test('project-scoped api_get refuses the project webhook list', async () => {
+    let fetches = 0;
+    const connector = makeGitLabConnector(
+      cfg({
+        settings: { baseUrl: 'https://gitlab.example.com', groupId: 7, groupPath: 'platform' },
+        repositories: catalog,
+      }),
+      fakeToolFetch(() => {
+        fetches += 1;
+        return jsonRes(200, []);
+      }),
+      publicLookup,
+    );
+    await expect(
+      toolByName(connector, 'api_get').run({
+        project: 'platform/services/checkout',
+        path: 'hooks',
+      }),
+    ).rejects.toThrow(/webhook paths are not permitted/);
     expect(fetches).toBe(0);
   });
 });

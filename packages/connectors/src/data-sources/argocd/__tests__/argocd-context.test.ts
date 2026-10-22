@@ -37,6 +37,18 @@ describe('api_get', () => {
     expect(calls).toHaveLength(0);
   });
 
+  test('refuses ServerSideDiff (server-side-diff) even outside the Applications prefix', async () => {
+    const { impl, calls } = fakeFetch();
+    await expect(
+      toolNamed(conn(impl), 'api_get').run({ path: 'api/v1/applications/api/server-side-diff' }),
+    ).rejects.toThrow(/projected named tools/);
+    // applicationsets is not refused wholesale, so only the segment denylist catches this one.
+    await expect(
+      toolNamed(conn(impl), 'api_get').run({ path: 'api/v1/applicationsets/api/server-side-diff' }),
+    ).rejects.toThrow(/projected named tools/);
+    expect(calls).toHaveLength(0);
+  });
+
   test('refuses a percent-encoded manifest endpoint (denylist evasion)', async () => {
     const { impl, calls } = fakeFetch();
     // managed-resource%73 decodes to managed-resources; ArgoCD would route it there. buildGetUrl
@@ -170,6 +182,45 @@ describe('fetchTriageContext', () => {
     expect(data.conditions).toHaveLength(1);
     expect(JSON.stringify(data)).not.toContain('triage-secret');
     expect(JSON.stringify(data)).not.toContain('token=short');
+  });
+
+  test('a placeholder service matches applications by resolved destination namespace', async () => {
+    const app = (name: string, namespace: string) => ({
+      ...appResp.items[0]!,
+      metadata: { name, namespace: 'argocd' },
+      spec: { project: 'default', destination: { namespace } },
+    });
+    const { impl } = fakeFetch(() => ({
+      json: { items: [app('edge-proxy', 'edge-proxy'), app('trading', 'trading')] },
+    }));
+    const ctx = await conn(impl, {
+      settings: { applications: [{ project: 'default', name: '*' }] },
+    }).fetchTriageContext({
+      service: 'slack:C07EWAS8132',
+      windowMinutes: 30,
+      scope: { namespaces: ['edge-proxy'], nodes: [] },
+    });
+    expect((ctx.data as { application?: { name?: string } }).application?.name).toBe('edge-proxy');
+  });
+
+  test('namespace fallback lists at most ten applications and counts the rest', async () => {
+    const app = (name: string) => ({
+      ...appResp.items[0]!,
+      metadata: { name, namespace: 'argocd' },
+      spec: { project: 'default', destination: { namespace: 'shared' } },
+    });
+    const { impl } = fakeFetch(() => ({
+      json: { items: Array.from({ length: 13 }, (_, index) => app(`app-${index}`)) },
+    }));
+    const ctx = await conn(impl, {
+      settings: { applications: [{ project: 'default', name: '*' }] },
+    }).fetchTriageContext({
+      service: 'slack:C07EWAS8132',
+      windowMinutes: 30,
+      scope: { namespaces: ['shared'], nodes: [] },
+    });
+    expect(ctx.data).toMatchObject({ truncated: 3 });
+    expect((ctx.data as { applications: unknown[] }).applications).toHaveLength(10);
   });
 
   test('degrades to a note when the app is absent (404)', async () => {

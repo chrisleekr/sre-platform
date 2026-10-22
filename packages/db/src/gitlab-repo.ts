@@ -12,6 +12,7 @@ export interface GitLabProjectInput {
   visibility?: string;
   archived: boolean;
   webUrl: string;
+  containerRegistryImagePrefix?: string;
   lastActivityAt?: Date;
 }
 
@@ -156,6 +157,7 @@ export async function upsertGitLabProject(
         ...project,
         defaultBranch: project.defaultBranch ?? null,
         visibility: project.visibility ?? null,
+        containerRegistryImagePrefix: project.containerRegistryImagePrefix ?? null,
         lastActivityAt: project.lastActivityAt ?? null,
         lastSyncedAt: observedAt ?? now,
         removedAt: null,
@@ -172,6 +174,7 @@ export async function upsertGitLabProject(
           visibility: sql`coalesce(excluded.visibility, ${gitlabProjects.visibility})`,
           archived: sql`excluded.archived`,
           webUrl: sql`excluded.web_url`,
+          containerRegistryImagePrefix: sql`coalesce(excluded.container_registry_image_prefix, ${gitlabProjects.containerRegistryImagePrefix})`,
           lastActivityAt: sql`coalesce(excluded.last_activity_at, ${gitlabProjects.lastActivityAt})`,
           lastSyncedAt: observedAt ?? now,
           removedAt: null,
@@ -237,6 +240,7 @@ export async function listGitLabProjects(
         private: sql<boolean>`${gitlabProjects.visibility} = 'private'`,
         archived: gitlabProjects.archived,
         htmlUrl: gitlabProjects.webUrl,
+        containerRegistryImagePrefix: gitlabProjects.containerRegistryImagePrefix,
         lastActivityAt: gitlabProjects.lastActivityAt,
         lastSyncedAt: gitlabProjects.lastSyncedAt,
       })

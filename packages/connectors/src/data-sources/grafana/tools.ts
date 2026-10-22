@@ -34,10 +34,8 @@ function gtool<S extends z.ZodType>(def: {
  * passthrough over the rest. No tool takes a `method` and every path is confined to `/api/`, so nothing
  * can mutate. The connector stays on Grafana's own API: `api_get` refuses the datasource proxy/resources
  * paths (`/api/ds/query` is POST, already blocked), so it never tunnels a raw downstream-datasource
- * response. No bespoke sanitizer: Grafana redacts datasource secrets in GET responses (`secureJsonData`
- * values are omitted, `secureJsonFields` is booleans-only), and the only residual — an internal
- * datasource URL — is the dispatch redaction's accepted best-effort limit, as with Prometheus
- * scrape-target URLs.
+ * response. Grafana itself omits datasource secrets in GET responses (`secureJsonData` values are
+ * omitted, `secureJsonFields` is booleans-only); the platform redacts nothing further.
  */
 export function makeGrafanaTools(
   config: ConnectorConfig,
@@ -174,7 +172,8 @@ export function makeGrafanaTools(
       description:
         'GET any Grafana HTTP API endpoint by path (e.g. "api/folders", "api/dashboards/tags", ' +
         '"api/alertmanager/grafana/api/v2/alerts/groups"). Read-only. The datasource proxy/resources ' +
-        "paths are refused (this connector stays on Grafana's own API). Use for anything the named " +
+        "paths are refused (this connector stays on Grafana's own API), as is the decrypt query " +
+        'parameter. Use for anything the named ' +
         'tools do not cover.',
       inputSchema: z.object({
         path: z.string(),
@@ -185,8 +184,13 @@ export function makeGrafanaTools(
         // Validate first (origin + /api/ + no-%), then refuse the proxy/resources tunnels on the
         // normalized pathname before the fetch.
         const url = buildGetUrl(c.base, path, query);
-        if (isDeniedProxyPath(new URL(url).pathname))
+        const u = new URL(url);
+        if (isDeniedProxyPath(u.pathname))
           throw new Error('grafana connector: datasource proxy/resources paths are not permitted');
+        // Provisioning exports with decrypt=true return contact-point secrets in clear, including the
+        // platform's own webhook bearer. Checked on the built URL so a query inlined in path counts.
+        if ([...u.searchParams.keys()].some((k) => k.toLowerCase() === 'decrypt'))
+          throw new Error('grafana connector: the decrypt query parameter is not permitted');
         const res = await fetchImpl(url, gInit(c));
         if (!res.ok) throw new Error(`grafana api ${res.status}`);
         return res.json();

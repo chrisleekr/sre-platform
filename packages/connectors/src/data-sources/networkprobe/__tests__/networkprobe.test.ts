@@ -125,6 +125,19 @@ describe('resolvePublicTarget', () => {
     await expect(resolvePublicTarget('10.0.0.5', pub)).rejects.toThrow(/non-public/);
   });
 
+  test.each([
+    ['localhost', pub],
+    ['10.0.0.5', pub],
+    ['rebind.example', (async () => [PUBLIC_IP, '10.0.0.5']) as HostLookup],
+  ] as const)(
+    'a refused target %s carries the target_not_allowed category',
+    async (host, lookup) => {
+      await expect(resolvePublicTarget(host, lookup)).rejects.toMatchObject({
+        failureCategory: 'target_not_allowed',
+      });
+    },
+  );
+
   test('rejects the cloud-metadata literal', async () => {
     await expect(resolvePublicTarget('169.254.169.254', pub)).rejects.toThrow(/non-public/);
   });

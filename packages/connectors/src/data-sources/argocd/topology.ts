@@ -3,6 +3,7 @@ import {
   topologyRelationKey,
   type TopologyCollection,
   type TopologyReader,
+  type TopologyRef,
 } from '@sre/contracts';
 import type { ConnectorConfig } from '../../registry';
 import type { HostLookup } from '../../ssrf';
@@ -13,6 +14,27 @@ import { finishTopologyPage, shouldReadTopologyCollection } from '../../topology
 import { ArgoApiError, connect, checkedJsonGet, validateName, type FetchLike } from './client';
 import { readApplications, readScopedApplication } from './verification';
 import { safeHttpUrl } from './projection';
+
+/** Registry repository paths an image could belong to, from shortest to longest.
+ * @param image - Image reference reported on an Argo CD resource-tree node.
+ */
+export function imageRepositoryRefs(image: string): TopologyRef[] {
+  const parts = image
+    .toLowerCase()
+    .split('@')[0]!
+    .replace(/:[^/]*$/, '')
+    .split('/');
+  const host =
+    parts.length > 1 && /[.:]|^localhost$/.test(parts[0]!) ? parts.shift()! : 'docker.io';
+  if (host === 'docker.io' && parts.length === 1) parts.unshift('library');
+  if (!parts.every((part) => /^[a-z0-9][a-z0-9._-]*$/.test(part))) return [];
+  // GitLab projects own two or more path segments; a sub-image path can sit beneath the project.
+  return parts.slice(1, 4).map((_, index) => ({
+    authority: `oci:${host}`,
+    kind: 'repository',
+    id: parts.slice(0, index + 2).join('/'),
+  }));
+}
 
 /** Discover application management and source relationships inside the configured project scope.
  * @param config - Authorized application scopes and project credentials.
@@ -207,6 +229,18 @@ export function argoTopology(
               evidence: 'provider_reference',
               description: 'Argo CD application resource tree',
             });
+            // Per node, because the application summary mixes every workload's images together.
+            const images = Array.isArray(node.images) ? node.images : [];
+            for (const image of images)
+              for (const to of imageRepositoryRefs(str(image) ?? ''))
+                collection.relations.push({
+                  from: ref,
+                  to,
+                  kind: 'deployed_from',
+                  evidence: 'declared',
+                  attributes: { role: 'application_source', provenance: 'image_path' },
+                  description: 'Running image registry path, not verified image provenance',
+                });
           }
         } catch (error) {
           collection.completeness = 'partial';

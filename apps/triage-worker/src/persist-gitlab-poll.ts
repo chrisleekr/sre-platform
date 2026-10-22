@@ -57,6 +57,7 @@ export async function persistGitLabPoll(
           name,
           fullPath,
           webUrl,
+          containerRegistryImagePrefix: text(value.containerRegistryImagePrefix),
           archived: value.archived === true,
           defaultBranch: text(value.defaultBranch),
           visibility: text(value.visibility),

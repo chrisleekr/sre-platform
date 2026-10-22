@@ -174,11 +174,8 @@ function stool<S extends z.ZodType>(def: {
  * contact-groups round out coverage; `api_get` is a GET-only passthrough over the rest. No tool takes
  * a `method` and every path is confined to `/v1/`, so nothing can mutate. Pagination is model-driven:
  * each collection tool passes `page`/`per_page` (clamped) and returns the raw response including its
- * `metadata`. No bespoke sanitizer: StatusCake read data is external monitoring telemetry, not
- * manifests or a structured secret-field endpoint; the one residual (a token in a contact-group
- * integration URL) is the dispatch redaction's accepted best-effort limit, as with Datadog
- * webhook URLs and Prometheus scrape-target credentials. The platform's own webhook secret in a
- * contact-group `ping_url` is always redacted.
+ * `metadata`. Responses are not redacted, except that the platform's own webhook secret in a
+ * contact-group `ping_url` is always removed.
  */
 function makeStatusCakeTools(config: ConnectorConfig, fetchImpl: FetchLike): ConnectorTool[] {
   const token = () => connect(config);

@@ -19,8 +19,7 @@ families remain investigation evidence only.
 flowchart LR
     Inc["An investigation<br/>needs evidence"] --> Tools["Read-only tools"]
     Tools --> Cake["StatusCake"]
-    Cake --> Scrub["Result scrubbed<br/>of secrets"]
-    Scrub --> Thread["Evidence in the<br/>incident thread"]
+    Cake --> Thread["Evidence in the<br/>incident thread"]
 ```
 
 Investigation reads are on demand. Bound open episodes are also reconciled periodically against provider history, independently of AI availability.
@@ -99,9 +98,9 @@ all the failing checks anyway, because "what is down right now" is worth knowing
 What this connector reads is external monitoring data, not manifests or credential stores.
 
 The contact groups the platform creates carry its webhook secret in their notification address.
-Every read replaces that secret with `[redacted]` before an investigation sees it. A token in any
-other contact group's address is left to the platform's general redaction, which catches it when it
-is recognisable, the same limit that applies to any free-text field.
+Every read replaces that platform secret with `[redacted]` before an investigation sees it. Nothing
+else is redacted: a token in any other contact group's address reaches the model provider, the
+evidence store, and Slack as StatusCake returns it.
 
 ## Verified uptime recovery
 

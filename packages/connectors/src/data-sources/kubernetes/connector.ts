@@ -141,31 +141,64 @@ export function makeKubernetesConnector(
     },
     async fetchTriageContext(query): Promise<TriageContext> {
       const { kjson } = await k8sClient(config, fetchImpl, lookup);
-      const ns = str(config.settings.namespace) ?? query.service;
+      // Scope namespaces come from alert labels, so they are untrusted: `..` would normalize the
+      // path to a cluster-wide list. Skip invalid ones rather than fail the read. A Slack channel
+      // placeholder is a conversation, never a namespace. Operator config throws, as in probe.
+      const isNamespace = (value: string) => {
+        try {
+          return Boolean(validateSegment('namespace', value));
+        } catch {
+          return false;
+        }
+      };
+      const configured = str(config.settings.namespace);
+      const ns = configured
+        ? validateSegment('namespace', configured)
+        : [
+            ...(query.scope?.namespaces ?? []),
+            ...(query.service.startsWith('slack:') ? [] : [query.service]),
+          ].find(isNamespace);
+      const scopedNodes = new Set(query.scope?.nodes ?? []);
 
       const [podsRaw, eventsRaw, nodesRaw] = await Promise.all([
         // Pods and Warning events are namespace-scoped and strict: a failure fails the tool call.
         // limit=200: take a bounded first page (ignore the continue token). Triage needs a
         // representative sample, not the whole namespace — an unbounded list is a noisy-neighbor
         // memory/CPU cost on the shared worker for a very large or high-churn namespace (CWE-400).
-        kjson(`/api/v1/namespaces/${encodeURIComponent(ns)}/pods?limit=200`),
-        kjson(
-          `/api/v1/namespaces/${encodeURIComponent(ns)}/events?fieldSelector=type%3DWarning&limit=200`,
-        ),
+        ns ? kjson(`/api/v1/namespaces/${encodeURIComponent(ns)}/pods?limit=200`) : { items: [] },
+        ns
+          ? kjson(
+              `/api/v1/namespaces/${encodeURIComponent(ns)}/events?fieldSelector=type%3DWarning&limit=200`,
+            )
+          : { items: [] },
         // Nodes are cluster-scoped; a namespace-scoped ServiceAccount 403s here. Best-effort: a
         // failure yields [] rather than sinking the whole read.
         kjson('/api/v1/nodes').catch(() => ({ items: [] as unknown[] })),
       ]);
 
       const pods = itemsOf(podsRaw).map(mapPod);
-      const nodes = itemsOf(nodesRaw).map(mapNode);
+      // Alert text names a node by its scrape address, a label by its node name.
+      const scoped = (raw: unknown) => {
+        const addresses = obj(obj(raw).status).addresses;
+        return (
+          scopedNodes.has(str(obj(obj(raw).metadata).name)!) ||
+          (Array.isArray(addresses) &&
+            addresses.some(
+              (entry) =>
+                obj(entry).type === 'InternalIP' && scopedNodes.has(str(obj(entry).address)!),
+            ))
+        );
+      };
+      const matched = itemsOf(nodesRaw).filter(scoped);
+      // An address from another cluster or a stale scrape target matches nothing; show every node then.
+      const nodes = (matched.length ? matched : itemsOf(nodesRaw)).map(mapNode);
       const warnings = itemsOf(eventsRaw)
         .map(mapEvent)
         .filter((w) => withinWindow(w.at, query.windowMinutes));
 
       return {
         source: 'kubernetes',
-        data: { namespace: ns, windowMinutes: query.windowMinutes, pods, nodes, warnings },
+        data: { namespace: ns ?? null, windowMinutes: query.windowMinutes, pods, nodes, warnings },
       };
     },
     tools: () => makeK8sTools(config, fetchImpl, lookup),

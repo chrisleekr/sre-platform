@@ -1,4 +1,4 @@
-import { sanitizeObject } from '../../shared/kubernetes/sanitize';
+import { trimObject } from '../../shared/kubernetes/trim';
 import { obj, str } from '../../values';
 import {
   ArgoApiError,
@@ -160,24 +160,16 @@ export function looksLikeManifest(v: unknown): boolean {
 }
 
 /**
- * Scrub a managed-resources (drift diff) response. Each item's manifest state fields are JSON-encoded
- * k8s manifests that can carry live Secret data; parse each and run the shared Kubernetes
- * secret-exclusion sanitizer (Secret/ConfigMap values and container env values redacted, keys kept).
- * ArgoCD's own hideSecretData has known bypasses (GHSA-3v3m-wc6v-x4x3), so this is the reliable layer.
- *
- * The four known state fields (STATE_FIELDS) are definitely manifests, so an unparseable one is
- * replaced with a marker, never emitted raw (fail-closed). Beyond those, any OTHER string field that
- * itself parses to a manifest-shaped object (carries apiVersion/kind) is scrubbed too, so a future
- * manifest-bearing field cannot silently leak; plain scalar envelope fields
- * (group/version/kind/namespace/name) do not JSON-parse to an object and pass through. Today ArgoCD
- * populates only the four state fields (the deprecated ResourceDiff.diff is a JSON patch, not a
- * manifest, and is left empty), so this generalization is forward-looking defense-in-depth.
+ * Parse a managed-resources (drift diff) response. Each item's manifest state fields are JSON-encoded
+ * k8s manifests; each is parsed and trimmed of bulky metadata, values unchanged. Any other string
+ * field that parses to a manifest-shaped object (carries apiVersion/kind) is parsed too; a field that
+ * does not parse is left as the original string.
  */
-export function scrubManagedResources(data: unknown): unknown {
+export function parseManagedResources(data: unknown): unknown {
   const known = new Set<string>(STATE_FIELDS);
   const items = obj(data).items;
   if (!Array.isArray(items)) return data;
-  const scrubbed = items.map((it) => {
+  const parsedItems = items.map((it) => {
     const item = { ...obj(it) };
     for (const [field, v] of Object.entries(item)) {
       if (typeof v !== 'string' || v === '') continue;
@@ -185,15 +177,13 @@ export function scrubManagedResources(data: unknown): unknown {
       try {
         parsed = JSON.parse(v);
       } catch {
-        // A known manifest field that will not parse fails closed; a non-manifest scalar is left alone.
-        if (known.has(field)) item[field] = '[unparseable manifest omitted]';
         continue;
       }
-      if (known.has(field) || looksLikeManifest(parsed)) item[field] = sanitizeObject(parsed);
+      if (known.has(field) || looksLikeManifest(parsed)) item[field] = trimObject(parsed);
     }
     return item;
   });
-  return { ...obj(data), items: scrubbed };
+  return { ...obj(data), items: parsedItems };
 }
 
 interface AppSummary {

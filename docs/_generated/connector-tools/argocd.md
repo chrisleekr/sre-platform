@@ -5,7 +5,7 @@
 | `list_applications` | List scoped ArgoCD applications across every connected project. |
 | `get_application` | Get one scoped ArgoCD application. Project is required to choose its credential. |
 | `get_resource_tree` | Get the live resource tree for one scoped ArgoCD application. |
-| `get_managed_resources` | Get the scrubbed live-versus-desired diff for one scoped ArgoCD application. |
+| `get_managed_resources` | Get the live-versus-desired diff for one scoped ArgoCD application. |
 | `get_application_events` | List Kubernetes events for one scoped ArgoCD application. |
 | `get_application_logs` | Read bounded pod logs for one scoped ArgoCD application. |
 | `api_get` | GET a safe non-Application ArgoCD API endpoint with one project credential. |

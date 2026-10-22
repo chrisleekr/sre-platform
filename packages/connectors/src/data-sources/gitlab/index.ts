@@ -11,4 +11,3 @@ export {
   type GitLabGroupSummary,
   type GitLabProjectSummary,
 } from './discovery';
-export * from './sanitize';

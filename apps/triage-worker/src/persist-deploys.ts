@@ -59,6 +59,8 @@ export function serviceRepositoriesFromSnapshots(
     return snapshot.metadata.sources.flatMap((raw) => {
       if (!raw || typeof raw !== 'object') return [];
       const source = raw as Record<string, unknown>;
+      // A Helm chart registry is a package feed, not the service's source repository.
+      if (source.chart) return [];
       const repository = sourceRepository(source.repoURL);
       if (!repository) return [];
       return [

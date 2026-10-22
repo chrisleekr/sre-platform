@@ -1,7 +1,8 @@
 import { describe, expect, it, test } from 'vitest';
 import type { ConnectorConfig } from '../../../registry';
 import type { ConnectorTool } from '../../../types';
-import { buildGetUrl, makeDatadogConnector } from '../connector';
+import { makeDatadogConnector } from '../connector';
+import { buildGetUrl, isDeniedDatadogPath } from '../paths';
 import { abortableFetch, expectCancelledInFlight } from '../../../__tests__/request-signal.fixture';
 
 interface Call {
@@ -74,6 +75,52 @@ describe('buildGetUrl', () => {
   });
   it('rejects a path outside /api via traversal', () => {
     expect(() => buildGetUrl(base, 'api/../secret')).toThrow(/must be under \/api\//);
+  });
+});
+
+describe('isDeniedDatadogPath', () => {
+  it.each([
+    '/api/v1/api_key',
+    '/api/v1/api_key/abc',
+    '/api/v2/api_keys',
+    '/api/v2/api_keys/abc',
+    '/api/v1/application_key',
+    '/api/v1/application_key/abc',
+    '/api/v2/application_keys',
+    '/api/v2/application_keys/abc',
+    '/api/v2/current_user/application_keys',
+    '/api/v2/current_user/application_keys/abc',
+    '/api/v2/service_accounts/sa1/application_keys',
+    '/api/v1/integration/webhooks',
+    '/api/v1/integration/webhooks/configuration/webhooks/platform',
+  ])('denies %s plus its case, double-slash, trailing-slash and %%-encoded variants', (p) => {
+    expect(isDeniedDatadogPath(p)).toBe(true);
+    expect(isDeniedDatadogPath(p.toUpperCase())).toBe(true);
+    expect(isDeniedDatadogPath(p.replace('/api/', '//api//'))).toBe(true);
+    expect(isDeniedDatadogPath(`${p}/`)).toBe(true);
+    expect(isDeniedDatadogPath(p.replace(/k(?=e)/, '%6b'))).toBe(true);
+  });
+  it('allows ordinary triage reads', () => {
+    expect(isDeniedDatadogPath('/api/v1/monitor/123')).toBe(false);
+    expect(isDeniedDatadogPath('/api/v2/service_accounts')).toBe(false);
+  });
+});
+
+describe('api_get refuses credential-bearing paths', () => {
+  it.each([
+    'api/v1/api_key',
+    'api/v2/api_keys?filter=x',
+    '/api/V2/Application_Keys',
+    'api//v2//current_user/application_keys/',
+    'api/v1/integration/webhooks/configuration/webhooks/sre',
+    'api/v2/service_accounts/sa/application_keys',
+    'api/v2/api%5Fkeys',
+    'api/v1/monitor/../api_key',
+  ])('refuses %s without fetching', async (path) => {
+    const { impl, calls } = fakeFetch();
+    const tool = toolNamed(makeDatadogConnector(cfg(), impl), 'api_get');
+    await expect(tool.run({ path })).rejects.toThrow(/not permitted/);
+    expect(calls).toHaveLength(0);
   });
 });
 

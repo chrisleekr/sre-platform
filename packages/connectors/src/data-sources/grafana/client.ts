@@ -124,7 +124,7 @@ export function buildGetUrl(
  * (POST, already blocked by GET-only construction) and `GET /api/datasources/proxy/*` +
  * `GET /api/datasources/uid/:uid/resources/*` tunnel a raw downstream-datasource response, which can echo
  * a credential the datasource itself did not redact. Denying them keeps this connector to Grafana's own
- * (secret-redacted) API, so there is exactly one no-un-redacted-secret invariant and no bespoke scrubber.
+ * API, which omits datasource secrets.
  * `%` is already rejected by buildGetUrl, so a decoded segment comparison is sufficient. The broad
  * `includes('resources')` intentionally over-blocks (fail-closed): it covers both the uid- and legacy
  * numeric-id resources variants, at the cost of refusing a datasource whose uid is literally `resources`

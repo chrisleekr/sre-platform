@@ -10,7 +10,7 @@
 | `get_commit` | Get one commit with its author, message, parent revisions, changed files, and patch metadata. |
 | `compare_commits` | Compare two revisions in one repository to identify commits and files changed between the last known-good and incident revisions. A large comparison omits patches or files; to check one file, call get_content at each revision instead. |
 | `search_code` | Search code inside one resolved repository for an error symbol, stack-trace path, configuration key, or diagnostic string. Results are bounded and repository-scoped. |
-| `get_content` | Read one file or directory at an optional revision from a resolved repository. File content is bounded to the provider response limits and remains read-only. A file response includes sha, the git blob SHA: the same sha at two revisions means identical bytes. |
+| `get_content` | Read one file or directory at an optional revision from a resolved repository. File content is bounded to the provider response limits and remains read-only. Text file content is returned decoded as UTF-8 (encoding "utf-8"); binary content stays Base64. A file response includes sha, the git blob SHA: the same sha at two revisions means identical bytes. |
 | `list_pull_requests` | List pull requests for a repo. Filter by state (open/closed/all), base branch, head, and sort (created/updated/popularity). |
 | `get_pull_request` | Get a single pull request by number (title, state, merge status, head/base sha). |
 | `list_workflow_runs` | List recent GitHub Actions workflow runs for a repo (newest first). Filter by branch, event, status (e.g. completed/failure/in_progress), and actor. The core deploy-correlation tool. |

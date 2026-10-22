@@ -14,6 +14,7 @@ import { boundedSignal } from '../../request-signal';
 import { obj, str } from '../../values';
 import { datadogTopology } from './topology';
 import { topologyFetch } from '../../topology-transport';
+import { buildGetUrl, isDeniedDatadogPath } from './paths';
 
 /** Injectable so the REST calls are unit-testable without the network. */
 type FetchLike = typeof fetch;
@@ -95,32 +96,6 @@ function clampLimit(n?: number): number {
   return Math.min(Math.max(1, Math.floor(n ?? DEFAULT_LIMIT)), MAX_LIMIT);
 }
 
-/**
- * Build a validated absolute GET URL under the pinned host. The path is resolved with WHATWG URL
- * normalization (so `..` collapses) and two assertions close SSRF/traversal: the origin must equal
- * the allowlisted base origin, and the pathname must stay under `/api/`. GET-only by construction,
- * so no tool routed through here can mutate.
- */
-export function buildGetUrl(
-  base: string,
-  path: string,
-  query?: Record<string, string | number>,
-): string {
-  const baseUrl = new URL(base.replace(/\/+$/, '') + '/');
-  const u = new URL(path.replace(/^\/+/, ''), baseUrl);
-  if (u.origin !== baseUrl.origin)
-    throw new Error('datadog connector: path escapes the configured host');
-  if (!u.pathname.startsWith('/api/'))
-    throw new Error('datadog connector: path must be under /api/');
-  if (query) {
-    for (const [k, v] of Object.entries(query)) {
-      if (v === undefined || v === null || v === '') continue;
-      u.searchParams.set(k, String(v));
-    }
-  }
-  return u.toString();
-}
-
 async function ddGet(
   fetchImpl: FetchLike,
   base: string,
@@ -130,6 +105,8 @@ async function ddGet(
   signal?: AbortSignal,
 ): Promise<unknown> {
   const url = buildGetUrl(base, path, query);
+  if (isDeniedDatadogPath(new URL(url).pathname))
+    throw new Error('datadog connector: key-management and webhook-config paths are not permitted');
   // The keys ride DD-API-KEY/DD-APPLICATION-KEY headers, never the URL. fetch has no default
   // timeout; bound it so a slow host cannot wedge the tool call and worker slot (CWE-400). A 3xx
   // must not bounce the keys to another host, so redirect:'error'.
@@ -266,13 +243,8 @@ function dtool<S extends z.ZodType>(def: {
  * hosts, SLOs, dashboards, incidents, APM services, metric metadata, list endpoints); `search` is
  * the POST power-search across logs / APM spans / events / error-tracking; `query_metrics` reads a
  * metric timeseries. Every read requires both keys. GET-only + enum-selected fixed POST paths mean
- * no tool can mutate. Output redaction is the dispatch layer's single choke point, so there is
- * no bespoke sanitizer here. Datadog's triage reads are arbitrary application content (logs / spans
- * / events, like k8s pod logs). Where a read IS structured (a key-management endpoint reachable via
- * `api_get` returns the secret under a `key`/`token`-named field), the dispatch pass redacts it by
- * key name. The only residual is a secret in a non-sensitively-named free-text field whose value the
- * format scrub misses (e.g. a hex token inside a webhook `url`) — the same accepted best-effort limit
- * as k8s pod logs and GitLab job traces; network egress and per-tenant key handling stay authoritative.
+ * no tool can mutate. Output is not redacted, so scope the keys read-only; `api_get` refuses the
+ * key-management and webhook-config paths that would echo the platform's own credentials.
  */
 function makeDatadogTools(config: ConnectorConfig, fetchImpl: FetchLike): ConnectorTool[] {
   const settings = config.settings;
@@ -286,7 +258,8 @@ function makeDatadogTools(config: ConnectorConfig, fetchImpl: FetchLike): Connec
       name: 'api_get',
       description:
         'GET any Datadog REST endpoint by path (e.g. "api/v1/monitor", "api/v1/monitor/123", ' +
-        '"api/v2/error-tracking/issues/{id}", "api/v1/slo"). Read-only. Optional query params. Use ' +
+        '"api/v2/error-tracking/issues/{id}", "api/v1/slo"). Read-only. Optional query params. API ' +
+        'key, application key and webhook integration paths are refused. Use ' +
         'this for anything the search and metric tools do not cover: monitors, SLOs, hosts, ' +
         'dashboards, incidents, APM services, metric metadata.',
       inputSchema: z.object({

@@ -32,10 +32,7 @@ function ptool<S extends z.ZodType>(def: {
  * discover the metric+label space; `targets`/`rules`/`alerts` read operational state (the hot triage
  * signals); `api_get` is a GET-only passthrough over the rest (`status/*`, `alertmanagers`, future
  * endpoints). No tool takes a `method` and the admin/TSDB deletes are POST/PUT, so nothing can mutate.
- * Output redaction is the dispatch layer's single choke point, so there is no bespoke sanitizer:
- * Prometheus itself masks structured credentials as `<secret>`; the only residual is a credential
- * embedded in a URL string (a documented Prometheus behavior), the same accepted best-effort limit as
- * k8s pod logs and GitLab job traces.
+ * Output is not redacted; Prometheus itself masks structured credentials as `<secret>`.
  */
 export function makePrometheusTools(
   config: ConnectorConfig,

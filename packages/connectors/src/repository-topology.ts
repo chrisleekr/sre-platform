@@ -27,6 +27,9 @@ export function repositoryTopology(
           : await catalog.search('', 100);
         const entities = repositories.flatMap((repository) => {
           const ref = repositoryTopologyRef(repository.htmlUrl);
+          const image = repository.containerRegistryImagePrefix
+            ?.toLowerCase()
+            .match(/^([^/\s]+)\/([^\s]+)$/);
           return ref
             ? [
                 {
@@ -34,6 +37,14 @@ export function repositoryTopology(
                   kind: 'repository' as const,
                   name: repository.fullName,
                   scope: {},
+                  // The provider assigns this registry path, so images under it name this project.
+                  ...(image
+                    ? {
+                        aliases: [
+                          { authority: `oci:${image[1]}`, kind: 'repository', id: image[2]! },
+                        ],
+                      }
+                    : {}),
                   attributes: {
                     providerId: repository.repositoryId,
                     evidence: 'connector_catalog',

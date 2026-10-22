@@ -2,8 +2,6 @@ import { describe, expect, test } from 'vitest';
 import { cfg, eventsResp, makeKubernetesConnector, type ConnectorConfig } from './test-helpers';
 import { abortableFetch, expectCancelledInFlight } from '../../../__tests__/request-signal.fixture';
 
-const REDACTED = '[REDACTED]';
-
 /** A general fake fetch for the tool tests: routes by URL, records calls, serves json or text. */
 function toolFetch(handler: (url: string) => { status?: number; json?: unknown; text?: string }) {
   const calls: { url: string; auth?: string }[] = [];
@@ -49,18 +47,31 @@ describe('makeKubernetesConnector tools()', () => {
     );
   });
 
-  test('get_resource builds a namespaced URL and sanitizes a Secret get', async () => {
+  test.each([
+    ['get_resource', 'v1', 'secrets', { name: 'db', namespace: 'checkout' }],
+    ['get_resource', 'core/v1', 'Secrets', { name: 'db' }],
+    ['list_resources', 'v1', 'secrets', { namespace: 'checkout' }],
+    ['list_resources', 'v1', ' SECRETS ', {}],
+  ])('%s refuses %s %s without fetching', async (name, apiVersion, resource, rest) => {
     const { impl, calls } = toolFetch(() => ({
       json: { kind: 'Secret', data: { password: 'x' } },
     }));
+    await expect(k8sTool(name, cfg(), impl).run({ apiVersion, resource, ...rest })).rejects.toThrow(
+      /reading secrets is not permitted/,
+    );
+    expect(calls).toHaveLength(0);
+  });
+
+  test('get_resource builds a namespaced URL', async () => {
+    const { impl, calls } = toolFetch(() => ({ json: { kind: 'ConfigMap', data: { k: 'v' } } }));
     const out = (await k8sTool('get_resource', cfg(), impl).run({
       apiVersion: 'v1',
-      resource: 'secrets',
-      name: 'db',
+      resource: 'configmaps',
+      name: 'app',
       namespace: 'checkout',
     })) as { data: Record<string, string> };
-    expect(calls[0]!.url).toContain('/api/v1/namespaces/checkout/secrets/db');
-    expect(out.data.password).toBe(REDACTED);
+    expect(calls[0]!.url).toContain('/api/v1/namespaces/checkout/configmaps/app');
+    expect(out.data.k).toBe('v');
   });
 
   test('get_resource with no namespace builds the cluster-scoped path (nodes)', async () => {
@@ -73,20 +84,6 @@ describe('makeKubernetesConnector tools()', () => {
     // Cluster-scoped kind: no /namespaces/ segment even though it is omitted, not defaulted.
     expect(calls[0]!.url).toContain('/api/v1/nodes/ip-10-0-0-5');
     expect(calls[0]!.url).not.toContain('/namespaces/');
-  });
-
-  test('get_resource redacts a Secret whose response omits .kind (input-driven via resourceKind)', async () => {
-    // The apiserver echo may omit `.kind`; redaction must key off the queried resource, not the echo.
-    const { impl } = toolFetch(() => ({
-      json: { metadata: { name: 'db' }, data: { password: 'x' } },
-    }));
-    const out = (await k8sTool('get_resource', cfg(), impl).run({
-      apiVersion: 'v1',
-      resource: 'secrets',
-      name: 'db',
-      namespace: 'checkout',
-    })) as { data: Record<string, string> };
-    expect(out.data.password).toBe(REDACTED);
   });
 
   test('list_resources with no namespace lists across all namespaces (cluster path)', async () => {
@@ -115,7 +112,7 @@ describe('makeKubernetesConnector tools()', () => {
     expect(calls.length).toBe(0);
   });
 
-  test('list_resources builds an apps/v1 URL with a default limit and redacts item env', async () => {
+  test('list_resources builds an apps/v1 URL with a default limit and keeps item env', async () => {
     const { impl, calls } = toolFetch(() => ({
       json: {
         items: [
@@ -136,18 +133,7 @@ describe('makeKubernetesConnector tools()', () => {
       namespace: 'checkout',
     })) as { items: any[] };
     expect(calls[0]!.url).toContain('/apis/apps/v1/namespaces/checkout/deployments?limit=200');
-    expect(out.items[0].spec.template.spec.containers[0].env[0].value).toBe(REDACTED);
-  });
-
-  test('list_resources of secrets redacts each item data via resourceKind', async () => {
-    const { impl } = toolFetch(() => ({
-      json: { items: [{ metadata: { name: 'db' }, data: { password: 'x' } }] },
-    }));
-    const out = (await k8sTool('list_resources', cfg(), impl).run({
-      apiVersion: 'v1',
-      resource: 'secrets',
-    })) as { items: any[] };
-    expect(out.items[0].data.password).toBe(REDACTED);
+    expect(out.items[0].spec.template.spec.containers[0].env[0].value).toBe('s');
   });
 
   test('get_pod_logs reads raw text and bounds tailLines and limitBytes', async () => {
@@ -218,7 +204,7 @@ describe('makeKubernetesConnector tools()', () => {
     await expect(
       k8sTool('get_resource', cfg(), impl).run({
         apiVersion: 'v1',
-        resource: 'secrets',
+        resource: 'pods',
         name: 'db',
         namespace: 'x',
       }),

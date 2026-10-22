@@ -27,8 +27,8 @@ export const MAX_NAME_CHARS = 253;
 export const MAX_NAMESPACE_CHARS = 63;
 export const LEGACY_PROJECT_ROLE = 'sre-platform';
 
-// The manifest state fields on a managed-resources item; each is a JSON-encoded k8s manifest that can
-// carry live Secret data, so every one is parsed and scrubbed before it reaches the model.
+// The manifest state fields on a managed-resources item; each is a JSON-encoded k8s manifest that is
+// parsed before it reaches the model.
 export const STATE_FIELDS = [
   'targetState',
   'liveState',
@@ -37,15 +37,16 @@ export const STATE_FIELDS = [
 ] as const;
 
 // Last path segments api_get refuses: every endpoint that returns raw/rendered k8s manifests (which
-// carry live Secret data). managed-resources has a masking bypass (GHSA-3v3m-wc6v-x4x3); resource
-// (GetResource) and manifests / manifests-with-files (GetManifests) are denied for the same reason the
-// diff path is — the connector does not trust ArgoCD's own hideSecretData. Reach scrubbed manifests via
-// get_managed_resources instead.
+// carry live Secret data). The connector does not trust Argo CD's own hideSecretData, so
+// managed-resources, resource (GetResource) and manifests / manifests-with-files (GetManifests) are
+// refused outright. server-side-diff is refused because Argo CD returns unmasked Secret data through
+// ServerSideDiff on affected versions. Reach manifests via get_managed_resources instead.
 export const DENIED_SEGMENTS: ReadonlySet<string> = new Set([
   'managed-resources',
   'resource',
   'manifests',
   'manifests-with-files',
+  'server-side-diff',
 ]);
 
 // ArgoCD application/namespace names are Kubernetes RFC1123 names. Validating a path segment against
