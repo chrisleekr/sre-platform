@@ -102,7 +102,11 @@ function knownSecretPattern(secret: string): RegExp {
   return new RegExp(parts.join(''), 'g');
 }
 
-function scrubKnownSecret(value: string, secret: string): string {
+/** Removes this connector's own webhook token, raw or in any URL encoding; other text passes through.
+ * @param value - Provider-supplied text.
+ * @param secret - The connector's own webhook token.
+ */
+export function removeConnectorToken(value: string, secret: string): string {
   return secret ? value.replace(knownSecretPattern(secret), '[REDACTED]') : value;
 }
 
@@ -111,7 +115,7 @@ function scrubKnownSecret(value: string, secret: string): string {
  * @param knownSecret - The connector's own webhook token.
  */
 export function sanitizeProviderUrl(value: string, knownSecret: string): string {
-  return scrubKnownSecret(value, knownSecret);
+  return removeConnectorToken(value, knownSecret);
 }
 
 function stringMap(
@@ -163,7 +167,7 @@ export function normalizeAlert(value: unknown, knownSecret: string): NormalizedA
   const status = raw.status === 'firing' || raw.status === 'resolved' ? raw.status : null;
   const withoutKnownSecrets = (values: Record<string, string>): Record<string, string> =>
     Object.fromEntries(
-      Object.entries(values).map(([key, item]) => [key, scrubKnownSecret(item, knownSecret)]),
+      Object.entries(values).map(([key, item]) => [key, removeConnectorToken(item, knownSecret)]),
     );
   const sanitizedLabels = labels ? withoutKnownSecrets(labels) : null;
   const sanitizedAnnotations = annotations ? withoutKnownSecrets(annotations) : null;

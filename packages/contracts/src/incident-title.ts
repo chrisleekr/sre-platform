@@ -12,10 +12,15 @@ const MAX_TITLE_INPUT = 4_000;
  */
 export function meaningfulIncidentTitle(value: string | null | undefined): string | null {
   if (!value) return null;
-  // The markup patterns below rescan from every '<' on unclosed input, so bound the work. A title
-  // keeps at most 160 code points, which this prefix always covers.
-  const clean = value
-    .slice(0, MAX_TITLE_INPUT)
+  // The markup patterns below rescan from every '<' on unclosed input, so bound the work. A cut that
+  // lands inside a tag drops the partial tag, so a long link never leaves its raw URL as the title.
+  let bounded = value;
+  if (value.length > MAX_TITLE_INPUT) {
+    bounded = value.slice(0, MAX_TITLE_INPUT);
+    const open = bounded.lastIndexOf('<');
+    if (open > bounded.lastIndexOf('>')) bounded = bounded.slice(0, open);
+  }
+  const clean = bounded
     // A mention label excludes '<' (Slack escapes it as &lt;), so a run of unclosed `<@x|` fails at
     // the next '<' instead of rescanning to the end of untrusted text.
     .replace(/<@[A-Z0-9]+(?:\|[^<>]+)?>/gi, '')

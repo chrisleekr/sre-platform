@@ -54,6 +54,14 @@ test('strips labelled mentions and stays fast on unclosed mention runs', () => {
   expect(performance.now() - started).toBeLessThan(1_000);
 });
 
+test('a cut inside a long Slack link never leaves the raw URL as the title', () => {
+  const link = `<https://grafana.example/d/abc?${'var-pod=api-'.repeat(340)}|Dashboard>`;
+  expect(meaningfulIncidentTitle(`${link} CPU saturation on checkout`)).toBeNull();
+  expect(meaningfulIncidentTitle(`Checkout CPU saturation ${link}`)).toBe(
+    'Checkout CPU saturation',
+  );
+});
+
 test.each(['<script<script>>Check latency', '<img src=x onerror=bad', 'Check < latency > now'])(
   'does not retain markup delimiters in a title: %s',
   (value) => {

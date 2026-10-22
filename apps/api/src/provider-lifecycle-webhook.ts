@@ -11,6 +11,7 @@ import {
   hash,
   object,
   sameSecret,
+  removeConnectorToken,
   sanitizeProviderUrl,
 } from './alertmanager-webhook/normalize';
 import { eventHealth } from './alertmanager-webhook/health';
@@ -83,10 +84,7 @@ export function providerLifecycleWebhookRoutes(
         // Only this connector's own webhook token is removed; provider content passes through.
         const clean = (value: Record<string, string>) =>
           Object.fromEntries(
-            Object.entries(value).map(([name, text]) => [
-              name,
-              text.split(token).join('[REDACTED]'),
-            ]),
+            Object.entries(value).map(([name, text]) => [name, removeConnectorToken(text, token)]),
           );
         outcomes.push(
           await processAlert(
@@ -99,7 +97,7 @@ export function providerLifecycleWebhookRoutes(
               monitorIdentity: hash(observation.monitorIdentity),
               labels: clean(observation.labels),
               annotations: clean(observation.annotations),
-              alertName: observation.alertName.split(token).join('[REDACTED]'),
+              alertName: removeConnectorToken(observation.alertName, token),
               generatorUrl: observation.generatorUrl
                 ? sanitizeProviderUrl(observation.generatorUrl, token)
                 : null,
