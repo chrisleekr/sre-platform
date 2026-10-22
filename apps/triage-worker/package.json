@@ -10,8 +10,8 @@
     "start": "bun run src/index.ts"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.300",
-    "@anthropic-ai/sdk": "^0.134.0",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.306",
+    "@anthropic-ai/sdk": "^1.0.0",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@sre/agent-tools": "workspace:*",
     "@sre/alerts": "workspace:*",
@@ -27,7 +27,7 @@
     "@toon-format/toon": "^4.4.0",
     "drizzle-orm": "^0.45.4",
     "ioredis": "^6.0.0",
-    "openai": "^7.34.0",
-    "zod": "~4.4.3"
+    "openai": "^7.41.0",
+    "zod": "~4.6.7"
   }
 }

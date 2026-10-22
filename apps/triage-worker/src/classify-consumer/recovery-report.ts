@@ -19,7 +19,7 @@ type MatchedSignal = NonNullable<Awaited<ReturnType<typeof getSignalByExternal>>
  * `includeResolved` is set: an incident stays open while a reported recovery is verified.
  * @param core - Classify collaborators.
  * @param tenantId - Owning tenant.
- * @param candidate - Scrubbed inbound candidate.
+ * @param candidate - Inbound candidate.
  * @param options - `includeResolved` also matches resolved signals of an open incident;
  * `resolvedOnly` matches only those.
  */
@@ -86,14 +86,15 @@ export class RecoveryReports {
   constructor(private readonly core: ClassifyCore) {}
 
   /**
-   * Finds the one open incident a recovery notice describes. Scope is `root` only for an edit whose
-   * message opens with a resolved header, so the whole message recovered; otherwise `signal`,
-   * covering just the matched signal. A message that still shows a firing alert cannot say which
-   * of its alerts recovered, so it stays advisory, as does any edit without a resolved header. Resolved signals of an open
-   * incident still match, so a redelivered notice whose first delivery already resolved them links
-   * to the same incident.
+   * Finds the open incident a recovery notice describes; when several track the monitor, the one
+   * holding the most recently seen signal. Scope is `root` only for an edit whose message opens
+   * with a resolved header, so the whole message recovered; otherwise `signal`, covering just the
+   * matched signal. A message that still shows a firing alert cannot say which of its alerts
+   * recovered, so it stays advisory, as does any edit without a resolved header. Resolved signals
+   * of an open incident still match, so a redelivered notice whose first delivery already resolved
+   * them links to the same incident.
    * @param tenantId - Owning tenant.
-   * @param candidate - Scrubbed resolved candidate.
+   * @param candidate - Resolved candidate.
    */
   async link(
     tenantId: string,
@@ -104,10 +105,12 @@ export class RecoveryReports {
     const matched = await matchOpenProducerSignals(this.core, tenantId, candidate, {
       includeResolved: true,
     });
-    const active = matched.filter((signal) => signal.state !== 'resolved');
-    const signals = active.length > 0 ? active : matched;
-    if (new Set(signals.map((signal) => signal.incidentId)).size !== 1) return null;
-    const signal = signals[0]!;
+    if (matched.length === 0) return null;
+    // Same choice as repeat matching. Resolving never moves lastSeenAt, so a redelivery after the
+    // first delivery resolved the signal still picks the same incident.
+    const signal = matched.reduce((newest, next) =>
+      next.lastSeenAt > newest.lastSeenAt ? next : newest,
+    );
     return {
       incidentId: signal.incidentId,
       signalId: signal.id,
@@ -123,7 +126,7 @@ export class RecoveryReports {
    * because the first delivery may have committed and died before publishing.
    * @param tenantId - Owning tenant.
    * @param incidentId - Incident the notice was linked to.
-   * @param candidate - Scrubbed resolved candidate.
+   * @param candidate - Resolved candidate.
    */
   async settle(tenantId: string, incidentId: string, candidate: InboundCandidate): Promise<void> {
     const { hub, queue } = this.core.deps;
@@ -163,7 +166,7 @@ export class RecoveryReports {
    * Reopens signals a recovery report resolved when their message is edited back to firing, which
    * stops any recovery verification for the incident.
    * @param tenantId - Owning tenant.
-   * @param candidate - Scrubbed firing edit.
+   * @param candidate - Firing edit.
    */
   async reopen(tenantId: string, candidate: InboundCandidate): Promise<boolean> {
     const { hub } = this.core.deps;

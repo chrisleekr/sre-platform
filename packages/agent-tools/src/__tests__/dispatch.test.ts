@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from 'vitest';
 import * as z from 'zod';
 import { makeFakeConnector } from '@sre/connectors';
 import type { ConnectorConfig, ConnectorType, IDataSourceConnector } from '@sre/connectors';
-import { runTool, toJsonSchema } from '../dispatch';
+import { classifyToolError, runTool, toJsonSchema } from '../dispatch';
 import { makeInMemoryAuditSink } from '../audit';
 import type { ToolAuditSink, ToolContext, ToolDefinition } from '../types';
 
@@ -153,6 +153,7 @@ describe('runTool (shared tool dispatch)', () => {
     expect(result).toEqual({
       available: false,
       reason: 'error',
+      failure: 'provider_error',
       evidenceId: expect.any(String),
     });
     expect(audit.records).toHaveLength(1);
@@ -248,10 +249,8 @@ describe('runTool (shared tool dispatch)', () => {
   });
 });
 
-// Phase A RED. dispatch is the SINGLE output-redaction point: after the handler,
-// the SAME redacted value must go to BOTH the model (result.data returned to the loop) AND the audit
-// sink (entry.output persisted to agent_tool_calls). Today renderToolResult egresses raw handler data
-// to the model and no `output` is passed to the sink, so both are RED.
+// After the handler, the SAME value goes to BOTH the model (result.data returned to the loop) AND the
+// audit sink (entry.output persisted to agent_tool_calls). Neither is redacted.
 const RAW_SECRET = 'sk-ABCDEFGHIJKLMNOPQRSTUVWXYZ012345';
 
 // Captures the full audit entry, including the `output` the sink is expected to receive.
@@ -266,8 +265,7 @@ function capturingAuditSink(): ToolAuditSink & { entries: Array<Record<string, u
   };
 }
 
-// A tool whose handler returns data carrying a secret: a `token`/`password` key (key-name redaction)
-// and a bare `sk-` key in a free-text value (value scrubbing). No connector needed.
+// A tool whose handler returns credential-shaped data. No connector needed.
 function secretBearingTool(): ToolDefinition<Record<string, never>, unknown> {
   return {
     name: 'leaky_tool',
@@ -286,7 +284,7 @@ function secretBearingTool(): ToolDefinition<Record<string, never>, unknown> {
   };
 }
 
-describe('dispatch redacts tool output at a single point', () => {
+describe('dispatch passes tool output through unredacted', () => {
   it('returns durable evidence id after audit persistence', async () => {
     const evidenceId = '11111111-1111-4111-8111-111111111111';
     let resolveRecord!: (id: string) => void;
@@ -318,60 +316,24 @@ describe('dispatch redacts tool output at a single point', () => {
       available: true,
       evidenceId,
       data: {
-        password: '[REDACTED]',
-        note: 'deploy ok; auth [REDACTED]',
-        rows: [{ id: 1, apiKey: '[REDACTED]' }],
+        password: 'hunter2-super-secret',
+        note: `deploy ok; auth Bearer ${RAW_SECRET}`,
+        rows: [{ id: 1, apiKey: RAW_SECRET }],
       },
     });
   });
 
-  it('C2 scrubs the secret in BOTH the returned result.data AND the audited output', async () => {
-    const tool = secretBearingTool();
+  it('returns and audits the identical raw handler data', async () => {
     const audit = capturingAuditSink();
     const ctx = makeContext({ resolve: tenantConnectors({}), audit });
 
-    const result = await runTool(tool, ctx, {});
+    const result = await runTool(secretBearingTool(), ctx, {});
 
     expect(result.available).toBe(true);
     if (!result.available) throw new Error('expected an available result');
-    // Model-facing data must not carry the raw secret (closes the renderToolResult egress gap).
-    const modelJson = JSON.stringify(result.data);
-    expect(modelJson).not.toContain(RAW_SECRET);
-    expect(modelJson).not.toContain('hunter2-super-secret');
-
-    // The SAME redacted value reaches the sink as `output` (persisted to agent_tool_calls).
+    expect(JSON.stringify(result.data)).toContain(RAW_SECRET);
     expect(audit.entries).toHaveLength(1);
-    const outputJson = JSON.stringify(audit.entries[0]!.output);
-    expect(audit.entries[0]!.output).toBeDefined();
-    expect(outputJson).not.toContain(RAW_SECRET);
-    expect(outputJson).not.toContain('hunter2-super-secret');
-  });
-
-  it('degrades an unredactable (cyclic) output to error instead of poison-looping the job', async () => {
-    // redactInput recurses without cycle detection, so a circular graph would throw OUTSIDE the
-    // handler try and reject the whole engine job. The guard degrades it to a graceful error result.
-    const cyclicTool: ToolDefinition<Record<string, never>, unknown> = {
-      name: 'cyclic_tool',
-      description: 'returns a circular object graph',
-      inputSchema: z.object({}),
-      async handler() {
-        const node: Record<string, unknown> = { name: 'root' };
-        node.self = node; // cycle
-        return { available: true, data: node };
-      },
-    };
-    const audit = capturingAuditSink();
-    const ctx = makeContext({ resolve: tenantConnectors({}), audit });
-
-    const result = await runTool(cyclicTool, ctx, {});
-
-    // No throw escapes runTool; the result is a graceful error and the audit records it as such.
-    expect(result.available).toBe(false);
-    if (result.available) throw new Error('expected an error result');
-    expect(result.reason).toBe('error');
-    expect(audit.entries).toHaveLength(1);
-    expect(audit.entries[0]!.outcome).toBe('error');
-    expect(audit.entries[0]!.output).toBeUndefined();
+    expect(audit.entries[0]!.output).toBe(result.data);
   });
 
   describe('cancellation', () => {
@@ -430,8 +392,86 @@ describe('dispatch redacts tool output at a single point', () => {
 
       const result = await runTool(tool, ctx, {});
 
-      expect(result).toEqual({ available: false, reason: 'error', evidenceId: expect.any(String) });
+      expect(result).toEqual({
+        available: false,
+        reason: 'error',
+        failure: 'provider_error',
+        evidenceId: expect.any(String),
+      });
       expect(audit.records.map((record) => record.outcome)).toEqual(['error']);
     });
+  });
+});
+
+describe('tool failure classes', () => {
+  /** Mirrors the typed fields connector errors carry; the message always holds a secret. */
+  const failing = (fields: Record<string, unknown>, name = 'Error') =>
+    Object.assign(new Error('upstream said token=ghp_LEAKED'), { name, ...fields });
+
+  it.each([
+    ['TimeoutError from an aborted request', failing({}, 'TimeoutError'), 'timeout'],
+    ['K8sApiError 403', failing({ status: 403 }), 'permission_denied'],
+    ['K8sApiError 401', failing({ status: 401 }), 'permission_denied'],
+    ['K8sApiError 404', failing({ status: 404 }), 'not_found'],
+    ['K8sApiError 429', failing({ status: 429 }), 'rate_limited'],
+    ['K8sApiError 500', failing({ status: 500 }), 'provider_error'],
+    [
+      'GitHubApiError quota 403',
+      failing({ failureCategory: 'rate_limited', status: 403 }),
+      'rate_limited',
+    ],
+    [
+      'GitHubApiError 404',
+      failing({ failureCategory: 'permission_denied', status: 404 }),
+      'not_found',
+    ],
+    [
+      'ArgoApiError permission',
+      failing({ failureCategory: 'permission_denied' }),
+      'permission_denied',
+    ],
+    ['ArgoApiError unreachable', failing({ failureCategory: 'unreachable' }), 'unreachable'],
+    ['ArgoApiError tls', failing({ failureCategory: 'tls' }), 'unreachable'],
+    [
+      'ArgoApiError provider',
+      failing({ failureCategory: 'provider_unavailable' }),
+      'provider_error',
+    ],
+    [
+      'networkprobe target',
+      failing({ failureCategory: 'target_not_allowed' }),
+      'target_not_allowed',
+    ],
+    ['untyped Error', failing({}), 'provider_error'],
+    ['a thrown string', 'boom', 'provider_error'],
+  ] as const)('%s classifies as %s', (_label, error, failure) => {
+    expect(classifyToolError(error)).toBe(failure);
+  });
+
+  it('returns and audits the class without the provider message', async () => {
+    const audit = makeInMemoryAuditSink();
+    const ctx = makeContext({ resolve: tenantConnectors({}), audit });
+    const tool: ToolDefinition<Record<string, never>, never> = {
+      name: 'k8s_secrets',
+      description: 'denied read',
+      inputSchema: z.object({}).strict() as z.ZodType<Record<string, never>>,
+      handler: async () => {
+        throw failing({ status: 403 });
+      },
+    };
+
+    const result = await runTool(tool, ctx, {});
+
+    expect(result).toEqual({
+      available: false,
+      reason: 'error',
+      failure: 'permission_denied',
+      evidenceId: expect.any(String),
+    });
+    expect(audit.records[0]).toMatchObject({
+      outcome: 'error',
+      output: { failure: 'permission_denied' },
+    });
+    expect(JSON.stringify([result, audit.records])).not.toMatch(/LEAKED|upstream said/);
   });
 });

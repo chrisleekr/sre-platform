@@ -1,5 +1,5 @@
 import { encodeForModel } from './toon';
-import type { ToolResult } from '@sre/agent-tools';
+import type { ToolFailure, ToolResult } from '@sre/agent-tools';
 import type { EvidenceReceipt } from './evidence-closure';
 
 /**
@@ -23,6 +23,24 @@ export function toolResultMaxChars(): number {
   return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_TOOL_RESULT_MAX_CHARS;
 }
 
+const NOT_RETRYABLE =
+  'Do not repeat this call unchanged; record a missing_capability unknown if the proof requires it.';
+const RETRYABLE =
+  'The data was not read, which proves nothing about it; retry later or use another check.';
+
+/** Steers the model by failure class: a denied or absent read will fail the same way again. */
+const FAILURE_GUIDANCE: Record<ToolFailure, string> = {
+  permission_denied: NOT_RETRYABLE,
+  // An absent target is a finding about the named target, not a missing tool.
+  not_found:
+    'The target does not exist as named; check the name or record its absence as evidence. Do not repeat this call unchanged.',
+  target_not_allowed: NOT_RETRYABLE,
+  timeout: RETRYABLE,
+  rate_limited: RETRYABLE,
+  unreachable: RETRYABLE,
+  provider_error: RETRYABLE,
+};
+
 export interface ModelToolResult {
   content: string;
   isError: boolean;
@@ -37,7 +55,7 @@ export function renderModelToolResult(
 ): ModelToolResult {
   if (!result.available) {
     return {
-      content: `error: tool failed; evidenceId: ${result.evidenceId}`,
+      content: `error: ${result.failure ? `${result.failure}. ${FAILURE_GUIDANCE[result.failure]}` : 'tool failed'}; evidenceId: ${result.evidenceId}`,
       isError: true,
       receipt: { evidenceId: result.evidenceId, tool, outcome: 'unavailable' },
     };

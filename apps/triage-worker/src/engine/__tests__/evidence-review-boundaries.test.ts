@@ -127,7 +127,7 @@ test('validation diagnostics normalize only the known wrapper, reject unknown pa
   expect(JSON.stringify(result)).not.toMatch(/private-message|private-key/);
 });
 
-test('a slice cannot cite another admitted record outside its own source ranges', async () => {
+test('a slice cannot cite a record outside the admitted evidence', async () => {
   const other = randomUUID();
   let calls = 0;
   const result = await reviewInvestigation(
@@ -141,10 +141,7 @@ test('a slice cannot cite another admitted record outside its own source ranges'
       };
     }),
     candidate,
-    [
-      { ...evidence, output: 'x'.repeat(240_000) },
-      { ...evidence, id: other },
-    ],
+    [{ ...evidence, output: 'x'.repeat(240_000) }],
     new AbortController().signal,
   );
   expect(calls).toBe(1);

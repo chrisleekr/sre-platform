@@ -99,8 +99,9 @@ investigation needs.
 **Verified when you save.** Setup proves the exact reads the platform needs, and tells you which
 permission is missing rather than failing later inside an incident.
 
-**Secrets are stripped from results.** Anything a connector returns is scrubbed before it reaches
-the model, the conversation, or the database.
+**Results are not redacted.** Anything a connector returns reaches the model provider, the
+conversation, Slack, and the database as returned, including any credential in it. Scope each
+connector credential to read-only access and to the data triage needs.
 
 ## Two things you cannot connect here
 

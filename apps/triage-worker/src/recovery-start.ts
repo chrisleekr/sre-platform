@@ -1,5 +1,12 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { jobs, prepareResponseGroupRecoveryTx, resolveReportedSignalsTx, type Tx } from '@sre/db';
+import {
+  clearRecoveryTx,
+  incidents,
+  jobs,
+  prepareResponseGroupRecoveryTx,
+  resolveReportedSignalsTx,
+  type Tx,
+} from '@sre/db';
 import type { Queue } from '@sre/queue';
 
 /** Status text when every alert cleared but no verification job could be queued. */
@@ -11,12 +18,16 @@ export const RECOVERY_NOT_QUEUED =
  * @param queue - Durable work queue.
  * @param tenantId - Owning tenant.
  * @param incidentId - Incident whose recovery is checked.
+ * @param options - `restartFinished` lets a responder's explicit request start a new check after an
+ * earlier one ended not verified or spent its budget. Without it that verdict is final until the
+ * alert re-fires, so an alert that stays quiet would leave the incident open forever.
  */
 export async function startReportedRecoveryTx(
   tx: Tx,
   queue: Pick<Queue, 'insertRecoveryTx'>,
   tenantId: string,
   incidentId: string,
+  options: { restartFinished?: boolean } = {},
 ) {
   const { resolved, active, durable, closed } = await resolveReportedSignalsTx(
     tx,
@@ -30,9 +41,15 @@ export async function startReportedRecoveryTx(
     resolved.length > 0 || (active === 0 && !durable && !closed)
       ? await prepareResponseGroupRecoveryTx(tx, tenantId, incidentId)
       : null;
+  const restart =
+    recovery !== null &&
+    options.restartFinished === true &&
+    (await recoveryFinishedTx(tx, tenantId, recovery.rootIncidentId));
+  // The signal locks taken above cover the clear; the next check starts with a fresh budget.
+  if (restart) await clearRecoveryTx(tx, tenantId, recovery.rootIncidentId);
   const { jobId, coalesced } = !recovery
     ? { jobId: null, coalesced: undefined }
-    : resolved.length > 0
+    : resolved.length > 0 || restart
       ? await queue.insertRecoveryTx(
           tx,
           tenantId,
@@ -41,8 +58,8 @@ export async function startReportedRecoveryTx(
           recovery.signalFence,
         )
       : { jobId: null, coalesced: await recoveryPendingTx(tx, tenantId, recovery.rootIncidentId) };
-  // A prepared recovery can still queue nothing: the check budget is spent or recovery was already
-  // judged not verified. A merge into an already queued check still counts as queued.
+  // A prepared recovery can still queue nothing: the queue refuses a finished verdict that was not
+  // restarted, or no signal changed and no check is pending. A merge into a queued check still counts.
   return {
     resolved,
     active,
@@ -52,6 +69,28 @@ export async function startReportedRecoveryTx(
     queued: jobId !== null || coalesced === true,
     jobId,
   };
+}
+
+// Mirrors the queue's refusal: a not-verified verdict, or a spent budget with no check in flight.
+async function recoveryFinishedTx(tx: Tx, tenantId: string, rootIncidentId: string) {
+  const [incident] = await tx
+    .select({
+      resolutionPolicy: incidents.resolutionPolicy,
+      recoveryState: incidents.recoveryState,
+      recoveryAttempt: incidents.recoveryAttempt,
+      recoveryMaxChecks: incidents.recoveryMaxChecks,
+    })
+    .from(incidents)
+    .where(and(eq(incidents.tenantId, tenantId), eq(incidents.id, rootIncidentId)))
+    .limit(1);
+  if (!incident || incident.resolutionPolicy === 'provider_clear') return false;
+  return (
+    incident.recoveryState === 'not_verified' ||
+    (incident.recoveryState !== 'verifying' &&
+      incident.recoveryAttempt !== null &&
+      incident.recoveryMaxChecks !== null &&
+      incident.recoveryAttempt >= incident.recoveryMaxChecks)
+  );
 }
 
 // Whether a recovery check is queued or running for the response root.

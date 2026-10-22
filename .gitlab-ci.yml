@@ -82,7 +82,7 @@ test:
   # The oven/bun image symlinks node to bun; the test gate pins Vitest to real Node. Only the major is pinned:
   # the test gate enforces the >= 22.12 floor; .tool-versions records the version for local tooling.
   before_script:
-    - apk add --no-cache bash 'nodejs~22'
+    - apk add --no-cache bash 'nodejs~24'
     - bash scripts/ci/bootstrap.sh
   script:
     - bash scripts/ci/test.sh
@@ -91,7 +91,7 @@ test-ui:
   stage: test
   # Real Node as above, but no dind service and no Docker variable: this lane starts no container.
   before_script:
-    - apk add --no-cache bash 'nodejs~22'
+    - apk add --no-cache bash 'nodejs~24'
     - bash scripts/ci/bootstrap.sh
   script:
     - bash scripts/ci/test-ui.sh

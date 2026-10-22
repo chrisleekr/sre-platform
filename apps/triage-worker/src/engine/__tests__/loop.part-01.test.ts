@@ -153,7 +153,7 @@ describe('renderToolResult TOON encoding + raised cap', () => {
     expect(rendered).toHaveLength(2);
     const err = rendered.find((r) => r.id === 'e1')!;
     expect(err.isError).toBe(true);
-    expect(err.content).toMatch(/^error: tool failed; evidenceId: [0-9a-f-]{36}$/);
+    expect(err.content).toMatch(/^error: provider_error\. .+; evidenceId: [0-9a-f-]{36}$/);
     expect(err.content).not.toContain('SECRET');
     const empty = rendered.find((r) => r.id === 'c1')!;
     expect(empty.isError).toBe(false);

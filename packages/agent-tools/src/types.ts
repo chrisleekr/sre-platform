@@ -6,23 +6,33 @@ import type { IDataSourceConnector } from '@sre/connectors';
  * bound at all, so absence from the tool surface — not a result value — expresses it. An
  * empty store is therefore DATA (an empty list, an unmapped blast radius), never a
  * distinct "nothing yet" outcome. `error` means the handler/connector threw and `runTool` caught it.
- * Emptiness is a first-class value, never an exception. No error detail is carried here — raw
- * failure text could leak credentials to the engine (CWE-209). Both outcomes carry the durable audit
- * row id, returned only after persistence completes.
+ * Emptiness is a first-class value, never an exception. No error text is carried here — raw
+ * failure text could leak credentials to the engine (CWE-209); `failure` is a code-owned class
+ * derived from typed error fields. Both outcomes carry the durable audit row id, returned only after
+ * persistence completes.
  */
 export type ToolResult<O> =
   | { available: true; data: O; evidenceId: string }
-  | { available: false; reason: 'error'; evidenceId: string };
+  | { available: false; reason: 'error'; failure?: ToolFailure; evidenceId: string };
 
 /** Result produced by a tool handler before the dispatcher persists its audit row. */
 export type ToolHandlerResult<O> =
-  { available: true; data: O } | { available: false; reason: 'error' };
+  { available: true; data: O } | { available: false; reason: 'error'; failure?: ToolFailure };
+
+/** Why a tool call failed, classified from typed error fields, never from provider text. */
+export type ToolFailure =
+  | 'timeout'
+  | 'permission_denied'
+  | 'not_found'
+  | 'rate_limited'
+  | 'unreachable'
+  | 'target_not_allowed'
+  | 'provider_error';
 
 export type ToolOutcome = 'data' | 'error';
 
 /**
- * One record per tool run. `input` is the raw, validated tool input: a persisting sink
- * MUST redact it before storage, since input can carry sensitive values (CWE-532).
+ * One record per tool run. `input` is the raw, validated tool input, stored unredacted.
  */
 export interface ToolAuditRecord {
   tool: string;
@@ -32,9 +42,9 @@ export interface ToolAuditRecord {
   latencyMs: number;
   outcome: ToolOutcome;
   /**
-   * The tool output AFTER redaction, present only for a `data` run (working memory). `runTool`
-   * redacts once and passes the SAME value here and to the model; the sink persists it verbatim.
-   * Absent for an `error` run (no data).
+   * The tool output, present only for a `data` run (working memory). `runTool` passes the SAME
+   * value here and to the model; the sink persists it verbatim.
+   * For an `error` run it is `{ failure }` when the failure was classified, otherwise absent.
    */
   output?: unknown;
 }

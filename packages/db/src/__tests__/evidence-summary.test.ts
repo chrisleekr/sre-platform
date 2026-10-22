@@ -14,12 +14,11 @@ test('matches explicit operations and refuses generic API paths and unknown suff
   expect(evidenceSummary('unexpected_prometheus_query_range', { query: 'private' })).toBeNull();
   expect(evidenceSummary('gitlab_search_projects', { query: { secret: 'private' } })).toBeNull();
 });
-test('re-scrubs retained scalar values and bounds Unicode without splitting codepoints', () => {
+test('keeps retained scalar values verbatim and bounds Unicode without splitting codepoints', () => {
   const result = evidenceSummary('prometheus_query_range', {
     query: 'Bearer abcdefghijklmnop ' + '😀'.repeat(300),
   });
-  expect(result).not.toContain('abcdefghijklmnop');
-  expect(result).toContain('[REDACTED]');
+  expect(result).toContain('Bearer abcdefghijklmnop');
   expect([...(result ?? '')]).toHaveLength(200);
   expect(result).not.toMatch(/[\ud800-\udbff]$/);
 });

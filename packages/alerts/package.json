@@ -9,7 +9,6 @@
     "@sre/db": "workspace:*",
     "@sre/queue": "workspace:*",
     "ioredis": "^6.0.0",
-    "@sre/agent-tools": "workspace:*",
     "@sre/connectors": "workspace:*",
     "@sre/hub": "workspace:*",
     "@sre/surfaces": "workspace:*",
