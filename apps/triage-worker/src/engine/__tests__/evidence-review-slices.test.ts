@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import type { ZodType } from 'zod';
 import { evidenceReviewSchema, reviewInvestigation } from '../evidence-review';
 import { ProviderRateLimitError, type StructuredGenerator, type TriageResult } from '../types';
@@ -382,4 +382,42 @@ test('an elision marker already in the transcript is not charged or repeated, an
   );
   expect(prompts).toHaveLength(1);
   expect(JSON.parse(prompts[0]!).task.prior).toEqual([opener, marker, newest]);
+});
+
+test('a raised transcript budget still leaves reviewer history under the chunk prompt cap', async () => {
+  vi.stubEnv('TRANSCRIPT_BUDGET_CHARS', '90000');
+  const prompts: string[] = [];
+  const message = (n: number) => ({
+    author: 'human',
+    kind: 'text',
+    content: `${n} ${'m'.repeat(20_000)}`,
+  });
+  const task = {
+    incident: {
+      id: 'incident',
+      tenantId: 'tenant',
+      service: 'api',
+      severity: 'sev2',
+      fingerprint: 'api',
+      alertSource: 'slack',
+    },
+    humanMessage: 'is it fixed?',
+    prior: [message(1), message(2), message(3)],
+  };
+  try {
+    await reviewInvestigation(
+      generatorFor((prompt) => {
+        prompts.push(prompt);
+        return finalReview;
+      }),
+      candidate,
+      [{ ...source, output: 'latency 40 ms' }],
+      new AbortController().signal,
+      task,
+    );
+  } finally {
+    vi.unstubAllEnvs();
+  }
+  const prior = JSON.parse(prompts[0]!).task.prior as Array<{ content: string }>;
+  expect(prior.map((m) => m.content.slice(0, 2))).toEqual(['[…', '3 ']);
 });
