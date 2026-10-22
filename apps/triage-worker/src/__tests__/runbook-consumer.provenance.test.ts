@@ -4,11 +4,24 @@
 import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
-import { makeDb, tenants, withTenant, EMBED_DIM, type DbHandle, type Embedder } from '@sre/db';
+import {
+  jobs,
+  makeDb,
+  tenants,
+  withTenant,
+  EMBED_DIM,
+  type DbHandle,
+  type Embedder,
+} from '@sre/db';
 import { seedMembership } from '@sre/db/test-support';
 import type { StructuredGenerator } from '../engine/types';
 import { makeRunbookHandler } from '../runbook-consumer';
-import { investigationDistil, makeIncident, makeJob } from './runbook-consumer.fixture';
+import {
+  investigationDistil,
+  makeIncident,
+  makeJob,
+  nothingDistil,
+} from './runbook-consumer.fixture';
 
 const ADMIN_URL = process.env.DATABASE_URL ?? 'postgres://sre:sre@localhost:5432/sre_platform';
 const APP_URL =
@@ -146,5 +159,40 @@ describe('distil environment fact provenance', () => {
       `etcd backups go to the s3 bucket ops-etcd-backups\nBasis: responder; source: message ${said}`,
       `the etcd WAL is on /dev/nvme1n1\nBasis: observed; source: evidence ${seen}`,
     ]);
+  });
+
+  // The production silence write against the real jobs row: it marks only a still-automatic row.
+  test.each([
+    ['still automatic', { automatic: true }, { automatic: true, silenced: true }, 0],
+    ['adopted by a request', { requestedBy: 'u1' }, { requestedBy: 'u1' }, 1],
+  ])('a nothing outcome on a row %s', async (_, stored, expected, posts) => {
+    const incidentId = await incident();
+    const [row] = await admin.db
+      .insert(jobs)
+      .values({
+        tenantId,
+        type: 'runbook.generate',
+        status: 'processing',
+        stream: 'test',
+        payload: { incidentId, ...stored },
+      })
+      .returning({ id: jobs.id });
+    const append = vi.fn(async () => ({}));
+    const handler = makeRunbookHandler({
+      generator: { generate: async () => nothingDistil } as unknown as StructuredGenerator,
+      hub: { append, history: async () => [] },
+      appDb: app.db,
+      embedder: fakeEmbedder,
+      getIncident: async () => makeIncident(),
+      listMemberEmails: async () => [],
+      getCapturedKnowledge: async () => null,
+    });
+    await handler(makeJob({ id: row!.id, tenantId, payload: { incidentId, automatic: true } }));
+    const [after] = await admin.db
+      .select({ payload: jobs.payload })
+      .from(jobs)
+      .where(sql`id = ${row!.id}`);
+    expect(after!.payload).toEqual({ incidentId, ...expected });
+    expect(append).toHaveBeenCalledTimes(posts);
   });
 });

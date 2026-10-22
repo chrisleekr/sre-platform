@@ -21,7 +21,7 @@ import {
   type LearningProvenance,
 } from '@sre/agent-tools';
 import { RetryableError, type Job, type JobContext } from '@sre/queue';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { NewMessage } from '@sre/hub';
 import { collectHumanIdentifiers, stripHumanIdentifiers, tenantMemberEmails } from './blameless';
 import { recordDistilFacts } from './runbook-learning';
@@ -150,6 +150,8 @@ export interface RunbookHandlerDeps {
   ) => ReturnType<typeof getCapturedKnowledge>;
   /** Reads the job row's current payload; a responder request can adopt a running automatic pass. */
   readJobPayload?: (job: Job) => Promise<unknown>;
+  /** Marks a still-automatic job silenced and reports whether it was; adoption skips such a row. */
+  silenceJob?: (job: Job) => Promise<boolean>;
 }
 
 // Internal marker: a generator failure the handler has decided is TERMINAL (sustained outage at the
@@ -278,9 +280,24 @@ export function makeRunbookHandler(
       return row?.payload;
     });
   // Silence is for a pass nobody asked for. A request adopted mid-run removed the marker.
-  const stillAutomatic = async (job: Job): Promise<boolean> =>
-    (job.payload as { automatic?: unknown }).automatic === true &&
-    ((await readPayload(job)) as { automatic?: unknown } | undefined)?.automatic === true;
+  // Silence is for a pass nobody asked for. Choosing it is a conditional write, not a read, so a
+  // request adopted in the gap before the job is marked done is answered by its own retry instead.
+  const silence =
+    deps.silenceJob ??
+    (async (job: Job) =>
+      (
+        await appDb
+          .update(jobs)
+          .set({ payload: sql`${jobs.payload} || '{"silenced":true}'::jsonb` })
+          .where(
+            and(
+              eq(jobs.tenantId, job.tenantId),
+              eq(jobs.id, job.id),
+              sql`${jobs.payload}->>'automatic' = 'true'`,
+            ),
+          )
+          .returning({ id: jobs.id })
+      ).length > 0);
 
   const post = (tenantId: string, incidentId: string, content: string): Promise<unknown> =>
     hub.append(tenantId, incidentId, { author: 'system', kind: 'text', content });
@@ -435,7 +452,7 @@ export function makeRunbookHandler(
         learn,
       });
       if (distil.outcome === 'nothing') {
-        if (!(await stillAutomatic(job)))
+        if (!(await silence(job)))
           await post(
             tenantId,
             incidentId,
@@ -468,7 +485,7 @@ export function makeRunbookHandler(
       }
       if (err instanceof TerminalGenerationError) {
         // Terminal generator failure: ack, NEVER fail the incident. Only a requester is told.
-        if (!(await stillAutomatic(job)))
+        if (!(await silence(job)))
           await post(
             tenantId,
             incidentId,

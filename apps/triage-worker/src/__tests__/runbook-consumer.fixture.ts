@@ -173,6 +173,10 @@ export function setup(opts: {
     listMemberEmails: async () => ['alice.ops@example.com'],
     getCapturedKnowledge,
     readJobPayload: async (job: Job) => opts.jobPayload ?? job.payload,
+    // Silences only a row still automatic, as the conditional write does.
+    silenceJob: async (job: Job) =>
+      (job.payload as { automatic?: unknown }).automatic === true &&
+      ((opts.jobPayload ?? job.payload) as { automatic?: unknown }).automatic === true,
   });
 
   return {

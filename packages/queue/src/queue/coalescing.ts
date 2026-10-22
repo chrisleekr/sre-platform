@@ -61,7 +61,7 @@ export async function adoptCoalescedRunbookRequest(exec: Executor, input: JobInp
   // An automatic pass posts nothing when it finds nothing or fails, so the request would go
   // unanswered. The request payload, capture fence included, replaces the automatic marker. A queued
   // row then runs as the request; a processing row already read its payload, so the consumer re-reads
-  // it before staying silent.
+  // it before choosing a prompt. A row that already chose silence is skipped, and the request retries.
   const sameKey = coalesceKeyFilter(input.type, input.payload);
   if (!sameKey) return;
   await exec
@@ -76,6 +76,7 @@ export async function adoptCoalescedRunbookRequest(exec: Executor, input: JobInp
         eq(jobs.type, RUNBOOK_TYPE),
         inArray(jobs.status, ['queued', 'processing']),
         sql`${jobs.payload}->>'automatic' = 'true'`,
+        sql`coalesce(${jobs.payload}->>'silenced', 'false') <> 'true'`,
         sameKey,
       ),
     );

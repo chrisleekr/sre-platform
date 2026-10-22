@@ -44,8 +44,9 @@ export async function requestKnowledgeCapture(
     let jobId: string | null = null;
     if (authorized && queue && confirmed) {
       const served = sql<boolean>`${jobs.payload}->>'requestedMessageId' = ${request.id}`;
+      const silenced = sql<boolean>`coalesce(${jobs.payload}->>'silenced', 'false') = 'true'`;
       const [existing] = await tx
-        .select({ id: jobs.id, served })
+        .select({ id: jobs.id, served, silenced })
         .from(jobs)
         .where(
           and(
@@ -63,6 +64,10 @@ export async function requestKnowledgeCapture(
         type: 'runbook.generate',
         payload: { incidentId, requestedBy: request.authorUserId, requestedMessageId: request.id },
       };
+      // A pass that already chose silence cannot answer and still holds the pending slot, so retry
+      // once it finishes and the request can take its own job.
+      if (existing && !existing.served && existing.silenced)
+        throw new RetryableError('An automatic pass is finishing; retry the request.');
       if (!existing) jobId = await queue.insertJobTx(tx, job);
       // A pending automatic pass would otherwise absorb the request and stay silent.
       else if (!existing.served) await adoptCoalescedRunbookRequest(tx, job);

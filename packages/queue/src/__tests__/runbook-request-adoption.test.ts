@@ -87,4 +87,23 @@ describe('runbook request adoption', () => {
       .where(and(eq(jobs.type, RUNBOOK), sql`payload->>'incidentId' = ${incidentId}`));
     expect(pending).toHaveLength(2);
   });
+
+  test('a processing pass that already chose silence is not adopted', async () => {
+    const incidentId = await incident();
+    const automaticId = await __fixture.q.enqueue({
+      tenantId: __fixture.tenant,
+      type: RUNBOOK,
+      payload: { incidentId, automatic: true },
+    });
+    await __fixture.db.db
+      .update(jobs)
+      .set({ status: 'processing', payload: { incidentId, automatic: true, silenced: true } })
+      .where(eq(jobs.id, automaticId));
+    await __fixture.q.enqueue({
+      tenantId: __fixture.tenant,
+      type: RUNBOOK,
+      payload: { incidentId, requestedBy: 'user-1', requestedMessageId: 'message-1' },
+    });
+    expect(await payloadOf(automaticId)).toEqual({ incidentId, automatic: true, silenced: true });
+  });
 });

@@ -177,6 +177,18 @@ test('a chat request adopts a pending automatic pass instead of being absorbed b
   });
 });
 
+test('a chat request retries instead of joining a pass that already chose silence', async () => {
+  const { incident, job, worker } = await setup();
+  const payload = { incidentId: incident.id, automatic: true, silenced: true };
+  const row = { tenantId: fixture.tenantId, type: 'runbook.generate', stream: 'test', payload };
+  await fixture.admin.db.insert(jobs).values({ ...row, status: 'processing' });
+  const run = worker.handle(job, { signal: new AbortController().signal });
+  await expect(run).rejects.toThrow(/automatic pass is finishing/);
+  const where = sql`type='runbook.generate' AND payload->>'incidentId'=${incident.id}`;
+  const rows = await fixture.admin.db.select().from(jobs).where(where);
+  expect(rows.map((r) => r.payload)).toEqual([payload]);
+});
+
 test('a bare confirmation cannot create capture authority from arbitrary earlier assistant prose', async () => {
   const { incident, job, message, worker } = await setup();
   await fixture.admin.db
