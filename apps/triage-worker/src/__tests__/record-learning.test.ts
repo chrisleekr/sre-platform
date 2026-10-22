@@ -273,6 +273,13 @@ describe('record_learning', () => {
         topic: 'alice.ops@example.com pager',
       }),
     ).toMatchObject({ data: { recorded: false, reason: 'topic names a person' } });
+    // A non-member email is still a person, unlike a systemd unit name.
+    expect(
+      await runTool(newRun(), ctx(incidentId), {
+        ...observed,
+        topic: 'bob@vendor.example escalation',
+      }),
+    ).toMatchObject({ data: { recorded: false, reason: 'topic names a person' } });
     expect(
       await runTool(newRun(), ctx(incidentId), { ...observed, topic: 'etcd@node1.service' }),
     ).toMatchObject({ data: { recorded: true } });

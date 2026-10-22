@@ -113,13 +113,21 @@ export function makeBlamelessCleaner(
     );
 }
 
+// systemd unit types: an email-shaped token ending in one is a unit name, for example etcd@node1.service.
+const UNIT_NAME =
+  /\.(?:service|socket|timer|mount|automount|swap|target|path|slice|scope|device)$/i;
+
 /**
- * True when cleaning would change a learning topic. A topic is its merge key, so one that names a
- * member is refused rather than rewritten; a unit name such as `etcd@node1.service` is kept.
+ * True when a learning topic names a person. A topic is its merge key, so it is refused rather than
+ * rewritten. Any email shape counts except a systemd unit name, and so does any member identifier or
+ * mention label seen in the material, so a name from the conversation is caught as well.
  *
  * @param emails - Emails of the tenant's members.
  * @param topic - Proposed learning topic.
+ * @param material - Text the generator saw, whose mention labels are identifiers too.
  */
-export function topicNamesPerson(emails: string[], topic: string): boolean {
-  return stripHumanIdentifiers(topic, collectHumanIdentifiers(emails, topic), false) !== topic;
+export function topicNamesPerson(emails: string[], topic: string, material = ''): boolean {
+  if ([...topic.matchAll(EMAIL)].some(([shape]) => !UNIT_NAME.test(shape))) return true;
+  const identifiers = collectHumanIdentifiers(emails, `${material}\n${topic}`);
+  return stripHumanIdentifiers(topic, identifiers, false) !== topic;
 }

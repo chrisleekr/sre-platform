@@ -14,7 +14,7 @@ import {
   makeFetchSloStatusTool,
   makeRecordLearningTool,
 } from '@sre/agent-tools';
-import { makeBlamelessCleaner, tenantMemberEmails } from './blameless';
+import { makeBlamelessCleaner, tenantMemberEmails, topicNamesPerson } from './blameless';
 
 /**
  * Bind the run-scoped record_learning tool. Its statements are stripped of the tenant's member
@@ -35,7 +35,9 @@ export function makeLearningTool({
     db,
     embedder,
     clean: makeBlamelessCleaner(listMemberEmails),
-    cleanTopic: makeBlamelessCleaner(listMemberEmails, false),
+    // record_learning refuses a topic this changes; the empty string marks one that names a person.
+    cleanTopic: async (tenantId, topic) =>
+      topicNamesPerson(await listMemberEmails(tenantId), topic) ? '' : topic,
   });
 }
 

@@ -433,7 +433,7 @@ export function makeRunbookHandler(
       for (const fact of distil.environmentFacts ?? []) {
         // Same gate as record_learning: a topic naming a person is refused, not rewritten, and an
         // unproven fact is dropped, never saved under a weaker basis.
-        const provenance = topicNamesPerson(emails, fact.topic)
+        const provenance = topicNamesPerson(emails, fact.topic, prompt)
           ? { ok: false as const, reason: 'topic names a person' }
           : await validate(tenantId, incidentId, fact);
         if (!provenance.ok) {

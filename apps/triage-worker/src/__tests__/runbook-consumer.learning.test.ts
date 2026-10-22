@@ -40,14 +40,18 @@ describe('automatic learning pass', () => {
     expect(String(generate.mock.calls[0]![0])).not.toContain('nobody asked for it');
   });
 
-  test('keeps a unit-name topic as given and drops a topic that names a member', async () => {
+  test('keeps a unit-name topic as given and drops a topic that names a person', async () => {
     const fact = { statement: 'the WAL is on nvme1n1', basis: 'observed', evidenceIds: ['ev-1'] };
     const { handler, recordLearning } = setup({
+      history: [{ author: 'human', kind: 'text', content: '<@U9|carol> owns the pager' }],
       distil: {
         ...investigationDistil,
         environmentFacts: [
           { ...fact, topic: 'etcd@node1.service wal disk' },
           { ...fact, topic: 'alice.ops pager rota' },
+          // Named only by a mention label in the conversation.
+          { ...fact, topic: 'carol pager rota' },
+          { ...fact, topic: 'bob@vendor.example escalation' },
         ],
       },
     });
