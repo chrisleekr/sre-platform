@@ -1,7 +1,6 @@
 import type { InboundCandidate } from '@sre/connectors';
-import { ACTIVE_WINDOW_MS } from './contracts';
 import type { ClassifyCore } from './core';
-import { matchOpenProducerSignals } from './recovery-report';
+import { currentSignals, matchOpenProducerSignals } from './recovery-report';
 
 /** Recognizes a repeat notification of a monitor that an open incident already tracks. */
 export class RepeatNotifications {
@@ -33,14 +32,8 @@ export class RepeatNotifications {
       includeResolved: true,
     });
     if (matched.length === 0) return null;
-    // A signal that never recovered is the same episode however long ago it fired. One that
-    // recovered longer ago than the window is a new episode needing its own classification; the
-    // window runs from the recovery, since resolving leaves lastSeenAt at the last firing.
-    const cutoff = Date.now() - ACTIVE_WINDOW_MS;
-    const current = matched.filter(
-      (signal) =>
-        signal.state !== 'resolved' || (signal.resolvedAt ?? signal.lastSeenAt).getTime() >= cutoff,
-    );
+    // A signal recovered before the active window is a new episode needing its own classification.
+    const current = currentSignals(matched, new Date(candidate.eventAt).getTime());
     if (current.length === 0) return null;
     // Refusing on two tracking incidents made every later firing open a third, so the newest current
     // signal wins; a stale recovered one must not hide an older signal that is still firing.

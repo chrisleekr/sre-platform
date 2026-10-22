@@ -8,9 +8,26 @@ import {
   withTenant,
 } from '@sre/db';
 import { RECOVERY_NOT_QUEUED, startReportedRecoveryTx } from '../recovery-start';
+import { ACTIVE_WINDOW_MS } from './contracts';
 import type { ClassifyCore } from './core';
 
 type MatchedSignal = NonNullable<Awaited<ReturnType<typeof getSignalByExternal>>>;
+
+/**
+ * Keeps the signals of the current episode. A signal that never recovered is the same episode
+ * however long ago it fired; one that recovered longer ago than the active window is a new episode.
+ * The window runs from the recovery, since resolving leaves lastSeenAt at the last firing, and ends
+ * at the event, so a redelivered notice is judged as when it happened.
+ * @param matched - Signals matched for one bot event.
+ * @param eventAt - When the bot event happened.
+ */
+export function currentSignals(matched: MatchedSignal[], eventAt: number): MatchedSignal[] {
+  const cutoff = eventAt - ACTIVE_WINDOW_MS;
+  return matched.filter(
+    (signal) =>
+      signal.state !== 'resolved' || (signal.resolvedAt ?? signal.lastSeenAt).getTime() >= cutoff,
+  );
+}
 
 /**
  * Finds Slack-born signals from the same channel and authenticated producer as a bot event.
@@ -105,10 +122,12 @@ export class RecoveryReports {
     const matched = await matchOpenProducerSignals(this.core, tenantId, candidate, {
       includeResolved: true,
     });
-    if (matched.length === 0) return null;
-    // Same choice as repeat matching. Resolving never moves lastSeenAt, so a redelivery after the
-    // first delivery resolved the signal still picks the same incident.
-    const signal = matched.reduce((newest, next) =>
+    // Same choice as repeat matching: a stale recovered signal must not take a notice meant for one
+    // still firing. Resolving never moves lastSeenAt, so a redelivery after the first delivery
+    // resolved the signal still picks the same incident.
+    const current = currentSignals(matched, new Date(candidate.eventAt).getTime());
+    if (current.length === 0) return null;
+    const signal = current.reduce((newest, next) =>
       next.lastSeenAt > newest.lastSeenAt ? next : newest,
     );
     return {

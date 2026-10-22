@@ -177,6 +177,31 @@ describe('Slack recovery notices', () => {
     ]);
   });
 
+  test('a notice links to an incident still firing, not a newer one recovered before the window', async () => {
+    const monitorKey = `slack:monitor-${randomUUID()}`;
+    const active = await trackedIncident(monitorKey);
+    const stale = await trackedIncident(monitorKey);
+    const candidate = resolvedCandidate(monitorKey);
+    const hoursAgo = (hours: number) =>
+      new Date(new Date(candidate.eventAt).getTime() - hours * 60 * 60 * 1000);
+    await admin.db
+      .update(incidentSignals)
+      .set({ lastSeenAt: hoursAgo(30) })
+      .where(eq(incidentSignals.id, active.signalId));
+    await admin.db
+      .update(incidentSignals)
+      .set({ state: 'resolved', lastSeenAt: hoursAgo(27), resolvedAt: hoursAgo(26) })
+      .where(eq(incidentSignals.id, stale.signalId));
+    const { handle } = handler();
+
+    await handle(job(candidate));
+
+    expect(await signalStates(active.incidentId)).toEqual([
+      { state: 'resolved', clearProvenance: 'unknown' },
+    ]);
+    expect(await reportMessages(stale.incidentId)).toEqual([]);
+  });
+
   test('a notice for an already resolved incident is not linked', async () => {
     const monitorKey = `slack:monitor-${randomUUID()}`;
     const tracked = await trackedIncident(monitorKey);
