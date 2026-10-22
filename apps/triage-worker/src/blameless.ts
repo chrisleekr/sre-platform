@@ -113,9 +113,10 @@ export function makeBlamelessCleaner(
     );
 }
 
-// systemd unit types: an email-shaped token ending in one is a unit name, for example etcd@node1.service.
+// A systemd template instance, `name@instance.type`, for example etcd@node1.service. The instance holds
+// no dot, so an email whose domain merely ends in a unit type is still an email.
 const UNIT_NAME =
-  /\.(?:service|socket|timer|mount|automount|swap|target|path|slice|scope|device)$/i;
+  /^[\w:-]+@[\w:-]+\.(?:service|socket|timer|mount|automount|swap|target|path|slice|scope|device)$/i;
 
 /**
  * True when a learning topic names a person. A topic is its merge key, so it is refused rather than
