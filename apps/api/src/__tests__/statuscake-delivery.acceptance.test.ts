@@ -206,7 +206,7 @@ test('a missing lifecycle queue answers 503 and persists no wakeup', async () =>
   }
   expect(await source.wakeups()).toHaveLength(0);
 });
-test('a secret-shaped StatusCake test name is scrubbed before the intake, signal and Slack root', async () => {
+test('a secret-shaped StatusCake test name reaches the intake, signal and Slack root verbatim', async () => {
   const source = await seed();
   const credential = `ghp_${'b'.repeat(36)}`;
   testName = `Checkout ${credential}`;
@@ -225,8 +225,7 @@ test('a secret-shaped StatusCake test name is scrubbed before the intake, signal
   const roots = fixture.postRoot.mock.calls.slice(posts);
   expect(roots).toHaveLength(1);
   const durable = JSON.stringify({ signals, intakes, roots });
-  expect(durable).toContain('Checkout');
-  expect(durable).not.toContain(credential);
+  expect(durable).toContain(`Checkout ${credential}`);
   expect(await source.health()).toMatchObject({
     eventFailureCategory: null,
     eventCount: 1,

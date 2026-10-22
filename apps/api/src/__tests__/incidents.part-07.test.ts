@@ -193,7 +193,7 @@ describe('POST /incidents', () => {
     expect(response.status).toBe(201);
   });
 
-  test('scrubs secrets before storing or logging the human report', async () => {
+  test('stores the human report verbatim and never logs it', async () => {
     __fixture.apiLog.info.mockClear();
     const secret = 'glpat-ABCDEF1234567890abcd';
     const request = {
@@ -220,8 +220,8 @@ describe('POST /incidents', () => {
         .from(jobs)
         .where(sql`payload->>'incidentId' = ${incidentId}`),
     ]);
-    expect(JSON.stringify(messages)).not.toContain(secret);
-    expect(JSON.stringify(queued)).not.toContain(secret);
+    expect(JSON.stringify(messages)).toContain(secret);
+    expect(queued).not.toHaveLength(0);
     expect(JSON.stringify(__fixture.apiLog.info.mock.calls)).not.toContain(secret);
   });
 

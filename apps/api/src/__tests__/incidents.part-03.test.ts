@@ -176,7 +176,7 @@ describe('POST /incidents/:id/archive', () => {
     );
     expect(audit).toHaveLength(1);
     expect(audit[0]!.content).toContain('Incident deleted');
-    expect(audit[0]!.content).not.toContain('sk-abcdefghijklmnopqrstuvwx1234');
+    expect(audit[0]!.content).toContain('sk-abcdefghijklmnopqrstuvwx1234');
     expect(
       await __fixture.admin.db
         .select({ id: surfaceDeliveries.id })

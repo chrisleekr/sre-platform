@@ -9,7 +9,7 @@ import type {
   InvestigationRunOutcome,
   InvestigationTriggerReason,
 } from '@sre/contracts';
-import { headlineHypothesis, scrubSecrets } from '@sre/contracts';
+import { headlineHypothesis } from '@sre/contracts';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Db } from '../client';
 import { withTenant, type Tx } from '../rls';
@@ -437,14 +437,14 @@ export async function getIncidentDetail(
 
 function publicRunText(value: unknown): string | null {
   if (typeof value !== 'string' || !value.trim()) return null;
-  return scrubSecrets(value.trim()).slice(0, 1_000);
+  return value.trim().slice(0, 1_000);
 }
 
-/** Stored gaps are model-shaped jsonb, so keep only bounded, scrubbed, nonblank strings. */
+/** Stored gaps are model-shaped jsonb, so keep only bounded, nonblank strings. */
 function publicRunGaps(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value
     .filter((gap): gap is string => typeof gap === 'string' && gap.trim().length > 0)
     .slice(0, 5)
-    .map((gap) => scrubSecrets(gap).slice(0, 240));
+    .map((gap) => gap.slice(0, 240));
 }

@@ -17,7 +17,7 @@ export type TopologyToolEvidence<T> =
       ? { [K in keyof T as ReferenceName<K>]: TopologyToolEvidence<T[K]> }
       : T;
 
-/** Expose topology correlations without weakening the credential-key redactor.
+/** Expose topology correlations under the model-facing `*Ref` field names.
  * @param value - Trusted typed topology projection, never a raw provider payload.
  */
 export function topologyReferences<T>(value: T): TopologyToolEvidence<T> {

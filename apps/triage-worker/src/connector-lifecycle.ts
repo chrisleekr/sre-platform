@@ -1,4 +1,4 @@
-import { reconcileConnectorLifecycle, scrubSecrets } from '@sre/agent-tools';
+import { reconcileConnectorLifecycle } from '@sre/agent-tools';
 import { nativeLifecycleRoute, processAlert, type NativeLifecycleDeps } from '@sre/alerts';
 import { statusCakeMonitorBound, type IDataSourceConnector } from '@sre/connectors';
 import {
@@ -122,8 +122,7 @@ export async function ingestStatusCakeWakeup(
         row,
         `statuscake:uptime:${wakeup.monitorId}`,
         null,
-        // The test name is tenant-authored text that reaches the Slack root, signal and disposition.
-        { ...observation, alertName: scrubSecrets(observation.alertName) },
+        observation,
         new Date(),
       );
     } catch (error) {

@@ -1,5 +1,3 @@
-import { scrubSecrets } from './redact';
-
 export type IncidentTitleSource =
   'stored' | 'linked_alert' | 'opening_request' | 'opening_context' | 'missing' | 'unavailable';
 export interface IncidentTitlePresentation {
@@ -7,13 +5,25 @@ export interface IncidentTitlePresentation {
   titleSource: IncidentTitleSource;
 }
 
+const MAX_TITLE_INPUT = 4_000;
+
 /** Keep a symptom or diagnostic request, not provider addressing or transport labels.
  * @param value - Untrusted stored title or bounded opening request.
  */
 export function meaningfulIncidentTitle(value: string | null | undefined): string | null {
   if (!value) return null;
-  const clean = scrubSecrets(value)
-    .replace(/<@[A-Z0-9]+(?:\|[^>]+)?>/gi, '')
+  // The markup patterns below rescan from every '<' on unclosed input, so bound the work. A cut that
+  // lands inside a tag drops the partial tag, so a long link never leaves its raw URL as the title.
+  let bounded = value;
+  if (value.length > MAX_TITLE_INPUT) {
+    bounded = value.slice(0, MAX_TITLE_INPUT);
+    const open = bounded.lastIndexOf('<');
+    if (open > bounded.lastIndexOf('>')) bounded = bounded.slice(0, open);
+  }
+  const clean = bounded
+    // A mention label excludes '<' (Slack escapes it as &lt;), so a run of unclosed `<@x|` fails at
+    // the next '<' instead of rescanning to the end of untrusted text.
+    .replace(/<@[A-Z0-9]+(?:\|[^<>]+)?>/gi, '')
     .replace(/<![^>]+>/g, '')
     .replace(/<https?:\/\/[^>|]+\|([^>]+)>/g, '$1')
     // Keep a separator so removing markup cannot join surrounding text into a new token.

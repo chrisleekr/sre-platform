@@ -1,4 +1,3 @@
-import { scrubSecrets } from '@sre/contracts';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Tx } from './rls';
 import { signalDispositions, tenantSignalPolicies } from './schema';
@@ -70,7 +69,7 @@ export async function markSignalPromotedTx(
       promotedBySurface: input.surface,
       promotedByActor: bounded(input.actor, 500, 'promotion actor'),
       promotionCriterion: bounded(input.criterion, 100, 'promotion criterion'),
-      promotionReason: bounded(scrubSecrets(input.reason), 2_000, 'promotion reason'),
+      promotionReason: bounded(input.reason, 2_000, 'promotion reason'),
       updatedAt: sql`now()`,
     })
     .where(

@@ -85,7 +85,7 @@ const input = {
   path: 'apps/api/deployment.yaml',
 };
 
-test('shared background source reads need no incident and return redacted bounded evidence', async () => {
+test('shared background source reads need no incident and return bounded evidence', async () => {
   const fixture = setup();
   const result = await readTopologySourceFile(
     {
@@ -96,35 +96,10 @@ test('shared background source reads need no incident and return redacted bounde
     input,
   );
   expect(result).toMatchObject({ status: 'read', file: { revision, startLine: 1, endLine: 120 } });
-  expect(JSON.stringify(result)).not.toContain('glpat-ABCDEF1234567890abcd');
+  expect(result.file!.excerpt).toContain('glpat-ABCDEF1234567890abcd');
   expect(result.file!.excerpt.length).toBeLessThanOrEqual(16384);
   expect(fixture.audit.records).toEqual([]);
 });
-
-test.each([
-  ['password:\n  hunter2\nsafe source', 3],
-  ['-----BEGIN PRIVATE KEY-----\nhunter2\n-----END PRIVATE KEY-----\nsafe source', 4],
-  ['Authorization:\n  hunter2\nsafe source', 3],
-])(
-  'redacts complete credential context before selecting source lines: %s',
-  async (text, endLine) => {
-    const fixture = setup();
-    fixture.read.mockResolvedValue({
-      path: input.path,
-      revision,
-      providerUrl: 'https://git.example/file',
-      text,
-    });
-    const result = await runTool(fixture.tool, fixture.ctx, { ...input, startLine: 2 });
-    expect(result).toMatchObject({
-      available: true,
-      data: { status: 'read', file: { startLine: 2, endLine } },
-    });
-    expect(JSON.stringify(result)).not.toContain('hunter2');
-    expect(JSON.stringify(fixture.audit.records)).not.toContain('hunter2');
-    expect(JSON.stringify(result)).toContain('safe source');
-  },
-);
 
 test.each(['path', 'revision'] as const)(
   'rejects a provider file with the wrong %s',
@@ -175,7 +150,7 @@ test.each(['removed', 'rotated', 'catalog-removed', 'association-removed'])(
   },
 );
 
-test('reads a bounded exact-revision file through current admitted repository identity and audited redaction', async () => {
+test('reads a bounded exact-revision file through current admitted repository identity and audits it', async () => {
   const fixture = setup();
   const result = await runTool(fixture.tool, fixture.ctx, input);
   expect(result).toMatchObject({
@@ -188,7 +163,6 @@ test('reads a bounded exact-revision file through current admitted repository id
   });
   expect(fixture.resolveRepository).toHaveBeenCalledWith(source.repository);
   expect(fixture.verifyRevision).toHaveBeenCalledWith({ repositoryId: '42' }, revision);
-  expect(JSON.stringify(result)).not.toContain('glpat-ABCDEF1234567890abcd');
   expect(fixture.audit.records[0]?.output).toEqual(result.available ? result.data : null);
 });
 

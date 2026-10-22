@@ -147,9 +147,6 @@ describe('POST /incidents/from-observation', () => {
     expect(jobRows).toHaveLength(1);
     expect(jobRows[0]).toMatchObject({ stream: 'sre:jobs', status: 'queued' });
     expect(JSON.stringify(subjectRows[0])).not.toContain('must-not-be-persisted');
-    expect(JSON.stringify(subjectRows[0])).not.toContain('abc.def.ghi123XYZ');
-    expect(JSON.stringify(signalRows[0])).not.toContain('abc.def.ghi123XYZ');
-    expect(JSON.stringify(jobRows[0]!.payload)).not.toContain('abc.def.ghi123XYZ');
 
     const workspace = await __fixture.api.request(
       `/incidents/${createdBody.incidentId}/workspace`,

@@ -50,7 +50,7 @@ export const slos = pgTable(
     // write would have a healthy tenant update every objective every window, rewriting a small
     // definition table hundreds of times a day to store what it already said.
     //
-    // Null while evaluation is healthy; the scrubbed, truncated failure message otherwise.
+    // Null while evaluation is healthy; the truncated failure message otherwise.
     lastEvalError: text('last_eval_error'),
     // When the current failure was first seen. Null whenever last_eval_error is null, so the two
     // always agree, and it tracks the current failure rather than the last attempt.

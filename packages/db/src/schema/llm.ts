@@ -80,7 +80,7 @@ export const llmInvocations = pgTable(
   ],
 );
 
-/** Ordered Claude Code OTLP log records. Payloads are redacted before this boundary. */
+/** Ordered Claude Code OTLP log records. */
 export const llmTelemetryEvents = pgTable(
   'llm_telemetry_events',
   {

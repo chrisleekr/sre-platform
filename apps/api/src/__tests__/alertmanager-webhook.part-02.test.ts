@@ -243,7 +243,7 @@ test('secret-like explicit monitor ids retain distinct opaque correlation identi
   expect(signals).toHaveLength(2);
   expect(new Set(signals.map((signal) => signal.monitorKey)).size).toBe(2);
   expect(new Set(signals.map((signal) => signal.incidentId)).size).toBe(2);
-  expect(signals.every((signal) => signal.labels?.sre_monitor_id === '[REDACTED]')).toBe(true);
+  expect(signals.map((signal) => signal.labels?.sre_monitor_id).sort()).toEqual(monitorIds);
 });
 
 test('keeps concurrent label-set episodes independent for later causal analysis', async () => {

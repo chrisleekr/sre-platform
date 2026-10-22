@@ -130,23 +130,6 @@ describe('POST /signals/:id/promote', () => {
     expect(rows[0]!.incidentId).toBeNull();
   });
 
-  test('scrubs credentials from promotion evidence before storage and reads', async () => {
-    const id = await seedTicket('1790000000.000250');
-    const token = await __fixture.sign(__fixture.orgC);
-    const secret = ['glpat', 'abcdefghijklmnopqrst'].join('-');
-    const response = await promote(token, id, `Investigate with ${secret}`);
-    expect(response.status).toBe(200);
-    const rows = await __fixture.admin.db
-      .select()
-      .from(signalDispositions)
-      .where(eq(signalDispositions.id, id));
-    expect(rows[0]!.promotionReason).toBe('Investigate with [REDACTED]');
-    const listed = await __fixture.api.request('/signals?disposition=ticket', {
-      headers: { authorization: `Bearer ${token}` },
-    });
-    expect(await listed.text()).not.toContain(secret);
-  });
-
   test('rejects a declaration criterion disabled by the tenant policy', async () => {
     const token = await __fixture.sign(__fixture.orgC);
     const policy = {

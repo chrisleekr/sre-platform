@@ -1,7 +1,7 @@
 import * as z from 'zod';
 import type { Db } from '@sre/db';
 import type { IDataSourceConnector } from '@sre/connectors';
-import { scrubSecrets, type TopologySourceEvidence } from '@sre/contracts';
+import type { TopologySourceEvidence } from '@sre/contracts';
 import { readTopologySources } from '@sre/topology';
 import { topologyPathPrefix } from './code-intelligence/topology';
 
@@ -27,7 +27,7 @@ export interface TopologySourceFileEvidence {
   };
 }
 
-/** Read redacted, revision-pinned evidence without requiring or creating an incident.
+/** Read revision-pinned evidence without requiring or creating an incident.
  * @param deps - Tenant database and current authorized connector resolver.
  * @param input - Exact subject, source association, component-confined path and line window.
  */
@@ -122,8 +122,7 @@ export async function readTopologySourceFile(
           !request.path.startsWith(`${currentPrefix}/`))
       )
         return unavailable('Source access changed while reading. Refresh source evidence.');
-      const redacted = scrubSecrets(file.text);
-      const lines = redacted.split('\n');
+      const lines = file.text.split('\n');
       if (request.startLine > lines.length)
         return unavailable('The requested line is past the end of this file.');
       const excerpt = lines
@@ -137,9 +136,9 @@ export async function readTopologySourceFile(
         file: {
           path: file.path,
           revision: file.revision,
-          providerUrl: scrubSecrets(file.providerUrl),
+          providerUrl: file.providerUrl,
           excerpt,
-          truncated: request.startLine > 1 || excerpt.length < redacted.length,
+          truncated: request.startLine > 1 || excerpt.length < file.text.length,
           startLine: request.startLine,
           endLine: request.startLine + excerpt.split('\n').length - 1,
         },

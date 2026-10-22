@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { scrubSecrets } from '@sre/agent-tools';
 import {
   acceptSurfaceInboundEventTx,
   linkSurfaceInboundJobTx,
@@ -47,13 +46,13 @@ function objectRecord(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-/** Persist only a replayable, scrubbed Slack payload. Socket payloads can contain pasted credentials and
- * capability URLs; neither belongs in the durable jobs table. */
+/** Persist only a replayable Slack payload. Slack capability URLs and trigger ids do not belong in the
+ * durable jobs table. */
 function durableSlackValue(value: unknown, key?: string): unknown {
   if (key && OMITTED_SLACK_FIELDS.has(key)) return undefined;
   if (typeof value === 'string') {
     if (key === 'trigger_id') return createHash('sha256').update(value).digest('hex');
-    return scrubSecrets(value);
+    return value;
   }
   if (Array.isArray(value)) return value.map((item) => durableSlackValue(item));
   const record = objectRecord(value);

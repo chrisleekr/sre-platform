@@ -123,7 +123,7 @@ export const incidents = pgTable(
     // Optimistic fence for delayed recovery jobs and surface projections. Every lifecycle transition
     // increments it; automation applies only to the version it observed.
     lifecycleVersion: integer('lifecycle_version').notNull().default(0),
-    // Correlation shortlist embedding of the scrubbed seed text. Nullable: seeded
+    // Correlation shortlist embedding of the seed text. Nullable: seeded
     // best-effort at open, so a missing vector degrades to the in-context active set, never a failure.
     embedding: vector('embedding', { dimensions: EMBED_DIM }),
     // Recurrence tally: incremented when an AUTOMATED (bot) message correlates to this incident

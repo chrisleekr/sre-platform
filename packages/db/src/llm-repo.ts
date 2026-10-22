@@ -114,7 +114,7 @@ export async function completeLlmInvocation(
 }
 
 /**
- * Payload must already be recursively redacted.
+ * Payloads are stored as given.
  *
  * @param db - Database connection used for the operation.
  * @param tenantId - Tenant whose records are read or changed.

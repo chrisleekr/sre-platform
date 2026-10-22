@@ -24,7 +24,6 @@ import {
   subjectSelectionEligibility,
   type SubjectMisses,
 } from './connector-subject-binding';
-import { redactInput, scrubSecrets } from './redact';
 
 type ObservedMessage = NonNullable<
   Awaited<ReturnType<ConversationHub['observeSignalTx']>>['message']
@@ -50,14 +49,6 @@ interface RecoveryQueue {
     signalFence: string,
   ): Promise<{ jobId: string | null }>;
   publishJob(jobId: string): Promise<void>;
-}
-
-// Provider text is tenant-authored and reaches stored signals, so it gets the same scrubbing as the
-// native webhook path before storage.
-function scrubbedText(values: Record<string, string>): Record<string, string> {
-  return redactInput(
-    Object.fromEntries(Object.entries(values).map(([name, text]) => [name, scrubSecrets(text)])),
-  ) as Record<string, string>;
 }
 
 function warn(event: string, fields: Record<string, string | null>, error: unknown): void {
@@ -239,7 +230,7 @@ export async function reconcileConnectorLifecycle(input: {
           provider: observation.provider,
           dataSourceId: connector.id,
           externalId: monitorId,
-          displayName: scrubSecrets(observation.alertName),
+          displayName: observation.alertName,
           observedAt: new Date().toISOString(),
         };
         if (observation.status === 'firing') {
@@ -271,8 +262,8 @@ export async function reconcileConnectorLifecycle(input: {
             providerFingerprint: signal.providerFingerprint ?? observation.fingerprint,
             startsAt,
             endsAt: observation.endsAt,
-            labels: scrubbedText(observation.labels),
-            annotations: scrubbedText(observation.annotations),
+            labels: observation.labels,
+            annotations: observation.annotations,
             signalSource,
             state: 'resolved',
             clearProvenance: 'provider',

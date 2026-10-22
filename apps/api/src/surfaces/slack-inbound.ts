@@ -1,4 +1,3 @@
-import { scrubSecrets } from '@sre/agent-tools';
 import { slackInboundConnector, type InboundCandidate } from '@sre/connectors';
 import {
   getBindingByExternal,
@@ -12,7 +11,6 @@ import {
   withTenant,
   type Tx,
 } from '@sre/db';
-import { createHash } from 'node:crypto';
 import type {
   SlackConfig,
   SlackEnvelope,
@@ -50,26 +48,20 @@ async function admitSlackCandidate(
   };
   const admission = await withSurfaceInboundMessageLock(deps.adminDb, identity, async (tx) => {
     if (candidate.isEdit) {
-      const scrubbedText = scrubSecrets(candidate.text);
-      const scrubbedCandidate = {
-        ...candidate,
-        text: scrubbedText,
-        contentHash: createHash('sha256').update(scrubbedText).digest('hex'),
-      };
       const [plainSignal, groupedSignals] = await Promise.all([
         getSignalByExternal(
           deps.appDb,
           config.tenantId,
           'slack',
-          scrubbedCandidate.channel,
-          scrubbedCandidate.externalId,
+          candidate.channel,
+          candidate.externalId,
         ),
         listSignalsByExternalRoot(
           deps.appDb,
           config.tenantId,
           'slack',
-          scrubbedCandidate.channel,
-          scrubbedCandidate.externalId,
+          candidate.channel,
+          candidate.externalId,
         ),
       ]);
       const tracked = plainSignal !== null || groupedSignals.length > 0;
@@ -79,26 +71,25 @@ async function admitSlackCandidate(
             getSurfaceMessageDecisionTx(tx, identity),
             hasPendingSurfaceMessageClassification(tx, {
               ...identity,
-              excludeIntakeId: scrubbedCandidate.intakeId,
+              excludeIntakeId: candidate.intakeId,
             }),
           ]);
       const hasTerminalDecision = messageDecision?.disposition != null;
-      const replacesSuppression =
-        hasTerminalDecision && scrubbedCandidate.signalState !== 'resolved';
+      const replacesSuppression = hasTerminalDecision && candidate.signalState !== 'resolved';
       const isActionableProviderEdit =
-        !tracked && scrubbedCandidate.author === 'bot' && scrubbedCandidate.alertKind === 'firing';
+        !tracked && candidate.author === 'bot' && candidate.alertKind === 'firing';
       const classifyAsRoot = replacesSuppression || isActionableProviderEdit;
       if (!tracked && !pendingClassification && !classifyAsRoot)
         return { status: 'dropped', outcome: 'dropped_untracked_edit' } as const;
 
       const payload = {
-        ...scrubbedCandidate,
+        ...candidate,
         raw: null,
         ...(classifyAsRoot ? { isEdit: false } : {}),
       };
       return {
         status: 'persisted',
-        candidate: scrubbedCandidate,
+        candidate,
         durable: await insertSlackClassifyTx(deps, tx, config, payload),
         successOutcome: 'edit_enqueued',
       } as const;
@@ -203,11 +194,7 @@ async function processSlackEvent(
   }
   // A pure-screenshot reply carries no caption; synthesize a short human message so the hub row and
   // the resumed turn have content (the vision interpretation is injected as engine context later).
-  // Human text is scrubbed at ingest so a pasted credential is never persisted raw
-  // nor egressed to the LLM on resume; the synthesized caption is ours and carries nothing to scrub.
-  const content = text
-    ? scrubSecrets(text)
-    : `(shared ${files.length} file${files.length === 1 ? '' : 's'})`;
+  const content = text || `(shared ${files.length} file${files.length === 1 ? '' : 's'})`;
 
   // Per-channel opt-in applies HERE too, not just to new signals. The subscription is the
   // platform's only per-channel inbound control, so an operator who disables a channel must stop the

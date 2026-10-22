@@ -1,4 +1,3 @@
-import { redactInput, scrubSecrets } from '@sre/agent-tools';
 import { processAlert } from '@sre/alerts';
 import { alertmanagerEventToken, defaultRegistry, type ConnectorRegistry } from '@sre/connectors';
 import { connectorConfigs, connectorCredentialKey, connectorEventCredentialKey } from '@sre/db';
@@ -12,6 +11,7 @@ import {
   hash,
   object,
   sameSecret,
+  removeConnectorToken,
   sanitizeProviderUrl,
 } from './alertmanager-webhook/normalize';
 import { eventHealth } from './alertmanager-webhook/health';
@@ -81,15 +81,11 @@ export function providerLifecycleWebhookRoutes(
     try {
       const outcomes = [];
       for (const observation of result.observations) {
+        // Only this connector's own webhook token is removed; provider content passes through.
         const clean = (value: Record<string, string>) =>
-          redactInput(
-            Object.fromEntries(
-              Object.entries(value).map(([name, text]) => [
-                name,
-                scrubSecrets(text.split(token).join('[REDACTED]')),
-              ]),
-            ),
-          ) as Record<string, string>;
+          Object.fromEntries(
+            Object.entries(value).map(([name, text]) => [name, removeConnectorToken(text, token)]),
+          );
         outcomes.push(
           await processAlert(
             deps,
@@ -101,7 +97,7 @@ export function providerLifecycleWebhookRoutes(
               monitorIdentity: hash(observation.monitorIdentity),
               labels: clean(observation.labels),
               annotations: clean(observation.annotations),
-              alertName: scrubSecrets(observation.alertName.split(token).join('[REDACTED]')),
+              alertName: removeConnectorToken(observation.alertName, token),
               generatorUrl: observation.generatorUrl
                 ? sanitizeProviderUrl(observation.generatorUrl, token)
                 : null,

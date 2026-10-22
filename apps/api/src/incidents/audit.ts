@@ -90,7 +90,7 @@ export function registerIncidentAuditRoutes(
     return c.json({ deliveries });
   });
 
-  /** Bounded evidence metadata. Raw redacted input/output is loaded only when one row is expanded. */
+  /** Bounded evidence metadata. Raw input/output is loaded only when one row is expanded. */
   app.get('/:id/evidence', async (c) => {
     const id = c.req.param('id');
     if (!UUID_RE.test(id)) return c.json({ error: 'incident not found' }, 404);

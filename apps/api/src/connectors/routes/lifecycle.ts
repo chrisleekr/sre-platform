@@ -1,9 +1,5 @@
 import { hash } from '../../alertmanager-webhook/normalize';
-import {
-  reconcileConnectorLifecycle,
-  scrubSecrets,
-  type ConnectorSignalBinding,
-} from '@sre/agent-tools';
+import { reconcileConnectorLifecycle, type ConnectorSignalBinding } from '@sre/agent-tools';
 import { isConnectorType } from '@sre/connectors';
 import {
   bindSignalToEpisodeTx,
@@ -248,7 +244,7 @@ export function registerConnectorLifecycleRoutes(
         author: 'human',
         authorUserId: userId,
         // The hub stores content verbatim, and both values are operator-typed free text.
-        content: `Bound signal ${signal.id} to ${type} monitor ${scrubSecrets(binding.monitorId)}, episode ${binding.startsAt}. Reason: ${scrubSecrets((body!.reason as string).trim())}`,
+        content: `Bound signal ${signal.id} to ${type} monitor ${binding.monitorId}, episode ${binding.startsAt}. Reason: ${(body!.reason as string).trim()}`,
         originMessageId: `connector-binding:${id}:${row.lifecycleVersion}:${signal.id}`,
       });
       return true;

@@ -1,4 +1,3 @@
-import { scrubSecrets } from '@sre/agent-tools';
 import { type MentionCandidate } from '@sre/connectors';
 import {
   getBindingByExternal,
@@ -66,10 +65,7 @@ export async function processSlackMention(
       // while a resume is still queued coalesces onto it instead of unique-violating. The ts
       // reservation covers append idempotency, so a lost post-commit publish is best-effort (onError) —
       // do NOT release/retry, or Slack would re-append.
-      // Scrub at ingest: a human who pastes a credential must not have it persisted
-      // raw in incident_messages nor egressed to the LLM on resume. Everything downstream reads the
-      // appended row, so this is the single scrub point (mirrors the new-thread classify path).
-      const content = scrubSecrets(stripMention(mentionText, config.botUserId) || mentionText);
+      const content = stripMention(mentionText, config.botUserId) || mentionText;
       // Capture attachments at INGEST inside the same tx as the reply, so a
       // coalesced reply never loses its files. Metadata only, interpretation null, tied to this
       // human message; idempotent on (tenant, incident, file) so a Slack retry is a no-op.

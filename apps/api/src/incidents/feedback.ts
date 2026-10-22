@@ -1,4 +1,3 @@
-import { scrubSecrets } from '@sre/agent-tools';
 import {
   IncidentFeedbackRateLimitError,
   enforceIncidentFeedbackAdmissionTx,
@@ -42,14 +41,14 @@ function parseFeedback(value: unknown): DirectFeedback | null {
     body.rationale.trim().length > 1_000
   )
     return null;
-  const rationale = scrubSecrets(body.rationale.trim());
+  const rationale = body.rationale.trim();
   if (body.targetType === 'finding' && ['confirm', 'correct'].includes(String(body.decision))) {
     const replacement =
       body.decision === 'correct' &&
       typeof body.replacement === 'string' &&
       body.replacement.trim() &&
       body.replacement.trim().length <= 4_000
-        ? scrubSecrets(body.replacement.trim())
+        ? body.replacement.trim()
         : body.decision === 'confirm' &&
             (body.replacement === undefined || body.replacement === null)
           ? null

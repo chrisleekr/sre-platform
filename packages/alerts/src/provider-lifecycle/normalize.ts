@@ -2,7 +2,6 @@ export {
   storedAlertmanagerObservation,
   restoreStoredAlertmanagerEpisode,
 } from './stored-observation';
-import { redactInput, scrubSecrets } from '@sre/agent-tools';
 import type { SignalObservation } from '@sre/db';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { semanticMaterialText } from '@sre/connectors';
@@ -84,25 +83,39 @@ export function episodeGroupingPolicy(settings: Record<string, unknown>): {
   };
 }
 
-function scrubKnownSecret(value: string, secret: string): string {
-  return secret ? value.split(secret).join('[REDACTED]') : value;
+// Each token character matches itself, any percent-encoding of its UTF-8 bytes in either hex case,
+// or '+' for a space, so a fully, partly or mixed encoded copy in a URL is removed too.
+function knownSecretPattern(secret: string): RegExp {
+  const hex = (byte: number) =>
+    `%${byte
+      .toString(16)
+      .padStart(2, '0')
+      .replace(/[a-f]/g, (d) => `[${d}${d.toUpperCase()}]`)}`;
+  const parts = [...secret].map((ch) => {
+    const forms = [
+      ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+      [...new TextEncoder().encode(ch)].map(hex).join(''),
+    ];
+    if (ch === ' ') forms.push('\\+');
+    return `(?:${forms.join('|')})`;
+  });
+  return new RegExp(parts.join(''), 'g');
 }
 
+/** Removes this connector's own webhook token, raw or in any URL encoding; other text passes through.
+ * @param value - Provider-supplied text.
+ * @param secret - The connector's own webhook token.
+ */
+export function removeConnectorToken(value: string, secret: string): string {
+  return secret ? value.replace(knownSecretPattern(secret), '[REDACTED]') : value;
+}
+
+/** Removes this platform's own webhook token from a provider URL; provider content passes through.
+ * @param value - Provider-supplied URL.
+ * @param knownSecret - The connector's own webhook token.
+ */
 export function sanitizeProviderUrl(value: string, knownSecret: string): string {
-  const scrubbed = scrubSecrets(scrubKnownSecret(value, knownSecret));
-  try {
-    const url = new URL(scrubbed);
-    if (url.username) url.username = '[REDACTED]';
-    if (url.password) url.password = '[REDACTED]';
-    const queryEntries = Array.from(url.searchParams.entries());
-    for (const [key, item] of queryEntries) {
-      const sanitized = redactInput({ [key]: item }) as Record<string, string>;
-      url.searchParams.set(key, sanitized[key]!);
-    }
-    return url.toString();
-  } catch {
-    return scrubbed;
-  }
+  return removeConnectorToken(value, knownSecret);
 }
 
 function stringMap(
@@ -154,14 +167,10 @@ export function normalizeAlert(value: unknown, knownSecret: string): NormalizedA
   const status = raw.status === 'firing' || raw.status === 'resolved' ? raw.status : null;
   const withoutKnownSecrets = (values: Record<string, string>): Record<string, string> =>
     Object.fromEntries(
-      Object.entries(values).map(([key, item]) => [key, scrubKnownSecret(item, knownSecret)]),
+      Object.entries(values).map(([key, item]) => [key, removeConnectorToken(item, knownSecret)]),
     );
-  const sanitizedLabels = labels
-    ? (redactInput(withoutKnownSecrets(labels)) as Record<string, string>)
-    : null;
-  const sanitizedAnnotations = annotations
-    ? (redactInput(withoutKnownSecrets(annotations)) as Record<string, string>)
-    : null;
+  const sanitizedLabels = labels ? withoutKnownSecrets(labels) : null;
+  const sanitizedAnnotations = annotations ? withoutKnownSecrets(annotations) : null;
   const alertName = sanitizedLabels?.alertname?.trim();
   const rawMonitorId = labels?.sre_monitor_id?.trim();
   const generatorUrl = string(raw.generatorURL);
@@ -208,6 +217,8 @@ export function alertmanagerMonitorKey(
   alert: Pick<NormalizedAlert, 'alertName' | 'fingerprint' | 'labels'> &
     Partial<Pick<NormalizedAlert, 'monitorIdentity' | 'provider'>>,
 ): string {
+  // Labels stored before provider text stopped being redacted, or equal to the webhook token, can
+  // hold the marker; it identifies no monitor.
   const monitorIdentity =
     alert.monitorIdentity ??
     (alert.labels.sre_monitor_id?.trim() && alert.labels.sre_monitor_id.trim() !== '[REDACTED]'

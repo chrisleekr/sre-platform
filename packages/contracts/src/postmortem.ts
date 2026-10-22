@@ -76,7 +76,7 @@ export interface ContributingCause {
   evidenceIds: string[];
 }
 
-/** The editable prose sections of a postmortem. Every value is scrubbed before storage. */
+/** The editable prose sections of a postmortem. */
 export interface PostmortemSections {
   summary: string;
   impact: string;

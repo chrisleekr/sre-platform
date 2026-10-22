@@ -103,37 +103,4 @@ describe('GET /incidents?state=open incident-free status', () => {
       statusSpy.mockRestore();
     }
   });
-
-  test('scrubs secrets from the last qualifying incident summary', async () => {
-    const gitlabToken = 'glpat-ABCDEF1234567890abcd';
-    const highEntropyToken = 'Ab1Cd2Ef3Gh4Ij5Kl6Mn7Op8Qr9St0Uv1Wx2';
-    const id = randomUUID();
-    await fixture.admin.db.insert(db.incidents).values({
-      id,
-      tenantId: fixture.tenantB,
-      fingerprint: `incident-free-secret-${id}`,
-      alertSource: 'datadog',
-      service: 'checkout',
-      severity: 'sev1',
-      status: 'resolved',
-      title: `Recovered ${gitlabToken} ${highEntropyToken}`,
-      resolvedAt: new Date('2026-09-02T12:00:00.000Z'),
-    });
-    try {
-      const response = await fixture.api.request(
-        '/incidents?state=open',
-        fixture.auth(await fixture.sign(fixture.orgB)),
-      );
-      const body = (await response.json()) as IncidentListBody;
-      expect(body.incidentFreeStatus?.lastIncident).toMatchObject({
-        id,
-        title: 'Recovered [REDACTED] [REDACTED]',
-        severity: 'sev1',
-      });
-      expect(JSON.stringify(body)).not.toContain(gitlabToken);
-      expect(JSON.stringify(body)).not.toContain(highEntropyToken);
-    } finally {
-      await fixture.admin.db.delete(db.incidents).where(eq(db.incidents.id, id));
-    }
-  });
 });

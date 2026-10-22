@@ -242,7 +242,7 @@ describe('subject.sync worker', () => {
         .from(incidentMessages)
         .where(sql`incident_id = ${incident.incidentId}`),
     ]);
-    expect(JSON.stringify([storedSubject, signalAfterChange, storedMessages])).not.toContain(
+    expect(JSON.stringify([storedSubject, signalAfterChange, storedMessages])).toContain(
       'abc.def.ghi123XYZ',
     );
   });

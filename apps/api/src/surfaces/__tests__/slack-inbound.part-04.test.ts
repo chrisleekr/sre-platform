@@ -514,25 +514,6 @@ describe('Slack inbound processors', () => {
     ).toBe(false);
   });
 
-  test('mention resume: a secret pasted in an app_mention on a bound thread is scrubbed before it reaches the hub', async () => {
-    await expect(
-      __fixture.processClassifyEvent(
-        __fixture.mentionEvent({
-          ts: __fixture.nextTs(),
-          thread_ts: __fixture.ROOT_C3,
-          channel: __fixture.CLS_SUB,
-          text: `<@${__fixture.SELF_BOT}> retry with AKIAIOSFODNN7EXAMPLE`,
-        }),
-      ),
-    ).resolves.toBe('resume_enqueued');
-
-    const history = await __fixture.hub.history(__fixture.tenantB, __fixture.mentionIncidentId);
-    const human = history.find((m) => m.author === 'human' && m.content.includes('retry with'));
-    expect(human).toBeDefined();
-    expect(human!.content).toContain('[REDACTED]');
-    expect(human!.content).not.toContain('AKIAIOSFODNN7EXAMPLE');
-  });
-
   test('mention C4-suppress: a plain message whose text mentions the bot does NOT enqueue a classify job (app_mention owns it)', async () => {
     await expect(
       __fixture.processClassifyEvent(

@@ -102,7 +102,7 @@ existing active investigation. Stale or unavailable observations cannot start a 
 samples alone do not resolve an incident or prove service recovery.
 
 Source-file reads stay inside an admitted repository's component path at the recorded immutable
-revision. Excerpts are redacted and bounded. If access or the association changes during a read,
+revision. Excerpts are bounded, not redacted. If access or the association changes during a read,
 the result is discarded; refresh source evidence before trying again.
 
 ## Incident scope

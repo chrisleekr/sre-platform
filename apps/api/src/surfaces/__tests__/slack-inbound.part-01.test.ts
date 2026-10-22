@@ -283,28 +283,6 @@ describe('Slack inbound processors', () => {
     }
   });
 
-  // --- Secret scrubbing on the human resume paths ------------------------------
-  // A human who pastes a credential into a reply must not have it persisted verbatim in
-  // incident_messages (and re-egressed to the LLM on resume). The durable row is the assertion
-  // surface: scrubbing must happen BEFORE the hub append, not at the model boundary.
-
-  test('text-reply resume: a secret pasted in a human thread reply is scrubbed before it reaches the hub', async () => {
-    await expect(
-      __fixture.processBaseEvent(
-        __fixture.messageEvent(
-          { event_id: 'Ev-scrub-reply' },
-          { ts: '1712.0001', text: 'try again with AKIAIOSFODNN7EXAMPLE' },
-        ),
-      ),
-    ).resolves.toBe('resume_enqueued');
-
-    const history = await __fixture.hub.history(__fixture.tenantId, __fixture.incidentId);
-    const human = history.find((m) => m.author === 'human' && m.content.includes('try again with'));
-    expect(human).toBeDefined();
-    expect(human!.content).toContain('[REDACTED]');
-    expect(human!.content).not.toContain('AKIAIOSFODNN7EXAMPLE');
-  });
-
   // --- Auto-attribution of a human reply author ------------------------------------------
 
   test('C1 attribution: a reply whose author email resolves to exactly one tenant member stamps that member id as author_user_id', async () => {

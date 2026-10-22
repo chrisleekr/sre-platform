@@ -23,10 +23,7 @@ test('uses the root excerpt rather than choosing convenient later conversation',
       .titleSource,
   ).toBe('missing');
 });
-test('bounds untrusted text and scrubs recognized credentials', () => {
-  expect(meaningfulIncidentTitle('Bearer abcdefghijklmnop request failed')).not.toContain(
-    'abcdefghijklmnop',
-  );
+test('bounds untrusted text and strips markup', () => {
   expect([...(meaningfulIncidentTitle('😀check '.repeat(100)) ?? '')]).toHaveLength(160);
   expect(meaningfulIncidentTitle('<img src=x onerror=bad>Check latency')).toBe('Check latency');
 });
@@ -47,6 +44,23 @@ test.each([
     expect(openingIncidentTitle('<@U123>', thread).displayTitle).toBe(expected);
   },
 );
+
+test('strips labelled mentions and stays fast on unclosed mention runs', () => {
+  expect(meaningfulIncidentTitle('<@U123|alice> Checkout is timing out')).toBe(
+    'Checkout is timing out',
+  );
+  const started = performance.now();
+  meaningfulIncidentTitle(`${'<@0|'.repeat(50_000)}Check latency`);
+  expect(performance.now() - started).toBeLessThan(1_000);
+});
+
+test('a cut inside a long Slack link never leaves the raw URL as the title', () => {
+  const link = `<https://grafana.example/d/abc?${'var-pod=api-'.repeat(340)}|Dashboard>`;
+  expect(meaningfulIncidentTitle(`${link} CPU saturation on checkout`)).toBeNull();
+  expect(meaningfulIncidentTitle(`Checkout CPU saturation ${link}`)).toBe(
+    'Checkout CPU saturation',
+  );
+});
 
 test.each(['<script<script>>Check latency', '<img src=x onerror=bad', 'Check < latency > now'])(
   'does not retain markup delimiters in a title: %s',

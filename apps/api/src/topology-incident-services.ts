@@ -12,7 +12,6 @@ import {
   IncidentFeedbackRateLimitError,
   type Db,
 } from '@sre/db';
-import { scrubSecrets } from '@sre/agent-tools';
 import type { TenantAuthVariables } from './auth';
 import { resolveIncidentTopologyContext } from '@sre/topology';
 
@@ -59,7 +58,7 @@ export function topologyIncidentServiceRoutes(db: Db) {
       );
     const { tenantId, userId } = c.get('tenant');
     const names = [...new Set(body.data.services)];
-    const rationale = scrubSecrets(body.data.rationale);
+    const rationale = body.data.rationale;
     try {
       const result = await withTenant(db, tenantId, async (tx) => {
         const [incident] = await tx

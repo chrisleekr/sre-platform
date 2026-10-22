@@ -18,7 +18,7 @@ import { createFixture } from './alertmanager-webhook.fixture';
 
 const fixture = createFixture();
 
-test('persists scrubbed firing and resolved dispositions idempotently', async () => {
+test('persists firing and resolved dispositions idempotently', async () => {
   const alertName = `DispositionLifecycle-${randomUUID()}`;
   const fingerprint = `disposition-lifecycle-${randomUUID()}`;
   const startsAt = '2026-09-02T02:00:00Z';
@@ -51,7 +51,6 @@ test('persists scrubbed firing and resolved dispositions idempotently', async ()
   expect(lifecycle.filter((row) => row.supersededAt !== null)).toEqual([
     expect.objectContaining({ disposition: 'investigate', effectiveDisposition: 'investigate' }),
   ]);
-  expect(JSON.stringify(lifecycle)).not.toContain('hunter2');
 });
 
 test('keeps a later provider episode independent while the prior monitor episode is still firing', async () => {

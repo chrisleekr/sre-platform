@@ -6,7 +6,6 @@ import {
   issueDraftSchema,
   listIssueActions,
   prepareIssueAction,
-  publicIssueData,
   type IssueActionDeps,
 } from '@sre/agent-tools';
 import { IssueRequestError } from '@sre/connectors';
@@ -64,9 +63,7 @@ export function registerIncidentIssueRoutes(
     const sources = await deps.resolveConnectors?.(c.get('tenant').tenantId);
     const source = sources?.find((item) => item.id === c.req.query('connectorId'));
     if (!source?.issues) return c.json({ error: 'issue connection unavailable' }, 404);
-    return c.json(
-      publicIssueData(await source.issues.repositories((c.req.query('query') ?? '').slice(0, 255))),
-    );
+    return c.json(await source.issues.repositories((c.req.query('query') ?? '').slice(0, 255)));
   });
   app.get('/:id/issues/list', async (c) => {
     const sources = await deps.resolveConnectors?.(c.get('tenant').tenantId);
@@ -75,15 +72,13 @@ export function registerIncidentIssueRoutes(
     const repository = c.req.query('repository') ?? '';
     const number = c.req.query('number');
     return c.json(
-      publicIssueData(
-        number !== undefined
-          ? await source.issues.get(repository, Number(number))
-          : await source.issues.list(
-              repository,
-              (c.req.query('query') ?? '').slice(0, 255),
-              c.req.query('state') === 'closed' ? 'closed' : 'open',
-            ),
-      ),
+      number !== undefined
+        ? await source.issues.get(repository, Number(number))
+        : await source.issues.list(
+            repository,
+            (c.req.query('query') ?? '').slice(0, 255),
+            c.req.query('state') === 'closed' ? 'closed' : 'open',
+          ),
     );
   });
   app.get('/:id/issues/actions', async (c) => {

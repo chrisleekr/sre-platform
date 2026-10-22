@@ -1,4 +1,3 @@
-import { scrubSecrets } from '@sre/agent-tools';
 import {
   IncidentFeedbackRateLimitError,
   IncidentCorrectionConflictError,
@@ -55,8 +54,8 @@ export function registerIncidentRelationshipRoutes(
     )
       return c.json({ error: 'one to twenty evidence lines are required' }, 400);
     try {
-      const rationale = scrubSecrets(body.rationale.trim());
-      const evidence = body.evidence.map((item) => scrubSecrets((item as string).trim()));
+      const rationale = body.rationale.trim();
+      const evidence = body.evidence.map((item) => (item as string).trim());
       const messages: HubMessage[] = [];
       const merged = await withTenant(deps.db, tenantId, async (admissionTx) => {
         await enforceIncidentFeedbackAdmissionTx(admissionTx, tenantId, userId);
@@ -174,8 +173,8 @@ export function registerIncidentRelationshipRoutes(
     )
       return c.json({ error: 'one to twenty evidence lines are required' }, 400);
     try {
-      const rationale = scrubSecrets(body.rationale.trim());
-      const evidence = body.evidence.map((item) => scrubSecrets((item as string).trim()));
+      const rationale = body.rationale.trim();
+      const evidence = body.evidence.map((item) => (item as string).trim());
       const messages: HubMessage[] = [];
       const split = await withTenant(deps.db, tenantId, async (admissionTx) => {
         await enforceIncidentFeedbackAdmissionTx(admissionTx, tenantId, userId);
@@ -293,8 +292,8 @@ export function registerIncidentRelationshipRoutes(
     )
       return c.json({ error: 'one to twenty evidence lines are required' }, 400);
     const targetIncidentId = body.targetIncidentId;
-    const rationale = scrubSecrets(body.rationale.trim());
-    const evidence = body.evidence.map((item) => scrubSecrets((item as string).trim()));
+    const rationale = body.rationale.trim();
+    const evidence = body.evidence.map((item) => (item as string).trim());
     const messages: HubMessage[] = [];
     const recoveryJobIds = new Set<string>();
     try {

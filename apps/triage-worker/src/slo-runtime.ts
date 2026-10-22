@@ -18,7 +18,6 @@ import {
   recordEvalOutcome,
   type DbHandle,
 } from '@sre/db';
-import { scrubSecrets } from '@sre/contracts';
 import { makeSloQueue, type Queue, type QueueOptions } from '@sre/queue';
 import type { JobHandler } from '@sre/queue';
 import { makeRedisWindowGuard } from './poller';
@@ -64,16 +63,9 @@ export function makeSloRuntime(deps: {
       return slo && slo.enabled ? slo : null;
     },
     persist: (tenantId, event) => recordBurnEvent(deps.appDb.db, tenantId, event),
-    // The message comes from the tenant's own backend and is shown back to that tenant, but it can
-    // quote the request that produced it, so it is scrubbed before it is stored. Truncation is the
-    // repository's job.
+    // Truncation is the repository's job.
     recordOutcome: (tenantId, sloId, error) =>
-      recordEvalOutcome(
-        deps.appDb.db,
-        tenantId,
-        sloId,
-        error === null ? null : scrubSecrets(error),
-      ),
+      recordEvalOutcome(deps.appDb.db, tenantId, sloId, error),
     // A fresh reader per evaluation, not one shared reader: connector resolution decrypts every
     // credential the tenant stores, so its memo must die with the evaluation that needed it.
     readerFor: makeConnectorSliReaderFactory((tenantId) => deps.connectorProvider(tenantId)()),
