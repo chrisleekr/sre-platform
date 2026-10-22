@@ -2,7 +2,6 @@ import {
   decideIssueAction,
   issueDraftSchema,
   prepareIssueAction,
-  scrubSecrets,
   type IssueActionDeps,
 } from '@sre/agent-tools';
 import { IssueRequestError } from '@sre/connectors';
@@ -90,19 +89,17 @@ export async function draftConversationIssue(
     const history = await runtime.deps.hub.history(job.tenantId, incidentId, { limit: 30 });
     const draft = await runtime.executeSemantic(job, 'responder-intent', signal, (generator) =>
       generator.generate(
-        scrubSecrets(
-          JSON.stringify({
-            request: message.content,
-            sources: sources.map((source) => ({
-              id: source.id,
-              name: source.name,
-              provider: source.type,
-            })),
-            history: history
-              .map((item) => ({ author: item.author, content: item.content.slice(0, 4000) }))
-              .slice(-12),
-          }),
-        ),
+        JSON.stringify({
+          request: message.content,
+          sources: sources.map((source) => ({
+            id: source.id,
+            name: source.name,
+            provider: source.type,
+          })),
+          history: history
+            .map((item) => ({ author: item.author, content: item.content.slice(0, 4000) }))
+            .slice(-12),
+        }),
         z.union([
           issueDraftSchema,
           z.object({ clarification: z.string().min(1).max(500) }).strict(),
@@ -115,9 +112,7 @@ export async function draftConversationIssue(
       ),
     );
     if ('clarification' in draft)
-      throw new IssueRequestError(
-        `${scrubSecrets(draft.clarification)} No issue was drafted or published.`,
-      );
+      throw new IssueRequestError(`${draft.clarification} No issue was drafted or published.`);
     await prepareIssueAction(
       dependencies(runtime),
       job.tenantId,

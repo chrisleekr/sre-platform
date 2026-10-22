@@ -7,7 +7,6 @@ import {
   type SDKResultMessage,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
-import { redactInput } from '@sre/agent-tools';
 import { startClaudeTelemetry } from '../../llm-telemetry';
 import {
   isProviderConfigurationStatus,
@@ -253,9 +252,9 @@ export async function runQuery(
       config.observability.setComplete(false);
       await config.observability.persist({
         kind: 'trace_gap',
-        payload: redactInput({
+        payload: {
           reason: error instanceof Error ? error.message : 'Claude telemetry could not start',
-        }),
+        },
       });
     }
   }

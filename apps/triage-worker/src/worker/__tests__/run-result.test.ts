@@ -15,7 +15,7 @@ const rejected: TriageResult = {
   reviewGaps: ['Confirm the termination reason per restart.', `Check key ${secret}`],
 };
 
-test('an unverified finding carries the reviewer gaps through the public sanitizer', () => {
+test('an unverified finding carries the reviewer gaps verbatim', () => {
   const finding = incidentFindingPayload(
     rejected,
     'run-1',
@@ -25,8 +25,22 @@ test('an unverified finding carries the reviewer gaps through the public sanitiz
   expect(finding.nextStep).toBe('Query container RSS against the limit.');
   expect(finding.gaps).toHaveLength(2);
   expect(finding.gaps![0]).toBe('Confirm the termination reason per restart.');
-  expect(finding.gaps!.join(' ')).not.toContain(secret);
+  expect(finding.gaps![1]).toBe(`Check key ${secret}`);
   expect(investigationRunResult(rejected).gaps).toEqual(finding.gaps);
+});
+
+test('review provenance persists with the candidate verdict and the detail verbatim', () => {
+  const review = {
+    status: 'rejected' as const,
+    rejection: 'insufficient_evidence' as const,
+    coverage: 'full' as const,
+    candidate: { outcome: 'conclusive' as const, confidence: 85 },
+    detail: `Restart reason unproven. key ${secret}`,
+  };
+  const persisted = investigationRunResult({ ...rejected, review });
+  expect(persisted.confidence).toBe(0);
+  expect(persisted.review).toEqual(review);
+  expect(investigationRunResult(rejected)).not.toHaveProperty('review');
 });
 
 test('a result without reviewer gaps records no gaps key', () => {
@@ -55,7 +69,7 @@ test('the likely cause is the first hypothesis still standing, and links pass th
     'investigation_inconclusive',
   );
   expect(finding.likelyCause).toMatch(/^Limit too low/);
-  expect(finding.likelyCause).not.toContain(secret);
+  expect(finding.likelyCause).toContain(secret);
   expect(finding.links).toEqual(links);
   expect(
     incidentFindingPayload(rejected, 'run-1', 'not_promoted', 'investigation_inconclusive'),

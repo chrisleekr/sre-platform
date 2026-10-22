@@ -1,4 +1,3 @@
-import { scrubSecrets } from '@sre/agent-tools';
 import { meaningfulIncidentTitle, openingIncidentTitle } from '@sre/contracts';
 import type { MentionCandidate } from '@sre/connectors';
 import type { ZodType } from 'zod';
@@ -14,7 +13,6 @@ import type { Job } from '@sre/queue';
 import { renderThread } from '@sre/surfaces';
 import { characterizeThread } from '../engine/characterize';
 import { resolveBelongsTo, type MentionVerdict } from '../engine/correlation';
-import { publicModelText } from '../public-output';
 import type { ClassifyAttachments } from './attachments';
 import { DEGRADED_SEVERITY } from './contracts';
 import type { ClassifyCore } from './core';
@@ -138,13 +136,12 @@ export class MentionHandler {
       if (signal.aborted) throw signal.reason;
       transcript = text;
     }
-    const scrubbed = scrubSecrets(transcript);
-    const candidates = await this.core.buildCandidates(tenantId, scrubbed);
+    const candidates = await this.core.buildCandidates(tenantId, transcript);
     const fallback: MentionVerdict = {
       decision: 'new_incident',
       service: serviceForChannel(channel),
       severity: DEGRADED_SEVERITY,
-      title: openingIncidentTitle(scrubSecrets(text), scrubSecrets(priorThread)).displayTitle,
+      title: openingIncidentTitle(text, priorThread).displayTitle,
       purpose: 'incident',
     };
     let verdict: MentionVerdict;
@@ -152,7 +149,7 @@ export class MentionHandler {
       verdict = deps.llm
         ? await deps.llm.execute(
             { tenantId, jobId: job.id, operation: 'characterize', signal },
-            ({ generator: current }) => characterizeThread(current, scrubbed, candidates),
+            ({ generator: current }) => characterizeThread(current, transcript, candidates),
           )
         : await characterizeThread(
             {
@@ -160,7 +157,7 @@ export class MentionHandler {
                 return generator!.generate(prompt, schema, { signal });
               },
             },
-            scrubbed,
+            transcript,
             candidates,
           );
     } catch {
@@ -188,11 +185,11 @@ export class MentionHandler {
           incidentId,
           channel,
           ts,
-          scrubSecrets(text),
+          text,
           breadcrumb,
           true,
           authorUserId,
-          scrubSecrets(priorThread),
+          priorThread,
         );
         await this.core.emitOutcome({
           intakeId: candidate.intakeId,
@@ -212,16 +209,16 @@ export class MentionHandler {
       fingerprint,
       { channel, threadId: rootTs },
       {
-        service: publicModelText(verdict.service),
+        service: verdict.service,
         severity: verdict.severity,
-        title: meaningfulIncidentTitle(publicModelText(verdict.title)) ?? fallback.title,
+        title: meaningfulIncidentTitle(verdict.title) ?? fallback.title,
         purpose: verdict.purpose,
       },
-      { currentMessage: scrubSecrets(text), priorThread: scrubSecrets(priorThread) },
-      scrubbed,
+      { currentMessage: text, priorThread },
+      transcript,
       {
         author: 'human',
-        content: scrubSecrets(text),
+        content: text,
         authorUserId,
         originSurface: 'slack',
         originMessageId: this.core.messageKey(channel, ts),
@@ -232,7 +229,7 @@ export class MentionHandler {
           owner,
           channel,
           ts,
-          scrubSecrets(text),
+          text,
           undefined,
           true,
           authorUserId,

@@ -6,7 +6,6 @@ import {
   resolveBelongsTo,
   type CorrelationVerdict,
 } from '../engine/correlation';
-import { publicModelText } from '../public-output';
 import type { ClassifyAttachments } from './attachments';
 import {
   DEGRADED_SEVERITY,
@@ -17,10 +16,8 @@ import { ClassifyCore, providerAlertTitle, serviceForChannel } from './core';
 
 interface VerdictRoutingInput {
   candidate: InboundCandidate;
-  scrubbedCandidate: InboundCandidate;
   job: Job;
   fingerprint: string;
-  scrubbedText: string;
   verdict: CorrelationVerdict;
   candidates: IncidentSummary[];
   resolutionCandidates: AuthorizedResolutionCandidate[];
@@ -38,18 +35,9 @@ export class VerdictRouter {
 
   /** Applies a server-validated verdict without making another model decision. */
   async apply(input: VerdictRoutingInput): Promise<void> {
-    const {
-      candidate,
-      scrubbedCandidate,
-      job,
-      scrubbedText,
-      verdict,
-      candidates,
-      enqueueWork,
-      outcome,
-    } = input;
+    const { candidate, job, verdict, candidates, enqueueWork, outcome } = input;
     const tenantId = job.tenantId;
-    if (verdict.decision === 'resolves_signal' || scrubbedCandidate.isEdit) {
+    if (verdict.decision === 'resolves_signal' || candidate.isEdit) {
       await outcome('resolution_unmatched');
       return;
     }
@@ -57,13 +45,13 @@ export class VerdictRouter {
       if (
         candidate.author === 'bot' &&
         candidate.alertKind === 'firing' &&
-        !resolutionIntentSupported(scrubbedText)
+        !resolutionIntentSupported(candidate.text)
       ) {
         await this.openIncident(
           input,
           serviceForChannel(candidate.channel),
           DEGRADED_SEVERITY,
-          providerAlertTitle(scrubbedText, scrubbedCandidate.observations),
+          providerAlertTitle(candidate.text, candidate.observations),
         );
         await outcome('provider_alert_opened');
         return;
@@ -78,8 +66,8 @@ export class VerdictRouter {
           await this.attachments.attachBot(
             tenantId,
             incidentId,
-            scrubbedCandidate,
-            scrubbedText,
+            candidate,
+            candidate.text,
             enqueueWork,
           );
         else
@@ -88,7 +76,7 @@ export class VerdictRouter {
             incidentId,
             candidate.channel,
             candidate.externalId,
-            scrubbedText,
+            candidate.text,
             undefined,
             enqueueWork,
           );
@@ -99,17 +87,12 @@ export class VerdictRouter {
         input,
         serviceForChannel(candidate.channel),
         DEGRADED_SEVERITY,
-        scrubbedText,
+        candidate.text,
       );
       await outcome('new_incident');
       return;
     }
-    await this.openIncident(
-      input,
-      publicModelText(verdict.service),
-      verdict.severity,
-      publicModelText(verdict.title),
-    );
+    await this.openIncident(input, verdict.service, verdict.severity, verdict.title);
     await outcome('new_incident');
   }
 
@@ -119,17 +102,17 @@ export class VerdictRouter {
     severity: 'sev1' | 'sev2' | 'sev3',
     title: string,
   ): Promise<void> {
-    const { candidate, scrubbedCandidate, job, fingerprint, scrubbedText } = input;
-    const signals = this.core.signalsFor(scrubbedCandidate);
+    const { candidate, job, fingerprint } = input;
+    const signals = this.core.signalsFor(candidate);
     await this.core.openNewIncident(
       job.tenantId,
       fingerprint,
       { channel: candidate.channel, threadId: candidate.externalId },
       { service, severity, title },
-      scrubbedCandidate.raw,
-      scrubbedText,
-      this.core.openerFor(candidate, scrubbedText),
-      this.attachments.foldIntoOwner(job.tenantId, scrubbedCandidate, scrubbedText),
+      candidate.raw,
+      candidate.text,
+      this.core.openerFor(candidate, candidate.text),
+      this.attachments.foldIntoOwner(job.tenantId, candidate, candidate.text),
       {
         signals,
       },

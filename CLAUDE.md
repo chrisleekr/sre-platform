@@ -45,7 +45,7 @@ The reasoning and current status of each lives in the philosophy page.
 - Every reliability figure resolves to an SLI query a human can re-run. Store SLO definitions and
   burn events, never SLI samples.
 - Every classifier outcome, `not_worthy` included, is recorded through `onOutcome`. `investigate` is
-  never the default. Retain `ticket` and `log` signals from the scrubbed text, never `candidate.raw`,
+  never the default. Retain `ticket` and `log` signals from the candidate text, never `candidate.raw`,
   and always with a retention bound.
 - No generated postmortem, runbook or summary names a person as a cause.
 - No fifth golden signal, no SLO per endpoint, no fixed enum of cause tags.

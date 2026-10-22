@@ -2,7 +2,6 @@ import type { InboundCandidate } from '@sre/connectors';
 import type { Job } from '@sre/queue';
 import type { ClassifyCore } from './core';
 import { persistDeterministicDisposition } from './semantic-routing';
-import { scrubInboundCandidate } from './scrub-candidate';
 
 /** Keeps terminal supersession checks and their durable log outcome consistent. */
 export class SupersessionGuard {
@@ -41,13 +40,10 @@ export class SupersessionGuard {
   }
 
   private async retain(candidate: InboundCandidate, job: Job): Promise<void> {
-    const { scrubbedText, scrubbedCandidate } = scrubInboundCandidate(candidate);
     await persistDeterministicDisposition({
       core: this.core,
       candidate,
-      scrubbedCandidate,
       job,
-      scrubbedText,
       disposition: 'log',
       reason: 'A stale provider event was retained without changing current signal state.',
     });

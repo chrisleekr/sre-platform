@@ -1,4 +1,3 @@
-import { scrubSecrets } from '@sre/agent-tools';
 import {
   getIncident,
   listIncidentRelations,
@@ -73,7 +72,7 @@ export class RelationReassessmentHandler {
         await setInvestigationStatus(deps.appDb, job.tenantId, incidentId, 'gathering');
         const runtime = await this.runtime.tools(job.tenantId, incident, { signal: ctx.signal });
         toolRuntime = runtime;
-        const context = scrubSecrets(renderIncidentRelationContext(incidentId, candidates));
+        const context = renderIncidentRelationContext(incidentId, candidates);
         await this.disposition.runEngine(
           job.tenantId,
           incident,

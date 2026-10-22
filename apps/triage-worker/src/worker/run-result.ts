@@ -1,7 +1,6 @@
 import { headlineHypothesis, type IncidentFindingPayload } from '@sre/contracts';
 import type { CompleteInvestigationRunInput } from '@sre/db';
 import type { TriageResult } from '../engine/types';
-import { publicModelText } from '../public-output';
 
 export function restrictEvidenceToReceipts(result: TriageResult): TriageResult {
   const receipts = [
@@ -118,11 +117,11 @@ export function incidentFindingPayload(
     promotion,
     promotionReason,
     evidenceIds: [...new Set(result.evidenceIds ?? [])],
-    currentState: result.currentState ? publicModelText(result.currentState) : null,
-    impact: result.impact ? publicModelText(result.impact) : null,
-    nextStep: result.nextStep ? publicModelText(result.nextStep) : null,
-    ...(result.reviewGaps?.length ? { gaps: result.reviewGaps.map(publicModelText) } : {}),
-    ...(likelyCause ? { likelyCause: publicModelText(likelyCause) } : {}),
+    currentState: result.currentState || null,
+    impact: result.impact || null,
+    nextStep: result.nextStep || null,
+    ...(result.reviewGaps?.length ? { gaps: result.reviewGaps } : {}),
+    ...(likelyCause ? { likelyCause } : {}),
     ...(result.links?.length ? { links: result.links } : {}),
   };
 }
@@ -130,47 +129,42 @@ export function incidentFindingPayload(
 export function investigationRunResult(result: TriageResult): Record<string, unknown> {
   return {
     disposition: result.disposition ?? null,
-    summary: publicModelText(result.summary),
+    summary: result.summary,
     confidence: result.confidence,
     ...(result.evidenceIds !== undefined ? { evidenceIds: result.evidenceIds } : {}),
-    ...(result.detail !== undefined ? { detail: publicModelText(result.detail) } : {}),
+    ...(result.detail !== undefined ? { detail: result.detail } : {}),
     ...(result.rankedHypotheses !== undefined
       ? {
           rankedHypotheses: result.rankedHypotheses.map((hypothesis) => ({
-            hypothesis: publicModelText(hypothesis.hypothesis),
+            hypothesis: hypothesis.hypothesis,
             confidence: hypothesis.confidence,
-            evidence: publicModelText(hypothesis.evidence),
+            evidence: hypothesis.evidence,
             ...(hypothesis.state !== undefined ? { state: hypothesis.state } : {}),
             supportingEvidenceIds: hypothesis.supportingEvidenceIds ?? [],
             contradictingEvidenceIds: hypothesis.contradictingEvidenceIds ?? [],
           })),
         }
       : {}),
-    ...(result.currentState !== undefined
-      ? { currentState: result.currentState ? publicModelText(result.currentState) : null }
-      : {}),
-    ...(result.impact !== undefined
-      ? { impact: result.impact ? publicModelText(result.impact) : null }
-      : {}),
+    ...(result.currentState !== undefined ? { currentState: result.currentState || null } : {}),
+    ...(result.impact !== undefined ? { impact: result.impact || null } : {}),
     ...(result.unknowns !== undefined
       ? {
           unknowns: result.unknowns.map((gap) => ({
-            question: publicModelText(gap.question),
+            question: gap.question,
             category: gap.category,
             evidenceKind: gap.evidenceKind,
             attemptedEvidenceIds: gap.attemptedEvidenceIds,
           })),
         }
       : {}),
-    ...(result.nextStep !== undefined
-      ? { nextStep: result.nextStep ? publicModelText(result.nextStep) : null }
-      : {}),
-    ...(result.reviewGaps?.length ? { gaps: result.reviewGaps.map(publicModelText) } : {}),
+    ...(result.nextStep !== undefined ? { nextStep: result.nextStep || null } : {}),
+    ...(result.reviewGaps?.length ? { gaps: result.reviewGaps } : {}),
+    ...(result.review !== undefined ? { review: result.review } : {}),
     ...(result.causalFindings !== undefined
       ? {
           causalFindings: result.causalFindings.map((finding) => ({
             ...finding,
-            rationale: publicModelText(finding.rationale),
+            rationale: finding.rationale,
             evidenceIds: [...new Set(finding.evidenceIds)],
           })),
         }
@@ -178,10 +172,10 @@ export function investigationRunResult(result: TriageResult): Record<string, unk
     ...(result.approval !== undefined
       ? {
           approval: {
-            prompt: publicModelText(result.approval.prompt),
+            prompt: result.approval.prompt,
             options: result.approval.options.map((option) => ({
               id: option.id,
-              label: publicModelText(option.label),
+              label: option.label,
             })),
           },
         }
@@ -194,28 +188,19 @@ export function investigationRunResult(result: TriageResult): Record<string, unk
             recovered: result.recovery.recovered,
             evidenceIds: result.recovery.evidenceIds ?? [],
             evidence: result.recovery.evidence.map((check) => ({
-              name: publicModelText(check.name),
-              before: check.before ? publicModelText(check.before) : null,
-              now: publicModelText(check.now),
+              name: check.name,
+              before: check.before || null,
+              now: check.now,
             })),
-            unknowns: (
+            unknowns:
               result.recovery.questions?.map((question) => question.question) ??
-              result.recovery.unknowns
-            ).map(publicModelText),
+              result.recovery.unknowns,
             ...(result.recovery.questions !== undefined
-              ? {
-                  questions: result.recovery.questions.map((question) => ({
-                    ...question,
-                    question: publicModelText(question.question),
-                    nextAction: publicModelText(question.nextAction),
-                  })),
-                }
+              ? { questions: result.recovery.questions }
               : {}),
-            nextStep: result.recovery.nextStep ? publicModelText(result.recovery.nextStep) : null,
+            nextStep: result.recovery.nextStep || null,
             recheckAfterMinutes: result.recovery.recheckAfterMinutes ?? null,
-            scheduleReason: result.recovery.scheduleReason
-              ? publicModelText(result.recovery.scheduleReason)
-              : null,
+            scheduleReason: result.recovery.scheduleReason ? result.recovery.scheduleReason : null,
           },
         }
       : {}),

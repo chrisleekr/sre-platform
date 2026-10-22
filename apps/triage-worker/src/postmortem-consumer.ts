@@ -23,7 +23,6 @@ import {
 } from './blameless';
 import { ProviderUnavailableError, type StructuredGenerator } from './engine/types';
 import type { LlmRuntimeManager } from './llm-runtime';
-import { publicModelText } from './public-output';
 
 // Same redelivery ceiling as the runbook consumer: a sustained provider outage posts "generation
 // failed" (dashboard-only) and ACKS before the queue dead-letters. Never fails the incident.
@@ -107,7 +106,7 @@ export interface PostmortemHandlerDeps {
 
 class TerminalGenerationError extends Error {}
 
-// `min(1)` admits whitespace-only prose, which publicModelText would turn into its fallback sentence.
+// `min(1)` admits whitespace-only prose.
 const isBlank = (text: string): boolean => text.trim().length === 0;
 const nonBlank = (text: string): boolean => !isBlank(text);
 const hasBlankProse = (draft: PostmortemDraft): boolean =>
@@ -225,8 +224,7 @@ export function makePostmortemHandler(
     const transcript = hub.history ? await hub.history(tenantId, incidentId) : [];
     const prompt = buildPrompt(incident, trigger, transcript);
     const identifiers = collectHumanIdentifiers(await listEmails(tenantId), prompt);
-    const clean = (text: string): string =>
-      stripHumanIdentifiers(publicModelText(text), identifiers);
+    const clean = (text: string): string => stripHumanIdentifiers(text, identifiers);
     const allowedEvidence = new Set(incident.assessmentEvidenceIds ?? []);
 
     const gen = async (): Promise<PostmortemDraft> => {

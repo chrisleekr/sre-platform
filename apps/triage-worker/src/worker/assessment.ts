@@ -15,7 +15,6 @@ import {
 import { and, eq, inArray } from 'drizzle-orm';
 
 import type { TriageResult } from '../engine/types';
-import { publicModelText } from '../public-output';
 import {
   promoteCausalityAndRefreshRecovery,
   publishCausalResponseEffects,
@@ -208,7 +207,7 @@ export async function persistAssessment(
     priorInvestigationStatus,
     humanMessageFence,
   } = options;
-  const summary = publicModelText(result.summary);
+  const summary = result.summary;
   const finding = incidentFindingPayload(
     result,
     runId,
@@ -222,21 +221,18 @@ export async function persistAssessment(
     summary,
     confidence: result.confidence,
     rankedHypotheses: result.rankedHypotheses?.map((hypothesis) => ({
-      hypothesis: publicModelText(hypothesis.hypothesis),
+      hypothesis: hypothesis.hypothesis,
       confidence: hypothesis.confidence,
-      evidence: publicModelText(hypothesis.evidence),
+      evidence: hypothesis.evidence,
       state: hypothesis.state,
       supportingEvidenceIds: hypothesis.supportingEvidenceIds,
       contradictingEvidenceIds: hypothesis.contradictingEvidenceIds,
     })),
-    currentState: result.currentState ? publicModelText(result.currentState) : null,
-    impact: result.impact ? publicModelText(result.impact) : null,
+    currentState: result.currentState || null,
+    impact: result.impact || null,
     assessmentEvidenceIds: result.evidenceIds ?? [],
-    unknowns: (result.unknowns ?? []).map((gap) => ({
-      ...gap,
-      question: publicModelText(gap.question),
-    })),
-    nextStep: result.nextStep ? publicModelText(result.nextStep) : null,
+    unknowns: result.unknowns ?? [],
+    nextStep: result.nextStep || null,
     engineModel: result.model,
     trustedAssessmentRunId: runId,
     resumeMessageId,

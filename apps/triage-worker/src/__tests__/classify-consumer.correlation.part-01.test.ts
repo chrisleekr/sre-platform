@@ -386,24 +386,6 @@ describe('push correlation', () => {
     expect(seen.candidates).toHaveLength(__fixture.RETRIEVE_K);
   });
 
-  test('C10 the candidate text is secret-scrubbed before it reaches the classifier AND the embedder', async () => {
-    const SECRET = 'sk-abcdefghijklmnopqrstuvwx1234';
-    const { handler, seen } = __fixture.setup({
-      verdict: { decision: 'new_incident', service: 'checkout', severity: 'sev2', title: 't' },
-    });
-
-    await handler(
-      __fixture.makeJob({ payload: __fixture.makeCandidate({ text: `here is ${SECRET}` }) }),
-    );
-
-    // The classifier saw scrubbed text.
-    expect(seen.candidate!.text).not.toContain(SECRET);
-    expect(seen.candidate!.text).toContain('[REDACTED]');
-    // The seed the embedder received is scrubbed too.
-    const embeddedTexts = __fixture.embedSpy.mock.calls.flatMap((c) => c[0]);
-    expect(embeddedTexts.join(' ')).not.toContain(SECRET);
-  });
-
   test('C9 fail-open regression: a sustained provider outage opens a DEGRADED incident; correlation is not consulted', async () => {
     const { handler, route, appendOnce, enqueueResume } = __fixture.setup({
       verdict: { decision: 'belongs_to', index: 1 },

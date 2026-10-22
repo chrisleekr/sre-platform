@@ -14,7 +14,6 @@ import {
 import { RetryableError, type Job } from '@sre/queue';
 import { encodeForModel } from '../engine/toon';
 import { ProviderUnavailableError } from '../engine/types';
-import { publicModelText } from '../public-output';
 import { automaticInvestigationBudgetLimits } from './admission';
 import type { WorkerRuntime } from './runtime';
 
@@ -114,7 +113,7 @@ export class CohortAnalysisHandler {
             sourceIncidentId,
             targetIncidentId,
             type: decision.decision,
-            rationale: publicModelText(decision.rationale),
+            rationale: decision.rationale,
             evidence: [
               `cohort:${cohortId}`,
               `window_started_at:${analysis.cohort.windowStartedAt.toISOString()}`,

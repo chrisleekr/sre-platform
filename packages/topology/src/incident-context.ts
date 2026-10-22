@@ -63,6 +63,15 @@ export function incidentTopologyContext(
       return { candidateKey: request.key, status: 'needs_evidence', candidateSubjectKeys: [] };
     if (request.candidate?.topologyRef && discovery)
       return observedTopologySubject(request.candidate, discovery, graph);
+    // Webhook labels keep plain name selection; only alert text names a resource without a locator.
+    if (
+      request.candidate?.provenance.kind === 'provider_label' &&
+      request.candidate.provenance.source === 'alert_text' &&
+      request.candidate.kind !== 'service' &&
+      request.candidate.scope.namespace &&
+      discovery
+    )
+      return labelledTopologySubject(request.candidate, discovery, graph);
     const result = selectTopologySubject(graph, {
       key: request.subjectKey,
       name: request.name,
@@ -100,6 +109,49 @@ export function incidentTopologyContext(
   };
 }
 
+/** Resolve a provider-labelled namespaced resource only through one fresh exact inventory entity.
+ * @param candidate - Provider-labelled candidate carrying its namespace.
+ * @param discovery - Tenant-scoped provider evidence.
+ * @param graph - Shared operational projection.
+ */
+function labelledTopologySubject(
+  candidate: AffectedEntityCandidate,
+  discovery: DiscoveredTopologyGraph,
+  graph: OperationalTopology,
+): IncidentTopologyContext['resolutions'][number] {
+  const hits = discovery.entities.filter(
+    (entity) =>
+      !entity.stale &&
+      entity.kind === candidate.kind &&
+      entity.name === candidate.stableId &&
+      // Same scope rule as selectTopologySubject, so a cluster or source pin is never widened.
+      Object.entries(candidate.scope).every(
+        ([key, value]) =>
+          !value ||
+          (key === 'dataSourceId'
+            ? entity.sources.some((source) => source.connectorId === value)
+            : entity.scope[key] === value),
+      ),
+  );
+  if (hits.length !== 1)
+    return {
+      candidateKey: candidate.key,
+      status: hits.length ? 'ambiguous' : 'unmapped',
+      candidateSubjectKeys: [],
+    };
+  // The matched inventory entity is now the exact locator, so ownership resolves as for a snapshot.
+  return observedTopologySubject(
+    {
+      ...candidate,
+      scope: {},
+      topologyRef: hits[0]!.ref,
+      provenance: { kind: 'platform_snapshot', source: candidate.provenance.source },
+    },
+    discovery,
+    graph,
+  );
+}
+
 /** Read incident context with shared automatic topology, preserving human corrections and raw observations.
  * @param db - RLS-scoped application database.
  * @param tenantId - Workspace owning the incident and connector evidence.
@@ -127,25 +179,35 @@ export async function readIncidentTopologySources(
   const context = await resolveIncidentEntityContext(db, tenantId, incidentId);
   if (!context) return null;
   const graph = await readDiscoveredTopology(db, tenantId);
-  const selection = incidentTopologyContext(context, graph.operational, graph);
-  if (!selection.resolutions.length) return null;
+  const kinds = new Map(
+    context.observations.flatMap((observation) =>
+      observation.candidates.map((candidate) => [candidate.key, candidate.kind] as const),
+    ),
+  );
+  // Nodes and namespaces have no source of their own, so leaving one unmapped hides no repository.
+  const resolutions = incidentTopologyContext(context, graph.operational, graph).resolutions.filter(
+    (item) =>
+      item.status !== 'unmapped' ||
+      !['node', 'namespace'].includes(kinds.get(item.candidateKey) ?? ''),
+  );
+  if (!resolutions.length) return null;
   if (
     legacyService &&
     context.mappings.length &&
     context.mappings.every(
       (mapping) => mapping.method === 'human' && mapping.serviceName === legacyService,
     ) &&
-    selection.resolutions.every((item) => item.status === 'unmapped')
+    resolutions.every((item) => item.status === 'unmapped')
   )
     return null;
   const keys = [
-    ...new Set(selection.resolutions.flatMap((item) => (item.subjectKey ? [item.subjectKey] : []))),
+    ...new Set(resolutions.flatMap((item) => (item.subjectKey ? [item.subjectKey] : []))),
   ];
-  if (keys.length === 1 && selection.resolutions.every((item) => item.status === 'resolved'))
+  if (keys.length === 1 && resolutions.every((item) => item.status === 'resolved'))
     return discoveredSourceEvidence(graph, { key: keys[0] });
   return {
     status:
-      selection.resolutions.some((item) => item.status === 'ambiguous') || keys.length > 1
+      resolutions.some((item) => item.status === 'ambiguous') || keys.length > 1
         ? 'ambiguous'
         : 'unavailable',
     subject: null,

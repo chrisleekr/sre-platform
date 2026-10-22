@@ -76,7 +76,7 @@ describe('makeClassifyHandler provider title fallback', () => {
           eventKey: 'provider-event',
           eventAt,
           provider: 'prometheus-alertmanager',
-          alertName: `  Pod is crash looping. ${secret}  `,
+          alertName: `Pod is crash looping. ${secret}`,
         },
       ],
     });
@@ -90,16 +90,16 @@ describe('makeClassifyHandler provider title fallback', () => {
       handler(__fixture.makeJob({ payload: candidate, attempts: 0 })),
     ).resolves.toBeUndefined();
 
+    // Provider text is not redacted.
     expect(route.mock.calls[0]![0]).toMatchObject({
-      title: 'Pod is crash looping. [REDACTED]',
+      title: `Pod is crash looping. ${secret}`,
       investigationStatus: 'degraded',
       context: {
-        text: '[FIRING] Pod is crash looping. [REDACTED]',
-        attachments: [{ text: 'credential=[REDACTED]' }],
+        text: `[FIRING] Pod is crash looping. ${secret}`,
+        attachments: [{ text: `credential=${secret}` }],
       },
-      signals: [expect.objectContaining({ alertName: 'Pod is crash looping. [REDACTED]' })],
+      signals: [expect.objectContaining({ alertName: `Pod is crash looping. ${secret}` })],
     });
-    expect(JSON.stringify(route.mock.calls[0]![0])).not.toContain(secret);
   });
 
   test.each([
@@ -109,7 +109,7 @@ describe('makeClassifyHandler provider title fallback', () => {
       'classified incident',
       { decision: 'new_incident', service: 'checkout', severity: 'sev2', title: 'Checkout alert' },
     ],
-  ] as const)('scrubs raw context on the %s path', async (_name, verdict) => {
+  ] as const)('keeps raw context on the %s path', async (_name, verdict) => {
     const secret = 'sk-abcdefghijklmnopqrstuvwx1234';
     const candidate = __fixture.makeCandidate({
       author: 'bot',
@@ -127,11 +127,10 @@ describe('makeClassifyHandler provider title fallback', () => {
     expect(route).toHaveBeenCalledTimes(1);
     expect(route.mock.calls[0]![0]).toMatchObject({
       context: {
-        text: '[FIRING] Checkout alert [REDACTED]',
-        attachments: [{ text: 'credential=[REDACTED]' }],
+        text: `[FIRING] Checkout alert ${secret}`,
+        attachments: [{ text: `credential=${secret}` }],
       },
     });
-    expect(JSON.stringify(route.mock.calls[0]![0])).not.toContain(secret);
   });
 });
 
@@ -346,22 +345,6 @@ describe('makeClassifyHandler mention pull path', () => {
     expect(sig.severity).toBe('sev3');
     expect(sig.purpose).toBe('incident');
     expect((sig as { title?: string }).title).toBe('checkout is on fire');
-  });
-
-  test('M4 the transcript is secret-scrubbed before it reaches route context and the hub', async () => {
-    const SECRET = 'sk-abcdefghijklmnopqrstuvwx1234';
-    const { handler, route, append } = __fixture.setupMention({
-      transcript: [{ user: 'U_HUMAN', text: `here is the key ${SECRET}`, ts: __fixture.ROOT_TS }],
-    });
-
-    await expect(handler(__fixture.makeMentionJob())).resolves.toBeUndefined();
-
-    const context = JSON.stringify(route.mock.calls[0]![0].context);
-    expect(context).not.toContain(SECRET);
-    expect(context).toContain('[REDACTED]');
-    expect(append).not.toHaveBeenCalled();
-    const hubContent = (route.mock.calls[0]![0].opener as { content: string }).content;
-    expect(hubContent).not.toContain(SECRET);
   });
 
   test('a mention-only failed characterization uses opening context, not post-trigger chatter', async () => {

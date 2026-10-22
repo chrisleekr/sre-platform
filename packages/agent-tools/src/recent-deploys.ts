@@ -23,11 +23,13 @@ export function makeFetchRecentDeploysTool(deps: {
   return {
     name: 'fetch_recent_deploys',
     description:
-      'Return a service recent deploys (newest first): provider event, repo, environment, actor, ref, full revision, status, URL, and provider timestamps. Defaults to the incident service; pass a service to re-scope, or a limit to bound the count.',
+      'Return a service recent deploys (newest first): provider event, repo, environment, actor, ref, full revision, status, URL, and provider timestamps. Defaults to the incident service, or every service when the incident only has a Slack channel placeholder; pass a service to re-scope, or a limit to bound the count.',
     inputSchema: fetchRecentDeploysInput,
     async handler(ctx, input) {
+      const service = input.service ?? ctx.service;
       const data = await recentDeploys(deps.db, ctx.tenantId, {
-        service: input.service ?? ctx.service,
+        // Deploy rows carry provider app names, never a Slack channel placeholder, so read tenant-wide.
+        service: service.startsWith('slack:') ? undefined : service,
         limit: input.limit,
       });
       return { available: true, data };

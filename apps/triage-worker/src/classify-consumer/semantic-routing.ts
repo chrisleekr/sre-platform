@@ -1,5 +1,4 @@
 import type { InboundCandidate } from '@sre/connectors';
-import { scrubSecrets } from '@sre/agent-tools';
 import {
   findSignalDispositionBySourceEvent,
   getIncident,
@@ -102,17 +101,15 @@ async function currentSignalClassificationMode(
     : 'shadow';
 }
 
-/** Runs and persists one scrubbed semantic proposal when the composition enables it. */
+/** Runs and persists one semantic proposal when the composition enables it. */
 export async function proposeSemanticDisposition(input: {
   core: ClassifyCore;
   candidate: InboundCandidate;
-  scrubbedCandidate: InboundCandidate;
   job: Job;
   signal: AbortSignal;
   candidates: IncidentSummary[];
   resolutionCandidates: ResolutionCandidate[];
   allResolutionCandidates: ResolutionCandidate[];
-  scrubbedText: string;
 }): Promise<{
   mode: 'shadow' | 'enforce';
   semantic: SemanticDisposition | null;
@@ -121,13 +118,11 @@ export async function proposeSemanticDisposition(input: {
   const {
     core,
     candidate,
-    scrubbedCandidate,
     job,
     signal,
     candidates,
     resolutionCandidates,
     allResolutionCandidates,
-    scrubbedText,
   } = input;
   const { deps } = core;
   if (signal.aborted) throw signal.reason;
@@ -210,20 +205,20 @@ export async function proposeSemanticDisposition(input: {
       projectDurableSignalContext({
         signalId: candidate.eventKey,
         jobId: job.id,
-        summary: scrubbedText,
+        summary: candidate.text,
         author: candidate.author,
-        providerGroupKey: scrubbedCandidate.observations?.[0]?.providerGroupKey ?? null,
+        providerGroupKey: candidate.observations?.[0]?.providerGroupKey ?? null,
         signalState: candidate.signalState,
         correlationCandidates: candidates.map((item, index) => ({
           index: index + 1,
-          title: scrubSecrets(item.title ?? item.service),
-          service: scrubSecrets(item.service),
+          title: item.title ?? item.service,
+          service: item.service,
         })),
         resolutionCandidates: resolutionCandidates.map((item, index) => ({
           index: index + 1,
-          title: scrubSecrets(item.title ?? item.service),
-          service: scrubSecrets(item.service),
-          summary: scrubSecrets(item.summary),
+          title: item.title ?? item.service,
+          service: item.service,
+          summary: item.summary,
         })),
       }),
       {
@@ -276,12 +271,12 @@ export async function proposeSemanticDisposition(input: {
       sourceEventAt: new Date(candidate.eventAt),
       sourceEventVersion: candidate.eventVersion ?? null,
       signalKey:
-        scrubbedCandidate.observations?.[0]?.monitorKey ??
+        candidate.observations?.[0]?.monitorKey ??
         `slack:${candidate.channel}:${candidate.externalId}`,
       surface: 'slack',
       channel: candidate.channel,
       threadId: candidate.externalId,
-      summary: scrubbedText,
+      summary: candidate.text,
       reason: semantic.reason,
       service: semantic.service ?? null,
       severity: semantic.severity ?? null,
@@ -378,9 +373,7 @@ export interface DeterministicCorrelation {
 export async function persistEffectiveDisposition(input: {
   core: ClassifyCore;
   candidate: InboundCandidate;
-  scrubbedCandidate: InboundCandidate;
   job: Job;
-  scrubbedText: string;
   disposition: SignalDisposition;
   mode: 'shadow' | 'enforce';
   reason: string;
@@ -415,14 +408,14 @@ export async function persistEffectiveDisposition(input: {
     sourceEventAt: new Date(input.candidate.eventAt),
     sourceEventVersion: input.candidate.eventVersion ?? null,
     signalKey:
-      input.scrubbedCandidate.observations?.[0]?.monitorKey ??
+      input.candidate.observations?.[0]?.monitorKey ??
       `slack:${input.candidate.channel}:${input.candidate.externalId}`,
     surface: 'slack',
     channel: input.candidate.channel,
     threadId: input.candidate.externalId,
-    summary: input.scrubbedText,
+    summary: input.candidate.text,
     reason: input.reason,
-    service: input.scrubbedCandidate.observations?.[0]?.providerGroupKey ?? null,
+    service: input.candidate.observations?.[0]?.providerGroupKey ?? null,
     disposition: input.disposition,
     classificationMode: input.mode,
     effectiveDisposition: input.disposition,
@@ -442,9 +435,7 @@ export async function persistEffectiveDisposition(input: {
 export async function persistDeterministicDisposition(input: {
   core: ClassifyCore;
   candidate: InboundCandidate;
-  scrubbedCandidate: InboundCandidate;
   job: Job;
-  scrubbedText: string;
   disposition: SignalDisposition;
   reason: string;
   correlated?: DeterministicCorrelation;
@@ -461,11 +452,10 @@ export async function persistDeterministicDisposition(input: {
 /** Maps legacy-safe routing into the disposition that actually controlled work. */
 function legacyEffectiveDisposition(input: {
   candidate: InboundCandidate;
-  scrubbedCandidate: InboundCandidate;
   decision: string;
   hasResolutionIntent: boolean;
 }): SignalDisposition {
-  if (input.scrubbedCandidate.isEdit || input.decision === 'resolves_signal') return 'log';
+  if (input.candidate.isEdit || input.decision === 'resolves_signal') return 'log';
   if (input.decision !== 'not_worthy') return 'investigate';
   return input.candidate.author === 'bot' &&
     input.candidate.alertKind === 'firing' &&
@@ -478,9 +468,7 @@ function legacyEffectiveDisposition(input: {
 export function persistLegacyEffectiveDisposition(input: {
   core: ClassifyCore;
   candidate: InboundCandidate;
-  scrubbedCandidate: InboundCandidate;
   job: Job;
-  scrubbedText: string;
   mode: 'shadow';
   decision: string;
   hasResolutionIntent: boolean;
@@ -488,9 +476,7 @@ export function persistLegacyEffectiveDisposition(input: {
   return persistEffectiveDisposition({
     core: input.core,
     candidate: input.candidate,
-    scrubbedCandidate: input.scrubbedCandidate,
     job: input.job,
-    scrubbedText: input.scrubbedText,
     disposition: legacyEffectiveDisposition(input),
     mode: input.mode,
     reason: 'Legacy-safe routing decision retained during semantic shadow evaluation.',

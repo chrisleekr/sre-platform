@@ -1,4 +1,3 @@
-import { redactInput, scrubSecrets } from '@sre/agent-tools';
 import {
   hasToolCall,
   latestToolCall,
@@ -9,6 +8,7 @@ import {
   type IncidentEvidence,
 } from '@sre/db';
 import type { Job } from '@sre/queue';
+import { resolveIncidentTopologyContext } from '@sre/topology';
 import { interpretImage } from '../engine/interpret-image';
 import { measureEvidenceBlock } from '../engine/shared';
 import type { IncidentRow, TriageWorkerDeps } from './contracts';
@@ -73,6 +73,80 @@ export async function reloadIncidentEvidence(
   });
 }
 
+type TopologyContext = NonNullable<Awaited<ReturnType<typeof resolveIncidentTopologyContext>>>;
+
+/**
+ * Namespaces and nodes that scope the first-pass read. Namespaces come from resolved topology
+ * subjects, and only when none resolved from alert labels: the Kubernetes connector reads the first
+ * namespace, but ArgoCD matches apps in every one, so an exporter's label (node-exporter alerts carry
+ * `monitoring`) beside a resolved namespace would widen that match. Nodes always come from labels.
+ * Inferred candidates are skipped, as topology refuses to let them establish identity.
+ * @param context - Resolved incident topology and the raw signal candidates behind it.
+ */
+export function firstPassScope(context: Pick<TopologyContext, 'observations' | 'topology'>): {
+  namespaces: string[];
+  nodes: string[];
+} {
+  const subjects = new Map(context.topology.subjects.map((subject) => [subject.key, subject]));
+  const resolved = context.topology.resolutions.flatMap((item) => {
+    const namespace = item.subjectKey && subjects.get(item.subjectKey)?.scope.namespace;
+    return item.status === 'resolved' && namespace ? [namespace] : [];
+  });
+  const candidates = context.observations.flatMap((observation) =>
+    observation.candidates.filter(
+      (candidate) => candidate.provenance.kind !== 'classifier_inference',
+    ),
+  );
+  // Slack alert text never emits a namespace candidate; it carries the namespace on the workload.
+  const labelled = candidates.flatMap((candidate) => {
+    const namespace =
+      candidate.kind === 'namespace' ? candidate.stableId : candidate.scope.namespace;
+    return namespace ? [namespace] : [];
+  });
+  return {
+    namespaces: [...new Set(resolved.length ? resolved : labelled)],
+    nodes: [
+      ...new Set(
+        candidates.flatMap((candidate) => (candidate.kind === 'node' ? [candidate.stableId] : [])),
+      ),
+    ],
+  };
+}
+
+/** First-pass scope for one incident, or none when its topology cannot be read.
+ * @param deps - Worker dependencies supplying the database.
+ * @param tenantId - Tenant whose incident is read.
+ * @param incidentId - Incident whose affected entities scope the first-pass read.
+ */
+async function triageScope(
+  deps: Pick<TriageWorkerDeps, 'appDb'>,
+  tenantId: string,
+  incidentId: string,
+): Promise<{ namespaces: string[]; nodes: string[] }> {
+  const context = await resolveIncidentTopologyContext(deps.appDb, tenantId, incidentId).catch(
+    (error: unknown) => {
+      // Unscoped reads still run, so a topology outage degrades the seed instead of failing it.
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          app: 'triage-worker',
+          event: 'firstpass.scope_unavailable',
+          tenantId,
+          incidentId,
+          // Name plus SQLSTATE only, for the same endpoint-leak reason as evidence_bounds_unavailable.
+          reason: error instanceof Error ? error.name : 'unknown',
+          code:
+            typeof (error as { code?: unknown })?.code === 'string'
+              ? (error as { code: string }).code
+              : undefined,
+        }),
+      );
+      return null;
+    },
+  );
+  return context ? firstPassScope(context) : { namespaces: [], nodes: [] };
+}
+
 export class WorkerEvidence {
   constructor(private readonly runtime: WorkerRuntime) {}
 
@@ -85,6 +159,7 @@ export class WorkerEvidence {
     const connectors = await deps.connectorProvider(tenantId)();
     if (connectors.length === 0) return [];
     const startedAt = Date.now();
+    const scope = await triageScope(deps, tenantId, incident.id);
     try {
       const results = await Promise.allSettled(
         connectors.map(async (connector) => ({
@@ -92,19 +167,21 @@ export class WorkerEvidence {
           context: await connector.fetchTriageContext({
             service: incident.service,
             windowMinutes,
+            scope,
           }),
         })),
       );
-      const raw = {
+      const output = {
+        scope,
         sources: results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : [])),
         unavailable: results.flatMap((result, index) =>
           result.status === 'rejected' ? [connectors[index]!.type] : [],
         ),
       };
-      const output = redactInput(raw);
       const evidenceId = await recordToolCall(deps.appDb, tenantId, {
         incidentId: incident.id,
         tool: 'fetch_triage_context',
+        // Input stays the dedupe key older rows were stored under; the scope rides in the output.
         input: { service: incident.service, windowMinutes },
         latencyMs: Date.now() - startedAt,
         outcome: 'data',
@@ -172,10 +249,8 @@ export class WorkerEvidence {
       let interpretation: string;
       try {
         const { bytes } = await fetchAttachment(tenantId, image.urlPrivate);
-        interpretation = scrubSecrets(
-          await this.runtime.executeVision(job, incident.id, signal, (vision) =>
-            interpretImage(vision, bytes, image.mimetype, { signal }),
-          ),
+        interpretation = await this.runtime.executeVision(job, incident.id, signal, (vision) =>
+          interpretImage(vision, bytes, image.mimetype, { signal }),
         );
       } catch {
         if (signal.aborted) throw signal.reason;

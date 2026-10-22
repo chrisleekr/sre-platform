@@ -1,6 +1,5 @@
 import { randomBytes } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { redactInput } from '@sre/agent-tools';
 import type { LlmTelemetryEventInput } from '@sre/db';
 
 const OTLP_PATH = '/v1/logs';
@@ -21,8 +20,8 @@ interface ReceiverState {
 
 /**
  * Starts one authenticated loopback OTLP/HTTP receiver for one Claude Agent SDK query.
- * Standard provider logs are redacted and persisted through the caller. Raw API bodies stay
- * disabled because arbitrary prompts and tool results cannot be made safe by best-effort scrubbing.
+ * Standard provider logs are persisted through the caller. Raw API bodies stay disabled; only the
+ * receiver's own auth token is removed from gap reasons.
  * A receiver gap makes the invocation telemetry explicitly incomplete.
  */
 export async function startClaudeTelemetry(
@@ -175,7 +174,7 @@ async function processRecord(
     providerSequence,
     providerTimestamp,
     model,
-    payload: redactInput(payload),
+    payload,
     bodyBytes,
   });
 }

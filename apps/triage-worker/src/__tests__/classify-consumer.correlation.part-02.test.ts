@@ -130,27 +130,6 @@ describe('mention correlation', () => {
     });
   });
 
-  test('C10 the mention transcript is secret-scrubbed before the embedder (new_incident seed)', async () => {
-    const SECRET = 'sk-abcdefghijklmnopqrstuvwx1234';
-    const { handler } = __fixture.setupMention({
-      verdict: { decision: 'new_incident', service: 'checkout', severity: 'sev2', title: 't' },
-      readText: `checkout is on fire ${SECRET}`,
-    });
-
-    await handler({
-      id: 'jm',
-      tenantId: 'tenant-1',
-      type: 'classify',
-      attempts: 1,
-      payload: __fixture.makeMentionPayload(),
-    });
-
-    // The seed the local embedder received is scrubbed (criterion 10, mention path).
-    const embeddedTexts = __fixture.embedSpy.mock.calls.flatMap((c) => c[0]);
-    expect(embeddedTexts.length).toBeGreaterThan(0);
-    expect(embeddedTexts.join(' ')).not.toContain(SECRET);
-  });
-
   // --- a hallucinated index on a thread that is ALREADY under investigation -----------------
   // C6 above pins the fallback: a bad index opens a new incident on the mention fingerprint. But that
   // fingerprint is `slack:{channel}:{rootTs}` — thread-derived — so when the thread's own incident is

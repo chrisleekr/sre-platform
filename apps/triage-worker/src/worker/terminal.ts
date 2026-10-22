@@ -12,7 +12,6 @@ import {
 import type { IncidentFindingPromotionReason } from '@sre/contracts';
 import { buildEvidenceBrief } from '../evidence-brief';
 import type { TriageResult } from '../engine/types';
-import { publicModelText } from '../public-output';
 import type { EngineToolRuntime, WorkerRuntime } from './runtime';
 import { incidentFindingPayload } from './run-result';
 
@@ -90,7 +89,7 @@ interface NonPromotingRunInput {
 /** Completes a non-promoting run with its run-linked finding and operator state in one transaction. */
 export async function persistNonPromotingRun(input: NonPromotingRunInput): Promise<boolean> {
   const { runtime, tenantId, incidentId, result, runId } = input;
-  const summary = publicModelText(result.summary);
+  const summary = result.summary;
   const reason = input.promotionReason ?? nonPromotionReason(result);
   if (!runId) {
     await setInvestigationStatus(

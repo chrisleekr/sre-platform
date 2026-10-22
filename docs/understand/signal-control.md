@@ -9,7 +9,7 @@ Two questions are answered separately for every material message:
 - **Correlation**: which incident, if any, this belongs to. A message can join an existing incident,
   resolve an open alert, or stand alone.
 
-Both are decided in one model call, on scrubbed text, with no diagnostic tool calls. Neither
+Both are decided in one model call, on the message text, with no diagnostic tool calls. Neither
 decision depends on the other. The [glossary](glossary.md) defines **Disposition** and **Signal**.
 
 ## The three dispositions
@@ -73,7 +73,7 @@ described under [Ticket controls](../dashboard/signals.md#ticket-controls-any-me
 
 ## What is retained
 
-A signal record holds scrubbed, bounded fields: the summary and reason, the channel and thread it
+A signal record holds bounded, unredacted fields: the summary and reason, the channel and thread it
 came from, and its disposition. The raw provider payload is not stored there. Each tenant sets how
 long records are kept, and the maintenance sweep deletes only expired records, in bounded batches.
 The Inbound receipt, described in [Inbound](../dashboard/inbound.md#what-happened-to-the-last-message),

@@ -6,7 +6,6 @@ import * as z from 'zod';
 import { makeAgentSdkEngine } from '../engine/agent-sdk';
 import { createFixture } from '../engine/__tests__/agent-sdk.fixture';
 import type { TriageInput, TriageRuntime } from '../engine/types';
-import { publicModelText } from '../public-output';
 
 const fixture = createFixture();
 const input: TriageInput = {
@@ -125,15 +124,5 @@ describe('evidence-faithful investigation', () => {
     expect(
       vi.mocked(bound.onStep).mock.calls.filter(([, content]) => content === progress),
     ).toHaveLength(1);
-  });
-
-  test('customer operational paths survive output processing', () => {
-    const instruction = 'Restore packages/db/migrations/0042_accounting.sql before retrying.';
-    expect(publicModelText(instruction)).toBe(instruction);
-  });
-
-  test('credential redaction remains enabled for operational instructions', () => {
-    const secret = 'ghp_abcdefghijklmnopqrstuvwxyz1234567890';
-    expect(publicModelText(`Token ${secret}`)).not.toContain(secret);
   });
 });

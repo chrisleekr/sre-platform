@@ -1,5 +1,4 @@
 import * as z from 'zod';
-import { scrubSecrets } from '@sre/agent-tools';
 import type { StructuredGenerator } from './engine/types';
 
 // The model answers against this shape; the authority rules are applied after normalization.
@@ -72,10 +71,8 @@ export async function classifyLifecycleIntent(
 ): Promise<LifecycleIntent> {
   const answer = await generator.generate(
     JSON.stringify({
-      currentResponderMessage: scrubSecrets(message),
-      ...(newerMessages.length
-        ? { newerResponderMessages: newerMessages.map((value) => scrubSecrets(value)) }
-        : {}),
+      currentResponderMessage: message,
+      ...(newerMessages.length ? { newerResponderMessages: newerMessages } : {}),
     }),
     lifecycleIntentWireSchema,
     { system: LIFECYCLE_INTENT_INSTRUCTION, signal },

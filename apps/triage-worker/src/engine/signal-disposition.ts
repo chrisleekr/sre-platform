@@ -1,5 +1,4 @@
 import * as z from 'zod';
-import { scrubSecrets } from '@sre/agent-tools';
 import { createHash } from 'node:crypto';
 import { SEMANTIC_DISPOSITION_CONTRACT_VERSION } from '@sre/contracts';
 /** Bumped whenever deterministic semantic-result safety or routing behavior changes. */
@@ -93,27 +92,8 @@ export const SEMANTIC_DISPOSITION_RUBRIC = [
   'Never treat possible data loss, security harm, or broad active failure as safely deferrable.',
 ].join('\n');
 
-function scrubSemanticOutput(value: SemanticDisposition): SemanticDisposition {
-  const common = {
-    ...value,
-    reason: scrubSecrets(value.reason),
-    ...(value.service ? { service: scrubSecrets(value.service) } : {}),
-    ...(value.title ? { title: scrubSecrets(value.title) } : {}),
-  };
-  return value.disposition === 'ticket'
-    ? {
-        ...common,
-        disposition: 'ticket',
-        action: scrubSecrets(value.action),
-        safeDeferralReason: scrubSecrets(value.safeDeferralReason),
-        riskIfIgnored: scrubSecrets(value.riskIfIgnored),
-        reviewHorizonMinutes: value.reviewHorizonMinutes,
-      }
-    : common;
-}
-
 /**
- * Executes one tool-free semantic classification over durable scrubbed context.
+ * Executes one tool-free semantic classification over durable signal context.
  * @param context - Durable signal fields, excluding provider payloads.
  * @param generator - Structured generation seam.
  */
@@ -125,21 +105,21 @@ export async function classifyDurableSignal(
     context: {
       signalRef: createHash('sha256').update(context.signalId).digest('hex'),
       jobRef: createHash('sha256').update(context.jobId).digest('hex'),
-      summary: scrubSecrets(context.summary),
+      summary: context.summary,
       source: context.source,
       author: context.author,
-      service: context.service ? scrubSecrets(context.service) : null,
+      service: context.service || null,
       signalState: context.signalState,
       correlationCandidates: (context.correlationCandidates ?? []).map((candidate) => ({
         index: candidate.index,
-        title: scrubSecrets(candidate.title),
-        service: scrubSecrets(candidate.service),
+        title: candidate.title,
+        service: candidate.service,
       })),
       resolutionCandidates: (context.resolutionCandidates ?? []).map((candidate) => ({
         index: candidate.index,
-        title: scrubSecrets(candidate.title),
-        service: scrubSecrets(candidate.service),
-        summary: scrubSecrets(candidate.summary),
+        title: candidate.title,
+        service: candidate.service,
+        summary: candidate.summary,
       })),
     },
     schema: SEMANTIC_DISPOSITION_CONTRACT_VERSION,
@@ -155,7 +135,7 @@ export async function classifyDurableSignal(
     context.signalState === 'firing' &&
     parsed.disposition === 'log'
   ) {
-    return scrubSemanticOutput({
+    return {
       disposition: 'ticket',
       decision: parsed.decision === 'belongs_to' ? 'belongs_to' : 'standalone',
       ...(parsed.index === undefined ? {} : { index: parsed.index }),
@@ -167,9 +147,9 @@ export async function classifyDurableSignal(
       safeDeferralReason: 'No urgent user-visible harm was established by the classifier.',
       riskIfIgnored: 'A real active failure may otherwise be silently suppressed.',
       reviewHorizonMinutes: 60,
-    });
+    };
   }
-  return scrubSemanticOutput(parsed);
+  return parsed;
 }
 
 export interface CorpusScenario {
