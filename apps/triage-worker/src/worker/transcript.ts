@@ -32,10 +32,18 @@ export const ELISION_MARKER = {
   content: '[… earlier messages elided …]',
 } as const;
 
+const memberMessageId = (message: {
+  id: string;
+  author?: string;
+  authorUserId?: string | null;
+}): { messageId?: string } =>
+  message.author === 'human' && message.authorUserId ? { messageId: message.id } : {};
+
 const toPriorEntry = (message: HubMessage) => ({
   author: message.author,
   kind: message.kind,
   content: message.content,
+  ...memberMessageId(message),
 });
 
 export function modelPrior(history: HubMessage[]): ResumeInput['prior'] {
@@ -60,9 +68,9 @@ export function splitResumeInput(
     opener?: HubMessage | null;
     budget?: number;
     truncated?: boolean;
-    currentMessage?: { id: string; content: string };
+    currentMessage?: { id: string; content: string; authorUserId?: string | null };
   } = {},
-): { humanMessage: string; prior: ResumeInput['prior'] } | null {
+): { humanMessage: string; humanMessageId?: string; prior: ResumeInput['prior'] } | null {
   const target =
     history.find((message) => message.id === humanMessageId) ??
     (opts.currentMessage?.id === humanMessageId ? opts.currentMessage : undefined);
@@ -102,5 +110,10 @@ export function splitResumeInput(
   if (opener) prior.push(toPriorEntry(opener));
   if (windowOmitted || openerGap || opts.truncated) prior.push({ ...ELISION_MARKER });
   prior.push(...tail);
-  return { humanMessage: target.content, prior };
+  const { messageId } = memberMessageId({ author: 'human', ...target });
+  return {
+    humanMessage: target.content,
+    ...(messageId ? { humanMessageId: messageId } : {}),
+    prior,
+  };
 }

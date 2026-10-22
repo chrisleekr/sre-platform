@@ -36,6 +36,7 @@ export * from './investigation-subject-repo';
 export * from './investigation-run-repo';
 export * from './investigation-trigger';
 export * from './knowledge-repo';
+export * from './knowledge-fact-repo';
 export * from './knowledge-capture-proposal-repo';
 export * from './llm-repo';
 export * from './local-founding-repo';

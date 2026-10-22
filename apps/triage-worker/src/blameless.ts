@@ -2,6 +2,19 @@
 // cause. The prompt forbids it; this guard enforces it over the identifiers the platform can actually
 // know, plus any email-shaped token at all. Honest limit: a bare first name typed in chat that is not
 // a member email local-part is not catchable here, and the prompt is the only defence for it.
+import { listTenantMembers, type Db } from '@sre/db';
+
+/**
+ * Emails of the tenant's members, the identifiers the platform can know.
+ *
+ * @param db - RLS-scoped connection.
+ * @param tenantId - Workspace whose members are listed.
+ */
+export async function tenantMemberEmails(db: Db, tenantId: string): Promise<string[]> {
+  return (await listTenantMembers(db, tenantId))
+    .map((member) => member.email)
+    .filter((email): email is string => typeof email === 'string');
+}
 
 /** Trusted instruction for postmortem generation; the transcript is untrusted data in the prompt. */
 export const BLAMELESS_SYSTEM_PROMPT = [
@@ -63,8 +76,14 @@ export function collectHumanIdentifiers(memberEmails: string[], material: string
  *
  * @param text - Generated prose.
  * @param identifiers - Output of collectHumanIdentifiers.
+ * @param anyEmail - Also replace email-shaped tokens that are not member emails. Off for text where
+ *   that shape is usually a name such as a systemd unit, for example `etcd@node1.service`.
  */
-export function stripHumanIdentifiers(text: string, identifiers: readonly string[]): string {
+export function stripHumanIdentifiers(
+  text: string,
+  identifiers: readonly string[],
+  anyEmail = true,
+): string {
   // Mentions go first: the identifier loop would otherwise strip the `@U123` inside a labelled
   // mention the material never showed, leaving `<a responder|alice>` with the label intact.
   let result = text.replace(SLACK_MENTION, REPLACEMENT);
@@ -72,5 +91,24 @@ export function stripHumanIdentifiers(text: string, identifiers: readonly string
     const pattern = new RegExp(`(?<![\\w.-])${escapeRegExp(identifier)}(?![\\w-])`, 'giu');
     result = result.replace(pattern, REPLACEMENT);
   }
-  return result.replace(EMAIL, REPLACEMENT).replace(HANDLE, REPLACEMENT);
+  return (anyEmail ? result.replace(EMAIL, REPLACEMENT) : result).replace(HANDLE, REPLACEMENT);
+}
+
+/**
+ * Builds a cleaner that strips the tenant's member identifiers and any mention from text the
+ * platform is about to store as shared knowledge.
+ *
+ * @param listEmails - Emails of the tenant's members.
+ * @param anyEmail - See stripHumanIdentifiers.
+ */
+export function makeBlamelessCleaner(
+  listEmails: (tenantId: string) => Promise<string[]>,
+  anyEmail = true,
+): (tenantId: string, text: string) => Promise<string> {
+  return async (tenantId, text) =>
+    stripHumanIdentifiers(
+      text,
+      collectHumanIdentifiers(await listEmails(tenantId), text),
+      anyEmail,
+    );
 }

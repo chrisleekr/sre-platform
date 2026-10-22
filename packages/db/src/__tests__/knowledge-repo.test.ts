@@ -491,11 +491,9 @@ describe('upsertRunbook occurrence_count grows only with provenance', () => {
   });
 });
 
-// insertInvestigationNote writes an append-only 'investigation' chunk for a diagnostically-useful
-// incident that produced no confirmed fix (C4); findChunkLinkingIncident reports whether ANY chunk
-// already links an incident id (C7 idempotency), tenant-scoped (C9). RED now: neither symbol is a
-// function on the repo (namespace access reads `undefined`) and there is no investigation writer.
-describe('insertInvestigationNote + findChunkLinkingIncident', () => {
+// An investigation note goes through the same refine-or-new writer as a runbook, with its own
+// category, under tenant RLS.
+describe('upsertRunbook category + cross-tenant refine', () => {
   let tenantG: string;
   let tenantH: string;
 
@@ -525,10 +523,11 @@ describe('insertInvestigationNote + findChunkLinkingIncident', () => {
 
   it('C4: persists an investigation note (category=investigation, verified=false) under tenant RLS', async () => {
     const incidentId = randomUUID();
-    const { id } = await knowledgeRepo.insertInvestigationNote(app.db, fakeEmbedder, tenantG, {
+    const { id } = await knowledgeRepo.upsertRunbook(app.db, fakeEmbedder, tenantG, {
       title: 'DB pool inconclusive',
       content: 'checked pool metrics; ruled out the deploy; open question: a connection leak?',
       sourceIncidentId: incidentId,
+      category: 'investigation',
     });
     const row = await readRow(tenantG, id);
     expect(row).toBeDefined();
@@ -538,34 +537,6 @@ describe('insertInvestigationNote + findChunkLinkingIncident', () => {
     expect(row!.source_incident_ids).toEqual([incidentId]);
     // RLS scope: a different tenant session cannot read the note (deny-by-default).
     expect(await readRow(randomUUID(), id)).toBeUndefined();
-  });
-
-  it('C7: findChunkLinkingIncident is true once a chunk links the incident, false otherwise', async () => {
-    const linked = randomUUID();
-    const unlinked = randomUUID();
-    // Before any chunk links it, the containment check is false (so the consumer proceeds to distil).
-    expect(await knowledgeRepo.findChunkLinkingIncident(app.db, tenantG, linked)).toBe(false);
-    await knowledgeRepo.upsertRunbook(app.db, fakeEmbedder, tenantG, {
-      title: 'RB',
-      content: 'db pool remediation',
-      sourceIncidentId: linked,
-    });
-    // Now a runbook links it → true (idempotency short-circuit fires on redelivery).
-    expect(await knowledgeRepo.findChunkLinkingIncident(app.db, tenantG, linked)).toBe(true);
-    // A different incident is still unlinked.
-    expect(await knowledgeRepo.findChunkLinkingIncident(app.db, tenantG, unlinked)).toBe(false);
-  });
-
-  it('C9: findChunkLinkingIncident is tenant-scoped — tenant H never sees tenant G’s link (RLS)', async () => {
-    const shared = randomUUID();
-    await knowledgeRepo.upsertRunbook(app.db, fakeEmbedder, tenantG, {
-      title: 'RB',
-      content: 'tenant G private remediation',
-      sourceIncidentId: shared,
-    });
-    expect(await knowledgeRepo.findChunkLinkingIncident(app.db, tenantG, shared)).toBe(true);
-    // Tenant H must not observe tenant G's link — RLS existence isolation, so it re-distils its own.
-    expect(await knowledgeRepo.findChunkLinkingIncident(app.db, tenantH, shared)).toBe(false);
   });
 
   it('FIX 4: a cross-tenant refine-by-id cannot update or read another tenant’s runbook (RLS)', async () => {

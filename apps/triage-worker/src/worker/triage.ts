@@ -1,4 +1,3 @@
-import { scrubSecrets } from '@sre/agent-tools';
 import {
   getIncident,
   listIncidentRelations,
@@ -88,9 +87,12 @@ export class TriageHandler {
                     title: payload.title,
                     service: incident.service,
                     severity: incident.severity,
+                    monitorKeys: (
+                      await listIncidentSignals(deps.appDb, job.tenantId, incidentId)
+                    ).flatMap((signal) => (signal.monitorKey ? [signal.monitorKey] : [])),
                   })
                 : [];
-              return scrubSecrets(renderRunbookSeeds(seeds));
+              return renderRunbookSeeds(seeds);
             } catch {
               return '';
             }
@@ -100,16 +102,8 @@ export class TriageHandler {
               // Advisory context for the responder: how much error budget the service has left. The
               // budget never opens or escalates anything, and a read failure degrades to no section
               // rather than failing the open, so a tenant with no objectives sees today's brief.
-              //
-              // Scrubbed like the runbook and relation sections: the brief interpolates the
-              // objective's tenant-authored name and service, and this message is persisted as
-              // authored by 'system' in the durable conversation log and replayed into the model
-              // context on every open for the service. A credential pasted into an objective name
-              // would otherwise never be redacted from that log.
-              return scrubSecrets(
-                renderSloBrief(
-                  await sloStatusForService(deps.appDb, job.tenantId, incident.service),
-                ),
+              return renderSloBrief(
+                await sloStatusForService(deps.appDb, job.tenantId, incident.service),
               );
             } catch {
               return '';
@@ -117,11 +111,9 @@ export class TriageHandler {
           })(),
           (async () => {
             try {
-              return scrubSecrets(
-                renderIncidentRelationContext(
-                  incident.id,
-                  await listIncidentRelations(deps.appDb, job.tenantId, incident.id),
-                ),
+              return renderIncidentRelationContext(
+                incident.id,
+                await listIncidentRelations(deps.appDb, job.tenantId, incident.id),
               );
             } catch {
               return '';

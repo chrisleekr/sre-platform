@@ -73,6 +73,8 @@ export interface TriageWorkerDeps {
   auditSink: ToolAuditSink;
   connectorProvider: (tenantId: string) => ToolContext['resolveConnectors'];
   tools: ToolDefinition<any, any>[];
+  /** Builds the run-scoped record_learning tool; a fresh instance per run holds its own cap. */
+  learningTool?: () => ToolDefinition<any, any>;
   lock: IncidentLock;
   clearResumeGate: (incidentId: string) => Promise<void>;
   getRecoveryMaxChecks?: () => Promise<number>;

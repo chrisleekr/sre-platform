@@ -26,7 +26,7 @@ const __fixture = createFixture();
 // payload->>'incidentId'; predicate status='queued') already blocks a SECOND QUEUED row, but plain
 // Queue.enqueue has no ON CONFLICT, so the duplicate click raises a 23505 unique-violation and the API
 // 500s. And once the first job flips to 'processing' it leaves that queued-only index, so a second
-// enqueue inserts a real duplicate: both consumers pass the read-only findChunkLinkingIncident guard and
+// enqueue inserts a real duplicate: both consumers distil before either row exists and
 // both write knowledge_chunks. Coalescing must therefore span queued+processing for runbook.generate,
 // return the EXISTING job id instead of throwing, and still permit regeneration once the job is terminal.
 describe('runbook.generate coalescing', () => {

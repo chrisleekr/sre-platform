@@ -151,6 +151,32 @@ test('offers a platform-only alternative and captures it once when its requester
   }
 });
 
+test('a chat request adopts a pending automatic pass instead of being absorbed by it', async () => {
+  const { incident, job, message, worker } = await setup();
+  const [automatic] = await fixture.admin.db
+    .insert(jobs)
+    .values({
+      tenantId: fixture.tenantId,
+      type: 'runbook.generate',
+      status: 'queued',
+      stream: 'test',
+      payload: { incidentId: incident.id, automatic: true },
+    })
+    .returning();
+  await worker.handle(job, { signal: new AbortController().signal });
+
+  const generated = await fixture.admin.db
+    .select()
+    .from(jobs)
+    .where(sql`type='runbook.generate' AND payload->>'incidentId'=${incident.id}`);
+  expect(generated.map((row) => row.id)).toEqual([automatic!.id]);
+  expect(generated[0]!.payload).toEqual({
+    incidentId: incident.id,
+    requestedBy: fixture.actorUserId,
+    requestedMessageId: message.id,
+  });
+});
+
 test('a bare confirmation cannot create capture authority from arbitrary earlier assistant prose', async () => {
   const { incident, job, message, worker } = await setup();
   await fixture.admin.db

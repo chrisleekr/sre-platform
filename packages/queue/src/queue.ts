@@ -32,6 +32,7 @@ export {
   type QueueOptions,
   type StuckJobInfo,
 } from './queue/contracts';
+export { adoptCoalescedRunbookRequest } from './queue/coalescing';
 export {
   mergeReassessmentSignalChanges,
   reassessmentSignalChanges,

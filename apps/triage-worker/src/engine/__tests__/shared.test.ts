@@ -11,10 +11,13 @@ import {
   renderEvidenceBlock,
   renderEvidence,
   EVIDENCE_BLOCK_SEPARATOR,
+  REASSESS_SYSTEM_PROMPT,
   RECOVERY_SYSTEM_PROMPT,
   TRIAGE_SYSTEM_PROMPT,
 } from '../shared';
 import { SHORTEST_EVIDENCE_BLOCK_CHARS } from '@sre/db';
+import type { HubMessage } from '@sre/hub';
+import { splitResumeInput } from '../../worker/transcript';
 import { makeClaudeProvider, type AnthropicLike } from '../claude';
 import { makeOpenAIProvider, type OpenAILike } from '../openai';
 
@@ -100,6 +103,39 @@ test('buildResumePrompt instructs the constrained human-executed action terminal
   expect(prompt).not.toContain('request_approval');
 });
 
+test('the resume prompt shows message ids only for member lines, so a learning can cite them', () => {
+  const line = (id: string, content: string, authorUserId: string | null): HubMessage => ({
+    id,
+    incidentId: 'i',
+    author: 'human',
+    kind: 'text',
+    content,
+    authorUserId,
+    createdAt: '2026-10-21T00:00:00.000Z',
+  });
+  const history = [
+    line('m-member', 'etcd is on nvme', 'u1'),
+    line('m-unlinked', 'etcd is on sda', null),
+    line('m-target', 'confirm the disk', 'u1'),
+  ];
+  const split = splitResumeInput(history, 'm-target')!;
+  const prompt = buildResumePrompt({
+    incident: {
+      id: 'i',
+      tenantId: 't',
+      service: 'etcd',
+      severity: 'sev2',
+      fingerprint: 'fp',
+      alertSource: 'slack',
+    },
+    ...split,
+  });
+  expect(prompt).toContain('[human/text message m-member] etcd is on nvme');
+  expect(prompt).toContain('[human/text] etcd is on sda');
+  expect(prompt).toContain('A human responded (message m-target): confirm the disk');
+  expect(splitResumeInput([line('m-x', 'hi', null)], 'm-x')).not.toHaveProperty('humanMessageId');
+});
+
 test('buildRecoveryPrompt carries the model-selected reason into its scheduled successor', () => {
   const prompt = buildRecoveryPrompt({
     incident: {
@@ -119,6 +155,15 @@ test('buildRecoveryPrompt carries the model-selected reason into its scheduled s
 
   expect(prompt).toContain('automated recovery check 2 of 3');
   expect(prompt).toContain('The deployment is still converging.');
+});
+
+test.each([
+  ['triage', TRIAGE_SYSTEM_PROMPT],
+  ['reassessment', REASSESS_SYSTEM_PROMPT],
+])('the %s prompt asks for a falsification check before a conclusive outcome', (_name, prompt) => {
+  expect(prompt).toContain('Before choosing conclusive, try to falsify the leading hypothesis');
+  expect(prompt).toContain('cite it in contradictingEvidenceIds');
+  expect(prompt).toContain('Overlap in time is correlation, not cause.');
 });
 
 describe('TRIAGE_SYSTEM_PROMPT investigation sequence', () => {

@@ -39,6 +39,7 @@ import { reliabilityRoutes } from './reliability';
 import { queueHealthRoutes } from './queue-health';
 import { sloRoutes } from './slos';
 import { incidentTagRoutes } from './incident-tags';
+import { knowledgeFactRoutes } from './knowledge-facts';
 import { authDiscoveryRoutes } from './onboarding/auth-discover';
 import type { FoundingQueuePort, PublicRateLimiter } from './onboarding/contracts';
 import { foundingRoutes } from './onboarding/foundings';
@@ -477,7 +478,7 @@ export function makeApp(deps: AppDeps): Hono<{ Variables: AuthVariables }> {
   app.route('/reliability', reliabilityRoutes({ auth: deps.auth, db: deps.appDb }));
   app.route('/slos', sloRoutes({ auth: deps.auth, db: deps.appDb }));
   app.route('/queue', queueHealthRoutes({ auth: deps.auth, db: deps.appDb }));
-
+  app.route('/knowledge', knowledgeFactRoutes({ auth: deps.auth, db: deps.appDb }));
   app.route(
     '/platform-settings',
     platformSettingsRoutes({
@@ -492,8 +493,7 @@ export function makeApp(deps: AppDeps): Hono<{ Variables: AuthVariables }> {
     }),
   );
 
-  // GET /infrastructure and GET /deployments live at the root, mounted from one router. /deployments
-  // reads the durable deployments table under RLS, so it needs the app-role connection.
+  // GET /infrastructure and /deployments share one root router; /deployments reads under RLS.
   app.route('/', snapshotRoutes({ auth: deps.auth, cache: deps.cache, db: deps.appDb }));
 
   return app;

@@ -15,6 +15,7 @@ import {
   makeDb,
   tenants,
   knowledgeChunks,
+  recordLearning,
   upsertRunbook,
   EMBED_DIM,
   type DbHandle,
@@ -133,6 +134,49 @@ describe('makeRunbookSeeder', () => {
     // A term-less query ranks well below the floor against the seeded 'database' runbook.
     const result = await seeder(tenantA, { service: 'unrelated', severity: 'sevX' });
     expect(result).toEqual([]);
+  });
+
+  test('knowledge from an incident with the same monitor key is seeded first, even below the floor', async () => {
+    const rows = (await admin.db.execute(sql`
+      insert into incidents (tenant_id, fingerprint, alert_source, service, severity, status)
+      values (${tenantA}, ${`fp-${randomUUID()}`}, 'alertmanager', 'etcd', 'sev2', 'resolved')
+      returning id`)) as unknown as Array<{ id: string }>;
+    const pastIncident = rows[0]!.id;
+    await admin.db.execute(sql`
+      insert into incident_signals (tenant_id, incident_id, monitor_key, surface, channel,
+        external_message_id, state, last_event_type, summary, content_hash, last_event_key,
+        last_event_at)
+      values (${tenantA}, ${pastIncident}, 'am:etcd-disk', 'slack', 'C-alerts', ${randomUUID()},
+        'resolved', 'opened', 'etcd disk alert', 'h', 'k', now())`);
+    // No seed term, so its vector is orthogonal to a 'database' query and below any floor.
+    await recordLearning(app.db, fakeEmbedder, tenantA, {
+      topic: 'etcd data disk on 192.168.1.202',
+      statement: '/var/lib/etcd is on /dev/nvme0n1p3; sda is only /mnt/exthdd',
+      basis: 'observed',
+      sourceIncidentId: pastIncident,
+    });
+    const seeder = makeRunbookSeeder({
+      db: app.db,
+      embedder: fakeEmbedder,
+      scoreFloor: 0.75,
+      k: 3,
+    });
+
+    const result = await seeder(tenantA, {
+      title: 'database',
+      service: 'etcd',
+      severity: 'sev2',
+      monitorKeys: ['am:etcd-disk'],
+    });
+
+    expect(result.map((seed) => seed.title)).toEqual([
+      'etcd data disk on 192.168.1.202',
+      RUNBOOK.title,
+    ]);
+    expect(result[0]!.category).toBe('fact');
+    // Without the monitor key only the similar runbook clears the floor.
+    const unkeyed = await seeder(tenantA, { title: 'database', service: 'etcd', severity: 'sev2' });
+    expect(unkeyed.map((seed) => seed.title)).toEqual([RUNBOOK.title]);
   });
 
   test('C8 RLS isolation: tenant B never receives tenant A runbooks', async () => {

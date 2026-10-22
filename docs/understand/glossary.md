@@ -197,6 +197,10 @@ vocabulary for behaviour that is not built yet.
 : Operational documentation the platform can retrieve during an investigation. The platform can also
   generate one from a resolved incident.
 
+**Learning**
+: A durable fact or lesson from an incident, such as which disk backs a mount, kept so the next
+  incident does not ask again. One per topic; a newer statement replaces an older one.
+
 **Service dependency**
 : A registered edge in the topology graph: one service calls another. It records whether the call is
   synchronous or asynchronous and whether a circuit breaker protects it, which is what decides blast

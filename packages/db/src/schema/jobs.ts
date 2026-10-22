@@ -113,8 +113,8 @@ export const jobs = pgTable(
       .where(jobStatusPredicate(['queued'])),
     // Runbook-coalescing partial-unique index: at most one queued OR PROCESSING
     // `runbook.generate` job per (tenant, incident), so a double-clicked generate button cannot run the
-    // distiller twice and write duplicate knowledge_chunks (the consumer's findChunkLinkingIncident
-    // guard is a read, so two concurrent runs both pass it).
+    // distiller twice and write duplicate knowledge_chunks (two concurrent runs would each decide
+    // "new" before either row exists).
     // Type lives in the PREDICATE, not the key: the resume index above is deliberately queued-only so a
     // mid-run reply enqueues a fresh resume, and widening its shared key to 'processing' would break
     // that. Runbook generation has the opposite requirement — a second request that post-dates a RUNNING

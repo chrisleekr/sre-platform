@@ -9,7 +9,6 @@ import {
   type StructuredGenerator,
 } from '../engine/types';
 import type { EvidenceReceipt } from '../engine/evidence-closure';
-import { publicModelText } from '../public-output';
 import type { IncidentRow, TriageWorkerDeps } from './contracts';
 import { platformIdentityContext } from './platform-identity';
 
@@ -54,7 +53,11 @@ export class WorkerRuntime {
       signal: options.signal,
     };
     const connectors = await ctx.resolveConnectors();
-    const tools = [...this.deps.tools, ...connectors.flatMap(connectorTools)];
+    const tools = [
+      ...this.deps.tools,
+      ...connectors.flatMap(connectorTools),
+      ...(this.deps.learningTool ? [this.deps.learningTool()] : []),
+    ];
     const platformIdentity = await platformIdentityContext(connectors, { signal: options.signal });
     let executionMetadata: InvestigationExecutionMetadata | null = null;
     const evidenceReceipts: EvidenceReceipt[] = [];
@@ -62,7 +65,7 @@ export class WorkerRuntime {
       await this.deps.hub.append(tenantId, incident.id, {
         author: 'agent',
         kind: options.mirrorSteps === false ? 'status' : kind,
-        content: publicModelText(content),
+        content,
       });
     };
     return {

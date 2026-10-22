@@ -7,14 +7,17 @@ import {
   lockIncidentWorkTx,
   recoveryRestoreStatus,
   type Db,
-  type Executor,
   type InvestigationStatus,
   type Tx,
 } from '@sre/db';
 import type { InvestigationTrigger, InvestigationTriggerReason } from '@sre/contracts';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
-import { coalesceKeyFilter, widenCoalescedTopologyPass } from './coalescing';
+import {
+  adoptCoalescedRunbookRequest,
+  findPendingByCoalesceKey,
+  widenCoalescedTopologyPass,
+} from './coalescing';
 import {
   COALESCING_TYPES,
   IncidentMovedError,
@@ -74,34 +77,6 @@ export class QueueWriter {
   }
 
   /**
-   * Find the pending job a coalescing index just rejected our insert for. Coalescing indexes on `jobs`
-   * key on tenant + type + one payload field: `incidentId` for incident-scoped work, `connectorId` for
-   * topology passes ({@link coalesceKeyFilter}). A payload without that field can never conflict.
-   * Returns the newest non-terminal match, or null when none survives.
-   */
-  private async findPendingByCoalesceKey(
-    input: JobInput,
-    exec: Executor = this.db,
-  ): Promise<string | null> {
-    const sameKey = coalesceKeyFilter(input.type, input.payload);
-    if (!sameKey) return null;
-    const rows = await exec
-      .select({ id: jobs.id })
-      .from(jobs)
-      .where(
-        and(
-          eq(jobs.tenantId, input.tenantId),
-          eq(jobs.type, input.type),
-          sameKey,
-          inArray(jobs.status, ['queued', 'processing']),
-        ),
-      )
-      .orderBy(desc(jobs.createdAt))
-      .limit(1);
-    return rows[0]?.id ?? null;
-  }
-
-  /**
    * Write the durable Postgres row, then dispatch onto the stream (Postgres-before-stream).
    *
    * Coalescing-aware for OPT-IN types only: a duplicate command for an incident that already has a
@@ -115,6 +90,9 @@ export class QueueWriter {
    * constrains EVERY incident-scoped type, `triage` included — and a coalesced `triage` would silently DROP
    * the re-alert's newer payload and report the old job id as success. The throw is load-bearing there:
    * routeToIncident releases its dedup key and rethrows, so the newer alert body still reaches the engine.
+   *
+   * A responder's runbook request that coalesces onto a pending automatic pass is adopted by that row
+   * ({@link adoptCoalescedRunbookRequest}), so the request is still answered.
    *
    * XADD fires ONLY on a fresh insert. Re-publishing a stream entry for a coalesced job would redeliver
    * work already queued (or worse, already running) — the exact duplicate the index exists to prevent.
@@ -144,7 +122,8 @@ export class QueueWriter {
         const id = inserted[0]?.id;
         if (id !== undefined) return { id, inserted: true };
         await widenCoalescedTopologyPass(tx, input);
-        return { id: await this.findPendingByCoalesceKey(input, tx), inserted: false };
+        await adoptCoalescedRunbookRequest(tx, input);
+        return { id: await findPendingByCoalesceKey(tx, input), inserted: false };
       });
       if (durable.id !== null && durable.inserted) {
         try {

@@ -178,7 +178,7 @@ describe('vector + coalescing indexes exist with the semantics they were created
 
   // Opposite requirement to the resume index: a second generate request that post-dates a RUNNING
   // generation is a duplicate, not new work, so the predicate must ALSO cover 'processing'. Else two
-  // concurrent distiller runs both pass findChunkLinkingIncident and write duplicate knowledge_chunks.
+  // concurrent distiller runs both decide "new" and write duplicate knowledge_chunks.
   test('jobs_runbook_coalesce_idx is UNIQUE on (tenant_id, payload->>incidentId) WHERE type=runbook.generate AND queued|processing', () => {
     const def = __fixture.indexes.get('jobs_runbook_coalesce_idx');
     expect(def, 'jobs_runbook_coalesce_idx is missing').toBeDefined();
