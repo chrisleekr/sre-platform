@@ -224,7 +224,7 @@ export function makeMultiProjectTools(
       lookup,
       'get_managed_resources',
       z.object(application),
-      'Get the scrubbed live-versus-desired diff for one scoped ArgoCD application.',
+      'Get the live-versus-desired diff for one scoped ArgoCD application.',
     ),
     projectTool(
       config,

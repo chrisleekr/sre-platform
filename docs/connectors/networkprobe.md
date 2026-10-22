@@ -97,6 +97,5 @@ client would.
 
 ## Secrets in results
 
-There is nothing to redact. The connector calls no authenticated API and returns no response body.
-Headers are metadata. A session cookie from an anonymous request is not a secret, and is covered by
-the platform's general redaction anyway.
+The connector calls no authenticated API and returns no response body. Headers are metadata and are
+not redacted. A session cookie from an anonymous request is not a secret.

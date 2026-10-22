@@ -11,7 +11,7 @@ const operations = {
 
 /** Project already-audited probes without replaying network operations or exposing response headers.
  * @param target - Canonical HTTP endpoint already present in tenant discovery.
- * @param row - Redacted investigator audit evidence, scoped to the authenticated workspace.
+ * @param row - Investigator audit evidence, scoped to the authenticated workspace.
  * @param now - Freshness reference for the observation.
  */
 export function networkProbeTopologyEvidence(

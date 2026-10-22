@@ -398,6 +398,24 @@ describe('api_get', () => {
     expect(calls).toHaveLength(0);
   });
 
+  test('refuses decrypted provisioning exports in the query arg or inlined in path', async () => {
+    const { impl, calls } = fakeFetch();
+    const tool = toolNamed(conn(impl), 'api_get');
+    await expect(
+      tool.run({
+        path: 'api/v1/provisioning/contact-points/export',
+        query: { decrypt: 'true' },
+      }),
+    ).rejects.toThrow(/decrypt query parameter is not permitted/);
+    await expect(
+      tool.run({ path: 'api/v1/provisioning/alert-rules/export?format=json&DeCrypt=true' }),
+    ).rejects.toThrow(/decrypt query parameter is not permitted/);
+    await expect(
+      tool.run({ path: 'api/v1/provisioning/contact-points/export?de%63rypt=true' }),
+    ).rejects.toThrow(/decrypt query parameter is not permitted/);
+    expect(calls).toHaveLength(0);
+  });
+
   test('rejects a percent-encoded proxy-bypass attempt (buildGetUrl guard)', async () => {
     const { impl, calls } = fakeFetch();
     await expect(

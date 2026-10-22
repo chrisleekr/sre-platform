@@ -236,31 +236,31 @@ describe('get_resource_tree + get_application_events', () => {
   });
 });
 
-describe('get_managed_resources (drift diff scrubbing)', () => {
+describe('get_managed_resources (drift diff parsing)', () => {
   const managedResp = {
     items: [
       {
-        kind: 'Secret',
-        name: 'db',
+        kind: 'ConfigMap',
+        name: 'app',
         namespace: 'prod',
         targetState: JSON.stringify({
           apiVersion: 'v1',
-          kind: 'Secret',
-          metadata: { name: 'db', managedFields: [{ manager: 'x' }] },
-          data: { password: 'aGk=' },
+          kind: 'ConfigMap',
+          metadata: { name: 'app', managedFields: [{ manager: 'x' }] },
+          data: { LOG_LEVEL: 'info' },
         }),
         liveState: JSON.stringify({
           apiVersion: 'v1',
-          kind: 'Secret',
-          metadata: { name: 'db' },
-          data: { password: 'c2VjcmV0' },
+          kind: 'ConfigMap',
+          metadata: { name: 'app' },
+          data: { LOG_LEVEL: 'debug' },
         }),
       },
       { kind: 'ConfigMap', name: 'cfg', normalizedLiveState: 'not-json{' },
     ],
   };
 
-  test('redacts Secret data in every state, keeps keys/metadata, marks unparseable', async () => {
+  test('parses every state with values intact, trims metadata, keeps unparseable text', async () => {
     const { impl, calls } = scopedFetch({ json: managedResp }, 'team-a');
     const out = (await toolNamed(apiConn(impl, true), 'get_managed_resources').run({
       name: 'api',
@@ -269,30 +269,78 @@ describe('get_managed_resources (drift diff scrubbing)', () => {
     expect(new URL(calls[1]!.url).pathname).toBe('/api/v1/applications/api/managed-resources');
     expect(new URL(calls[1]!.url).searchParams.get('appNamespace')).toBe('team-a');
 
-    const secret = out.items[0]!;
-    const target = secret.targetState as {
+    const cm = out.items[0]!;
+    const target = cm.targetState as {
       data: Record<string, string>;
       metadata: Record<string, unknown>;
     };
-    const live = secret.liveState as { data: Record<string, string> };
-    expect(target.data.password).toBe('[REDACTED]'); // value gone, key kept
-    expect(live.data.password).toBe('[REDACTED]');
+    const live = cm.liveState as { data: Record<string, string> };
+    expect(target.data.LOG_LEVEL).toBe('info');
+    expect(live.data.LOG_LEVEL).toBe('debug');
     expect(target.metadata.managedFields).toBeUndefined();
-    expect(secret.kind).toBe('Secret'); // envelope metadata preserved
-    expect(secret.name).toBe('db');
+    expect(cm.kind).toBe('ConfigMap'); // envelope metadata preserved
+    expect(cm.name).toBe('app');
 
-    const cm = out.items[1]!;
-    expect(cm.normalizedLiveState).toBe('[unparseable manifest omitted]');
+    expect(out.items[1]!.normalizedLiveState).toBe('not-json{');
   });
 
-  test('scrubs a manifest-bearing field outside the known state list', async () => {
-    // A future/unknown field that carries a manifest must not slip through the fixed state list.
+  test('returns a Secret item by identity only, without its states or diff', async () => {
     const resp = {
       items: [
         {
+          group: '',
           kind: 'Secret',
           name: 'db',
-          extraState: JSON.stringify({ kind: 'Secret', data: { token: 'c2VjcmV0' } }),
+          namespace: 'prod',
+          modified: true,
+          diff: '{"data":{"password":"c2VjcmV0"}}',
+          targetState: JSON.stringify({
+            apiVersion: 'v1',
+            kind: 'Secret',
+            data: { password: 'aGk=' },
+          }),
+          liveState: JSON.stringify({
+            apiVersion: 'v1',
+            kind: 'Secret',
+            data: { password: 'c2VjcmV0' },
+          }),
+        },
+      ],
+    };
+    const { impl } = scopedFetch({ json: resp });
+    const out = (await toolNamed(apiConn(impl), 'get_managed_resources').run({ name: 'api' })) as {
+      items: Array<Record<string, unknown>>;
+    };
+    expect(out.items[0]).toEqual({
+      omitted: 'Secret manifests are not returned',
+      group: '',
+      kind: 'Secret',
+      name: 'db',
+      namespace: 'prod',
+      modified: true,
+    });
+  });
+
+  test('omits an item whose state is a Secret even when the envelope kind is missing', async () => {
+    const resp = {
+      items: [
+        { name: 'db', extraState: JSON.stringify({ kind: 'Secret', data: { token: 'c2VjcmV0' } }) },
+      ],
+    };
+    const { impl } = scopedFetch({ json: resp });
+    const out = (await toolNamed(apiConn(impl), 'get_managed_resources').run({ name: 'api' })) as {
+      items: Array<Record<string, unknown>>;
+    };
+    expect(out.items[0]).toEqual({ omitted: 'Secret manifests are not returned', name: 'db' });
+  });
+
+  test('parses a manifest-bearing field outside the known state list', async () => {
+    const resp = {
+      items: [
+        {
+          kind: 'ConfigMap',
+          name: 'cfg',
+          extraState: JSON.stringify({ kind: 'ConfigMap', data: { mode: 'fast' } }),
         },
       ],
     };
@@ -301,8 +349,8 @@ describe('get_managed_resources (drift diff scrubbing)', () => {
       items: Array<Record<string, unknown>>;
     };
     const item = out.items[0]!;
-    expect((item.extraState as { data: Record<string, string> }).data.token).toBe('[REDACTED]');
-    expect(item.name).toBe('db'); // a plain scalar field is untouched
+    expect((item.extraState as { data: Record<string, string> }).data.mode).toBe('fast');
+    expect(item.name).toBe('cfg'); // a plain scalar field is untouched
   });
 });
 

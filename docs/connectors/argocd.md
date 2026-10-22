@@ -153,6 +153,17 @@ Every tool is read-only:
 
 --8<-- "_generated/connector-tools/argocd.md"
 
+The first investigation pass looks up the application named like the incident service. When no
+scoped application has that name, it falls back to applications whose destination namespace is a
+namespace the incident's resources resolved to or, when none resolved, one named by the alert
+itself, listing at most ten and counting the rest.
+
+Discovery also records the images each pod in an application's resource tree runs, on that pod
+alone, so one workload never inherits a sibling's images. An image's registry path becomes a
+declared application source only when a connected GitLab project's container registry prefix
+claims it, as described in [Source evidence](../understand/topology.md#source-evidence).
+Helm chart registries are never treated as source repositories.
+
 Argo CD's own permissions are not the only thing standing between a tool and an application it
 should not see. The platform checks the returned application against your saved scope as well, and
 filters lists locally, so a permissions mistake on the Argo CD side does not become a data leak
@@ -190,19 +201,18 @@ never used as health telemetry.
 
 One tool returns live and desired Kubernetes manifests, and a live secret contains its data. Argo CD
 masks secret values itself, but that masking has a
-[known bypass on the diff path](https://github.com/argoproj/argo-cd/security/advisories/GHSA-3v3m-wc6v-x4x3),
-so the platform does not rely on it.
+[known bypass in the ServerSideDiff endpoint](https://github.com/argoproj/argo-cd/security/advisories/GHSA-3v3m-wc6v-x4x3)
+(Argo CD 3.2.0 through 3.3.8), so the platform does not rely on it. The generic passthrough refuses
+`server-side-diff` paths, and the drift diff tool returns a Secret only by its kind, namespace and
+name, without its live or desired state.
 
-Every manifest is redacted by the same code the Kubernetes connector uses: secret and config values
-and container environment values are replaced, while their keys are kept so the shape stays
-readable. Manifest bookkeeping that carries a second copy of the same values is stripped. A manifest
-that will not parse is replaced with a marker rather than passed through.
+The platform does not redact manifests. Each manifest is parsed and its bulky bookkeeping
+(`managedFields`, the last-applied annotation) is dropped, but config values and container
+environment values are returned as Argo CD sends them, so they reach the model provider, the
+evidence store, and Slack. A manifest that will not parse is returned as text.
 
-Any other field that happens to contain a manifest is scrubbed too, so a future Argo CD release
-cannot introduce a secret-bearing field that slips past.
-
-So that there is exactly one place doing this, the generic passthrough tool refuses every endpoint
-that can return a manifest and points the model at the tool that redacts. Application list and
+The generic passthrough tool still refuses every endpoint that can return a manifest and points the
+model at the drift diff tool. Application list and
 detail endpoints are refused too, because an application can carry inline chart values and plugin
 environment values. Responses are size-capped before they are parsed.
 

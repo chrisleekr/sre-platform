@@ -337,3 +337,43 @@ test('relation identities use code-unit scope ordering independent of insertion 
   expect(resolved).toHaveLength(1);
   expect(JSON.parse(resolved[0]!.key).at(-1)).toEqual(ordered);
 });
+
+test('a registry alias claims only its own image path and leaves unclaimed registries unresolved', () => {
+  const project: TopologyEntity = {
+    ref: { authority: 'repository:source.example', kind: 'repository', id: 'team/proxy' },
+    aliases: [{ authority: 'oci:registry.example', kind: 'repository', id: 'team/proxy' }],
+    kind: 'repository',
+    name: 'team/proxy',
+    scope: {},
+    attributes: {},
+  };
+  const app = entity('app');
+  const image = (host: string, id: string): TopologyRelation => ({
+    from: app.ref,
+    to: { authority: `oci:${host}`, kind: 'repository', id },
+    kind: 'deployed_from',
+    evidence: 'declared',
+    description: 'image',
+  });
+  const graph = resolveDiscoveredTopology(
+    [
+      collection('catalog', [project]),
+      collection(
+        'deployer',
+        [app],
+        [
+          image('registry.example', 'team/proxy'),
+          image('registry.example', 'team/proxy/proxy'),
+          image('docker.io', 'valkey/valkey'),
+        ],
+      ),
+    ],
+    now,
+  );
+  expect(graph.relations.map((relation) => [relation.to.id, relation.toKey]).sort()).toEqual([
+    ['team/proxy', topologyRefKey(project.ref)],
+    ['team/proxy/proxy', null],
+    ['valkey/valkey', null],
+  ]);
+  expect(graph.conflicts).toEqual([]);
+});

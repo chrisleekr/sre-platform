@@ -13,8 +13,7 @@ Use metrics to check symptoms, then inspect logs and available traces for possib
 flowchart LR
     Inc["An investigation<br/>needs evidence"] --> Tools["Read-only tools"]
     Tools --> Dog["Datadog"]
-    Dog --> Scrub["Result scrubbed<br/>of secrets"]
-    Scrub --> Thread["Evidence in the<br/>incident thread"]
+    Dog --> Thread["Evidence in the<br/>incident thread"]
 ```
 
 Investigation tools read data on demand. Separately, automatic topology discovery reads bounded
@@ -126,9 +125,16 @@ supply an arbitrary API path. Time ranges accept timestamps or relative expressi
 
 ## Secrets in results
 
-Tool results pass through shared credential redaction and size limits. Redaction cannot guarantee
-that every secret in application text is recognized. Restrict key permissions and avoid logging
-credentials in the source system.
+Tool results are size-limited but not redacted. Any credential in a log line, span, event, or
+configuration response reaches the model provider, the evidence store, and Slack. Restrict key
+permissions to read-only and avoid logging credentials in the source system.
+
+The generic passthrough refuses the endpoints that would return the platform's own credentials:
+API keys (`/api/v1/api_key`, `/api/v2/api_keys`), application keys (`/api/v1/application_key`,
+`/api/v2/application_keys`, `/api/v2/current_user/application_keys`, and any path with an
+`application_keys` segment, such as service account keys), and webhook integration configuration
+(`/api/v1/integration/webhooks`), whose custom headers hold the lifecycle webhook bearer token. A
+percent-encoded path is refused outright.
 
 ## Native alert lifecycle
 

@@ -383,6 +383,57 @@ describe('makeKubernetesConnector fetchTriageContext', () => {
     expect(calls.some((k) => k.url.includes('/namespaces/payments/'))).toBe(false);
   });
 
+  test('resolved scope selects the namespace, a Slack placeholder never does, and settings still win', async () => {
+    const scope = { namespaces: ['edge-proxy'], nodes: [] };
+    const scoped = fakeFetch();
+    await makeKubernetesConnector(cfg(), scoped.impl).fetchTriageContext({
+      service: 'slack:C07EWAS8132',
+      windowMinutes: 30,
+      scope,
+    });
+    expect(scoped.calls.some((k) => k.url.includes('/namespaces/edge-proxy/pods'))).toBe(true);
+    const placeholder = fakeFetch();
+    const ctx = await makeKubernetesConnector(cfg(), placeholder.impl).fetchTriageContext({
+      service: 'slack:C07EWAS8132',
+      windowMinutes: 30,
+    });
+    expect(placeholder.calls.map((k) => k.url).join(' ')).not.toContain('/namespaces/');
+    expect(ctx.data).toMatchObject({ namespace: null, pods: [], warnings: [] });
+    const configured = fakeFetch();
+    await makeKubernetesConnector(
+      cfg({ settings: { apiUrl: 'https://k8s.example.com:6443', namespace: 'billing' } }),
+      configured.impl,
+    ).fetchTriageContext({ service: 'payments', windowMinutes: 30, scope });
+    expect(configured.calls.some((k) => k.url.includes('/namespaces/billing/pods'))).toBe(true);
+  });
+
+  test('alert-named node addresses narrow nodes to the matching InternalIP', async () => {
+    const node = (name: string, address: string) => ({
+      metadata: { name },
+      status: { addresses: [{ type: 'InternalIP', address }], conditions: [] },
+    });
+    const { impl } = fakeFetch({
+      nodes: { items: [node('worker-1', '192.168.1.202'), node('worker-2', '192.168.1.203')] },
+    });
+    const ctx = await makeKubernetesConnector(cfg(), impl).fetchTriageContext({
+      service: 'slack:C07EWAS8132',
+      windowMinutes: 30,
+      scope: { namespaces: [], nodes: ['192.168.1.203'] },
+    });
+    expect((ctx.data as { nodes: Array<{ name: string }> }).nodes.map((n) => n.name)).toEqual([
+      'worker-2',
+    ]);
+    const unmatched = await makeKubernetesConnector(cfg(), impl).fetchTriageContext({
+      service: 'slack:C07EWAS8132',
+      windowMinutes: 30,
+      scope: { namespaces: [], nodes: ['10.0.0.9'] },
+    });
+    // A node address from elsewhere must not hide every node.
+    expect((unmatched.data as { nodes: Array<{ name: string }> }).nodes.map((n) => n.name)).toEqual(
+      ['worker-1', 'worker-2'],
+    );
+  });
+
   test('trims trailing slashes from apiUrl so every request path has one separator', async () => {
     const { impl, calls } = fakeFetch();
     const c = makeKubernetesConnector(

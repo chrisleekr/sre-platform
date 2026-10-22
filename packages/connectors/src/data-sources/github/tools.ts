@@ -3,7 +3,7 @@ import type { ConnectorConfig } from '../../registry';
 import { assertSafeHttpsUrl, type HostLookup } from '../../ssrf';
 import type { ConnectorTool, ToolRunOptions } from '../../types';
 import { boundedSignal } from '../../request-signal';
-import { obj, str } from '../../values';
+import { decodeBase64Content, obj, str } from '../../values';
 import type { InstallationTokenProvider } from './auth';
 import {
   API_TIMEOUT_MS,
@@ -122,10 +122,8 @@ const repoArg = z.string().optional();
  * REST surface (origin-guarded); `list_repositories` enumerates the installation's accessible repos so
  * the agent can discover what it may read; the rest are ergonomic wrappers over the hot deploy-
  * correlation paths (commits / PRs / Actions), each defaulting the repo to `settings.repo`. GET-only,
- * so no tool can mutate. Output redaction is the dispatch layer's single choke point: GitHub
- * never returns Actions secret values (write-only) and Actions variables are non-secret, so there is
- * no structured-secret endpoint to path-gate — unlike GitLab's CI-variables. Job logs are arbitrary
- * text (the same accepted best-effort limit as GitLab traces / k8s pod logs).
+ * so no tool can mutate. Output is not redacted; GitHub never returns Actions secret values
+ * (write-only).
  */
 export function makeGitHubTools(
   config: ConnectorConfig,
@@ -290,18 +288,21 @@ export function makeGitHubTools(
       name: 'get_content',
       description:
         'Read one file or directory at an optional revision from a resolved repository. File content ' +
-        'is bounded to the provider response limits and remains read-only. A file response includes ' +
+        'is bounded to the provider response limits and remains read-only. Text file content is ' +
+        'returned decoded as UTF-8 (encoding "utf-8"); binary content stays Base64. A file response includes ' +
         'sha, the git blob SHA: the same sha at two revisions means identical bytes.',
       inputSchema: z.object({ repo: z.string(), path: z.string(), ref: z.string().optional() }),
       run: async ({ repo, path, ref }, call) => {
         const { owner, repo: name } = parseRepo(repo);
         if (!path || path.startsWith('/') || path.split('/').includes('..'))
           throw new Error('github connector: invalid repository path');
-        return getForRepo(
-          repo,
-          `repos/${owner}/${name}/contents/${path.split('/').map(encodeURIComponent).join('/')}`,
-          q({ ref }),
-          call?.signal,
+        return decodeBase64Content(
+          await getForRepo(
+            repo,
+            `repos/${owner}/${name}/contents/${path.split('/').map(encodeURIComponent).join('/')}`,
+            q({ ref }),
+            call?.signal,
+          ),
         );
       },
     }),

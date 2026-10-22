@@ -256,11 +256,11 @@ closes its synthetic incidents and fails if any run-owned container cannot be re
 
 ## Secrets in results
 
-This connector has no redaction rules of its own. Prometheus already masks structured credentials in
-its own configuration endpoint.
+The platform does not redact results. Prometheus already masks structured credentials in its own
+configuration endpoint.
 
-The residual case is a credential written into an address, such as a username and password in a
-scrape target, which is
-[known Prometheus behaviour](https://jfrog.com/blog/dont-let-prometheus-steal-your-fire/). That is
-the same limit that applies to any log line. Your egress rules and per-customer credential isolation
-remain the real controls.
+A credential written into an address, such as a username and password in a scrape target, is
+returned as is, which is
+[known Prometheus behaviour](https://jfrog.com/blog/dont-let-prometheus-steal-your-fire/), and
+reaches the model provider, the evidence store, and Slack. Your egress rules and per-customer
+credential isolation remain the real controls.

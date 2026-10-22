@@ -51,3 +51,33 @@ test('inventory reads only the connector catalog and does not require a service 
   expect(inventoryOnly.collections.map((row) => row.key)).toEqual(['repositories']);
   expect(createReader).not.toHaveBeenCalled();
 });
+
+test('a GitLab registry image prefix becomes an exact alias of the project', async () => {
+  const config: ConnectorConfig = {
+    id: 'source',
+    tenantId: 'tenant',
+    name: 'GitLab',
+    type: 'gitlab',
+    settings: {},
+    getCredential: vi.fn(),
+    repositories: {
+      search: vi.fn(async () => [
+        {
+          repositoryId: '7',
+          fullName: 'team/proxy',
+          defaultBranch: 'main',
+          htmlUrl: 'https://git.example/team/proxy',
+          containerRegistryImagePrefix: 'Registry.example/team/proxy',
+          private: true,
+          archived: false,
+        },
+      ]),
+      resolve: vi.fn(),
+      recentEvents: vi.fn(),
+    },
+  };
+  const [entity] = (await repositoryTopology(config)!.discover()).collections[0]!.entities;
+  expect(entity?.aliases).toEqual([
+    { authority: 'oci:registry.example', kind: 'repository', id: 'team/proxy' },
+  ]);
+});

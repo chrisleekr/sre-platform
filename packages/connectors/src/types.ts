@@ -69,6 +69,13 @@ export interface NormalizedSnapshot {
   topology?: TopologyRuntimeState;
 }
 
+/** First-pass read request. Scope carries exact runtime identities resolved for the incident. */
+export interface TriageQuery {
+  service: string;
+  windowMinutes: number;
+  scope?: { namespaces: string[]; nodes: string[] };
+}
+
 export interface TriageContext {
   source: ConnectorType;
   data: Record<string, unknown>;
@@ -238,7 +245,7 @@ export interface IDataSourceConnector {
   snapshot(): Promise<NormalizedSnapshot[]>;
   /** Operational evidence from the most recent snapshot attempt; contains no provider payloads. */
   pollEvidence?(): ConnectorPollEvidence | undefined;
-  fetchTriageContext(query: { service: string; windowMinutes: number }): Promise<TriageContext>;
+  fetchTriageContext(query: TriageQuery): Promise<TriageContext>;
   /** Optional deep capability used by the provider-neutral code investigation application. */
   readonly sourceCode?: SourceCodeReader;
   /** Optional runtime provenance capability, currently supplied by Kubernetes connectors. */

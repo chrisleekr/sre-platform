@@ -297,6 +297,7 @@ export async function pollGitLabGroup(
             name: str(project.name),
             fullPath: project.path_with_namespace,
             webUrl: str(project.web_url),
+            containerRegistryImagePrefix: str(project.container_registry_image_prefix),
             defaultBranch: str(project.default_branch),
             visibility: str(project.visibility),
             archived: project.archived === true,

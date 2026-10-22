@@ -2,17 +2,17 @@ import * as z from 'zod';
 import type { ConnectorConfig } from '../../registry';
 import type { HostLookup } from '../../ssrf';
 import type { ConnectorTool, ToolRunOptions } from '../../types';
-import { str } from '../../values';
+import { decodeBase64Content, str } from '../../values';
 import { connectorToken } from './auth';
 import {
   DEFAULT_PER_PAGE,
   apiBase,
   apiFetch,
   buildApiUrl,
+  isDeniedGitLabPath,
   projectRef,
   type FetchLike,
 } from './client';
-import { sanitizeGitLab } from './sanitize';
 
 /** Bind a Zod input schema to a typed run body, returning the erased ConnectorTool (mirror of k8s). */
 function gtool<S extends z.ZodType>(def: {
@@ -45,8 +45,8 @@ function q(o: Record<string, string | number | undefined>): Record<string, strin
  * GitLab granular triage tools. `api_get` is a generic GET over any `/api/v4`
  * path (URL-normalized, origin+prefix-guarded, per_page-clamped) so coverage is comprehensive; the
  * six named tools are ergonomic wrappers over the hot triage paths, defaulting the project to the
- * incident's configured id/service. Every JSON response is passed through the path-gated sanitizer;
- * traces return bounded text. GET-only: no tool can mutate.
+ * incident's configured id/service. Webhook paths are refused; other JSON responses are returned
+ * unredacted and traces return bounded text. GET-only: no tool can mutate.
  */
 export function makeGitLabTools(
   config: ConnectorConfig,
@@ -55,9 +55,11 @@ export function makeGitLabTools(
 ): ConnectorTool[] {
   const settings = config.settings;
   const getUrl = async (url: string, signal?: AbortSignal): Promise<unknown> => {
+    if (isDeniedGitLabPath(new URL(url).pathname))
+      throw new Error('gitlab connector: webhook paths are not permitted');
     const token = await connectorToken(config);
     const { json, text, truncated = false } = await apiFetch(fetchImpl, url, token, signal);
-    if (json !== undefined) return sanitizeGitLab(new URL(url).pathname, json);
+    if (json !== undefined) return json;
     return { truncated, body: text };
   };
   const get = async (
@@ -160,7 +162,7 @@ export function makeGitLabTools(
       gtool({
         name: 'api_get',
         description:
-          'GET a read-only REST endpoint beneath one synchronized project. The request cannot escape that project.',
+          'GET a read-only REST endpoint beneath one synchronized project. The request cannot escape that project. Webhook paths are refused.',
         inputSchema: z.object({
           project: projectSchema,
           path: z.string(),
@@ -233,7 +235,8 @@ export function makeGitLabTools(
       gtool({
         name: 'get_file',
         description:
-          'Read one repository file at a branch, tag, or commit. The content is Base64 encoded by GitLab. ' +
+          'Read one repository file at a branch, tag, or commit. Text content is returned decoded as UTF-8 ' +
+          '(encoding "utf-8"); binary content stays Base64 (encoding "base64"). ' +
           'The response includes blob_id and last_commit_id: the same blob_id at two revisions means identical ' +
           'bytes, and last_commit_id names the commit that last touched the file. content_sha256 hashes text that ' +
           'GitLab may have converted to UTF-8, so it does not prove byte equality.',
@@ -242,16 +245,16 @@ export function makeGitLabTools(
           path: z.string(),
           ref: z.string().optional(),
         }),
-        run: ({ project, path, ref }, call) => {
+        run: async ({ project, path, ref }, call) => {
           if (!path || path.startsWith('/') || path.split('/').includes('..'))
             throw new Error('gitlab connector: invalid repository path');
-          return projectGet(
-            project,
-            `repository/files/${encodeURIComponent(path)}`,
-            {
-              ref: ref ?? 'HEAD',
-            },
-            call?.signal,
+          return decodeBase64Content(
+            await projectGet(
+              project,
+              `repository/files/${encodeURIComponent(path)}`,
+              { ref: ref ?? 'HEAD' },
+              call?.signal,
+            ),
           );
         },
       }),
@@ -360,8 +363,8 @@ export function makeGitLabTools(
       name: 'api_get',
       description:
         'GET any GitLab REST v4 endpoint by path (relative to /api/v4), e.g. "projects/123/pipelines" ' +
-        'or "projects/group%2Frepo/merge_requests". Read-only. Optional query params. Secret values ' +
-        '(CI variables, tokens, webhook secrets) are redacted. Use this for anything the named tools omit.',
+        'or "projects/group%2Frepo/merge_requests". Read-only. Optional query params. Webhook paths ' +
+        'are refused; other responses are returned unredacted. Use this for anything the named tools omit.',
       inputSchema: z.object({
         path: z.string(),
         query: z.record(z.string(), z.union([z.string(), z.number()])).optional(),

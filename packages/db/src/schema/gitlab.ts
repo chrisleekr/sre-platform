@@ -29,6 +29,8 @@ export const gitlabProjects = pgTable(
     visibility: text('visibility'),
     archived: boolean('archived').notNull().default(false),
     webUrl: text('web_url').notNull(),
+    /** Registry path GitLab assigns to this project's images; claims image paths beneath it. */
+    containerRegistryImagePrefix: text('container_registry_image_prefix'),
     lastActivityAt: timestamp('last_activity_at', { withTimezone: true }),
     lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }).defaultNow().notNull(),
     pollCursor: jsonb('poll_cursor').$type<Record<string, unknown>>(),

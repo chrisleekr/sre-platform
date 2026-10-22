@@ -4,7 +4,7 @@
 
 | Tool | What it does |
 | --- | --- |
-| `api_get` | GET any GitLab REST v4 endpoint by path (relative to /api/v4), e.g. "projects/123/pipelines" or "projects/group%2Frepo/merge_requests". Read-only. Optional query params. Secret values (CI variables, tokens, webhook secrets) are redacted. Use this for anything the named tools omit. |
+| `api_get` | GET any GitLab REST v4 endpoint by path (relative to /api/v4), e.g. "projects/123/pipelines" or "projects/group%2Frepo/merge_requests". Read-only. Optional query params. Webhook paths are refused; other responses are returned unredacted. Use this for anything the named tools omit. |
 | `list_pipelines` | List recent CI pipelines for a project (newest first). Filter by ref/status/sha. |
 | `get_pipeline_jobs` | List the jobs of a pipeline, with each job status and stage. |
 | `get_job_trace` | Fetch a job log (trace). Returns bounded text (last ~64K characters). Traces may contain secrets not marked masked in GitLab — treat as sensitive. |
@@ -21,12 +21,12 @@
 | `resolve_projects` | Resolve projects associated with an incident service from confirmed topology, Argo CD sources, and exact catalog matches. |
 | `search_projects` | Search the synchronized group-wide catalog by project ID or path. An empty query or standalone * lists a bounded scoped inventory; no match does not mean the provider lacks a capability. |
 | `list_recent_events` | List synchronized push, merge-request, pipeline, job, deployment, and release evidence for selected projects since an ISO timestamp. |
-| `api_get` | GET a read-only REST endpoint beneath one synchronized project. The request cannot escape that project. |
+| `api_get` | GET a read-only REST endpoint beneath one synchronized project. The request cannot escape that project. Webhook paths are refused. |
 | `list_commits` | List recent commits in one synchronized project. |
 | `get_commit` | Get one commit with its parent revisions, changed files, and diff metadata. |
 | `compare_commits` | Compare two revisions in one synchronized project to find commits and files changed between them. A large comparison returns collapsed or missing diffs; to check one file, call get_file at each revision instead. |
 | `search_code` | Search code in one synchronized project. GitLab code search availability depends on the instance tier and search configuration. |
-| `get_file` | Read one repository file at a branch, tag, or commit. The content is Base64 encoded by GitLab. The response includes blob_id and last_commit_id: the same blob_id at two revisions means identical bytes, and last_commit_id names the commit that last touched the file. content_sha256 hashes text that GitLab may have converted to UTF-8, so it does not prove byte equality. |
+| `get_file` | Read one repository file at a branch, tag, or commit. Text content is returned decoded as UTF-8 (encoding "utf-8"); binary content stays Base64 (encoding "base64"). The response includes blob_id and last_commit_id: the same blob_id at two revisions means identical bytes, and last_commit_id names the commit that last touched the file. content_sha256 hashes text that GitLab may have converted to UTF-8, so it does not prove byte equality. |
 | `list_merge_requests` | List recent merge requests in one synchronized project. |
 | `list_pipelines` | List recent CI pipelines in one synchronized project. |
 | `get_pipeline_jobs` | List jobs and statuses for one pipeline. |

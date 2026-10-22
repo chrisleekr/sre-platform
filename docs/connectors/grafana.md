@@ -16,8 +16,7 @@ The dotted line is the point of the connector. See [Why it stops at Grafana](#wh
 flowchart LR
     Inc["An investigation<br/>needs evidence"] --> Tools["Read-only tools"]
     Tools --> Graf["Grafana"]
-    Graf --> Scrub["Result scrubbed<br/>of secrets"]
-    Scrub --> Thread["Evidence in the<br/>incident thread"]
+    Graf --> Thread["Evidence in the<br/>incident thread"]
     Graf -.->|"refused"| Source["The data sources<br/>behind Grafana"]
 ```
 
@@ -104,16 +103,19 @@ knowing regardless.
 
 Grafana is an aggregator, and its data source proxy will happily forward a request to whatever sits
 behind it and hand back the raw response. That response can contain a credential Grafana itself
-would have redacted.
+would have omitted.
 
-So the connector refuses every proxy and data source resource path. That is one clean rule, instead
-of trying to write a scrubber for arbitrary responses from systems the platform knows nothing about.
+So the connector refuses every proxy and data source resource path, and only talks to Grafana's own
+API.
 
 ## Secrets in results
 
-This connector has no redaction rules of its own. Grafana already omits data source secrets from its
-responses, returning only which secret fields are set, and refusing the proxy paths removes the only
-way an unredacted secret from a downstream system could arrive.
+The platform does not redact results. Grafana already omits data source secrets from its
+responses, returning only which secret fields are set, and refusing the proxy paths keeps downstream
+responses out. The generic passthrough also refuses any request with a `decrypt` query parameter,
+because decrypted provisioning exports return contact point secrets in clear, including the
+platform's own webhook bearer token. Anything else Grafana returns reaches the model provider, the
+evidence store, and Slack as is.
 
 The one residual, an internal data source address, is topology rather than a credential.
 

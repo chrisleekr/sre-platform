@@ -1,4 +1,4 @@
-export * from '../../shared/kubernetes/sanitize';
+export * from '../../shared/kubernetes/trim';
 export * from './connector';
 export * from './manifest';
 export * from './path';

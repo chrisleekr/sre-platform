@@ -18,6 +18,30 @@ import { createFixture } from './poller.fixture';
 
 const __fixture = createFixture();
 
+test('a Helm chart source is a package feed, not a GitLab source repository', () => {
+  expect(
+    serviceRepositoriesFromSnapshots([
+      {
+        tenantId: 't1',
+        source: 'argocd',
+        entityId: 'application:argocd/edge-proxy',
+        metrics: {},
+        metadata: {
+          applicationName: 'edge-proxy',
+          sources: [
+            {
+              repoURL: 'https://gitlab.example.com/api/v4/projects/53/packages/helm/devel',
+              chart: 'edge-proxy',
+              targetRevision: '1.2.3',
+            },
+          ],
+        },
+        observedAt: new Date(),
+      },
+    ]),
+  ).toEqual([]);
+});
+
 test('extracts GitHub and GitLab service relationships from Argo CD application sources', () => {
   expect(
     serviceRepositoriesFromSnapshots([

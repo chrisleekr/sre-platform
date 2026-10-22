@@ -14,6 +14,7 @@ import type {
   SourceCodeReader,
   EntityCoverageReader,
   TriageContext,
+  TriageQuery,
 } from './types';
 
 /** Per-tenant connector configuration handed to a factory at construction. */
@@ -57,6 +58,8 @@ export interface RepositoryCatalogEntry {
   private: boolean;
   archived: boolean;
   htmlUrl: string;
+  /** GitLab image registry path for this project, such as `registry.example/group/project`. */
+  containerRegistryImagePrefix?: string | null;
   path?: string | null;
   source?: string;
   mappingSource?: string | null;
@@ -86,10 +89,7 @@ export interface ConnectorImplementation {
   issues?: IssueManager;
   snapshot?: () => Promise<NormalizedSnapshot[]>;
   pollEvidence?: () => ConnectorPollEvidence | undefined;
-  fetchTriageContext?: (query: {
-    service: string;
-    windowMinutes: number;
-  }) => Promise<TriageContext>;
+  fetchTriageContext?: (query: TriageQuery) => Promise<TriageContext>;
   sourceCode?: SourceCodeReader;
   runtimeArtifacts?: RuntimeArtifactReader;
   topology?: TopologyReader;

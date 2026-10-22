@@ -252,6 +252,10 @@ event. One received event proves that hook's path, not that every project has a 
 
 --8<-- "_generated/connector-tools/gitlab.md"
 
+Catalog polling also stores each project's container registry image prefix, such as
+`registry.example.com/group/project`. Topology uses it to link a running image under that path to
+the project's source; see [Source evidence](../understand/topology.md#source-evidence).
+
 Every tool is read-only, and every project it is asked about must already be in the synced catalog.
 The stored token therefore cannot be turned into a general-purpose reader for the whole instance.
 
@@ -261,13 +265,15 @@ rather than truncating silently.
 
 ## Secrets in results
 
-GitLab responses do not label themselves the way Kubernetes objects do, so the platform decides what
-is secret from what was asked for. Continuous-integration and schedule variable values, access,
-deploy and trigger tokens, webhook tokens and addresses, runner tokens, and integration settings are
-all replaced wherever they appear. Keys and structure are kept; only values go.
+The platform does not redact GitLab responses. Continuous-integration variable values, tokens,
+and integration settings are returned as GitLab sends them when the token can read them, and reach
+the model provider, the evidence store, and Slack. Use a token with `read_api` scope that cannot
+read variables or tokens you do not want exposed.
 
-Redaction never blocks an investigation. A response the platform cannot parse is passed through with
-its shape preserved rather than failing the call outright.
+The generic passthrough refuses every path with a `hooks` segment (project, group, and system
+webhooks), because a hook address includes the platform's own relay channel URL.
+
+Repository files read with `get_file` come back as UTF-8 text. Binary files stay Base64 encoded.
 
 ## Event delivery health
 

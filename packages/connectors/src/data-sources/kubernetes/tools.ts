@@ -1,20 +1,13 @@
 import * as z from 'zod';
 import type { ConnectorConfig } from '../../registry';
 import { dnsLookup, type HostLookup } from '../../ssrf';
-import { sanitizeObject } from '../../shared/kubernetes/sanitize';
+import { trimObject } from '../../shared/kubernetes/trim';
 import type { ConnectorTool, ToolRunOptions } from '../../types';
 import { obj, str } from '../../values';
 import { resourcePath, validateSegment } from './path';
 import { K8sApiError, itemsOf, k8sClient, mapEvent } from './runtime';
 
 type FetchLike = typeof fetch;
-
-/** Map a queried resource plural to the object kind the sanitizer gates data-redaction on. */
-function resourceKindFor(resource: string): string | undefined {
-  if (resource === 'secrets') return 'Secret';
-  if (resource === 'configmaps') return 'ConfigMap';
-  return undefined;
-}
 
 /**
  * Tie a Zod input schema to a typed `run` body while returning the erased `ConnectorTool` the
@@ -45,10 +38,20 @@ async function readMetrics(
 }
 
 /**
+ * Refuse Secret reads even when the supplied token is broader than the manifest's. Output is not
+ * redacted, and a Secret can hold the platform's own credentials (this connector's token among them).
+ * Checked on the resource name alone, so every apiVersion form of core/v1 is covered.
+ */
+function refuseSecrets(resource: string): void {
+  if (resource.trim().toLowerCase() === 'secrets')
+    throw new Error('kubernetes connector: reading secrets is not permitted');
+}
+
+/**
  * The connector's granular triage tools. Each validates every path segment it
  * interpolates before building a client, so a crafted `name`/`resource`/`namespace` cannot traverse
- * the API path (rejected before any fetch). Get/list results are secret-excluded via
- * `sanitizeObject`; logs return raw text (the dispatch layer redacts output once). A configured
+ * the API path (rejected before any fetch). Get/list refuse Secrets, drop bulky metadata via
+ * `trimObject` and keep every other value; logs return raw text. A configured
  * `settings.namespace` is the default for namespaced tools; empty means cluster/all-namespace scope.
  */
 export function makeK8sTools(
@@ -112,7 +115,8 @@ export function makeK8sTools(
       description:
         'Get a single resource by apiVersion (e.g. "v1" or "apps/v1"), plural resource, and name. ' +
         'Omit namespace for a cluster-scoped resource or to span all namespaces; provide it to scope ' +
-        'to one namespace. Secret/ConfigMap values and container env values are redacted.',
+        'to one namespace. Secrets are refused. Values are returned unredacted; bulky managedFields ' +
+        'metadata is dropped.',
       inputSchema: z.object({
         apiVersion: z.string(),
         resource: z.string(),
@@ -124,10 +128,11 @@ export function makeK8sTools(
         // path (no /namespaces/{ns} segment), correct for cluster-scoped kinds (nodes, PVs). Falling
         // back to the configured default here would 404 a nodes get by scoping it to a namespace.
         const ns = namespace;
+        refuseSecrets(resource);
         // Segment validation runs here (pure) before any client/fetch: injection is rejected early.
         const path = resourcePath(apiVersion, resource, { namespace: ns, name });
         const client = await k8sClient(config, fetchImpl, lookup, call?.signal);
-        return sanitizeObject(await client.kjson(path), resourceKindFor(resource));
+        return trimObject(await client.kjson(path));
       },
     }),
 
@@ -136,7 +141,8 @@ export function makeK8sTools(
       description:
         'List resources of a kind by apiVersion and plural resource, with optional label/field ' +
         'selectors. Omit namespace for a cluster-scoped resource or to span all namespaces; provide ' +
-        'it to scope to one namespace. Secret/ConfigMap values and container env values are redacted per item.',
+        'it to scope to one namespace. Secrets are refused. Values are returned unredacted; bulky ' +
+        'managedFields metadata is dropped.',
       inputSchema: z.object({
         apiVersion: z.string(),
         resource: z.string(),
@@ -152,14 +158,14 @@ export function makeK8sTools(
         // Caller-provided namespace only: omitted means list across all namespaces (or a
         // cluster-scoped kind), not a silent fallback to the configured default.
         const ns = namespace;
+        refuseSecrets(resource);
         const path = resourcePath(apiVersion, resource, { namespace: ns });
         const qs = new URLSearchParams({ limit: String(limit ?? 200) });
         if (labelSelector) qs.set('labelSelector', labelSelector);
         if (fieldSelector) qs.set('fieldSelector', fieldSelector);
         const client = await k8sClient(config, fetchImpl, lookup, call?.signal);
         const data = await client.kjson(`${path}?${qs.toString()}`);
-        const kind = resourceKindFor(resource);
-        return { items: itemsOf(data).map((it) => sanitizeObject(it, kind)) };
+        return { items: itemsOf(data).map(trimObject) };
       },
     }),
 

@@ -46,6 +46,19 @@ describe('StatusCake Slack uptime template', () => {
     ).toEqual({ state, url: 'https://checkout.example/' });
   });
 
+  test('reads a push check recovery, whose empty URL slot leaves two spaces', () => {
+    const text =
+      "Website | Your site 'PiHole Status - 192.168.1.50'  went Up [HTTP 100] [PUSH not received in expected timeframe]\nPiHole Status - 192.168.1.50 - undefined\nYour site went back up!";
+    expect(uptimeNotification(text)).toEqual({ state: 'resolved' });
+    expect(candidate(text)?.signalState).toBe('resolved');
+  });
+
+  test('reads a push check outage, whose empty URL slot leaves two spaces', () => {
+    const text =
+      "Website | Your site 'PiHole Status - 192.168.1.50'  went Down [PUSH not received in expected timeframe]";
+    expect(uptimeNotification(text)).toEqual({ state: 'firing' });
+  });
+
   test('a word that merely starts with Up or Down is not a state', () => {
     expect(
       uptimeNotification("Website | Your site '<https://checkout.example|checkout>' went Downtown"),

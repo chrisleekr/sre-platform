@@ -14,7 +14,6 @@ import {
   readBoundedText,
   type FetchLike,
 } from './client';
-import { sanitizeGitLab } from './sanitize';
 
 function immutableGitRevision(value: string): string {
   if (!/^[0-9a-f]{40,64}$/i.test(value))
@@ -101,7 +100,7 @@ export async function makeGitLabSourceCodeReader(
       await token(),
     );
     if (response.json === undefined) throw new Error('gitlab connector: expected JSON response');
-    return sanitizeGitLab(new URL(projectUrl(repository, suffix, query)).pathname, response.json);
+    return response.json;
   };
   return {
     resolveRepository: (reference) => resolveSourceRepository(config, 'gitlab', reference),
