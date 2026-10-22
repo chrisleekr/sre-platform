@@ -254,6 +254,26 @@ describe('repeat provider notifications', () => {
     ]);
   });
 
+  test('an older incident still firing wins over a newer one that recovered before the window', async () => {
+    const monitorKey = `slack:monitor-${randomUUID()}`;
+    const older = await trackedIncident(monitorKey, hoursAgo(30));
+    const newer = await trackedIncident(monitorKey, hoursAgo(27));
+    await admin.db
+      .update(incidentSignals)
+      .set({ state: 'resolved', resolvedAt: hoursAgo(26) })
+      .where(eq(incidentSignals.id, newer.signalId));
+    const { handle, onOutcome, classifyFn } = handler(false);
+    const candidate = firingCandidate(monitorKey);
+
+    await handle(job(candidate));
+
+    expect(classifyFn).not.toHaveBeenCalled();
+    expect(onOutcome).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'belongs_to' }));
+    await expect(signalsOf(tenantId, candidate.externalId)).resolves.toEqual([
+      { incidentId: older.incidentId },
+    ]);
+  });
+
   test('a grouped message attaches when its incident tracks one alert active and one recovered', async () => {
     const recoveredHoursAgo = 0.5;
     const activeKey = `slack:monitor-${randomUUID()}`;

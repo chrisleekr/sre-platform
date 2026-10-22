@@ -99,9 +99,10 @@ investigation needs.
 **Verified when you save.** Setup proves the exact reads the platform needs, and tells you which
 permission is missing rather than failing later inside an incident.
 
-**Results are not redacted.** Anything a connector returns reaches the model provider, the
-conversation, Slack, and the database as returned, including any credential in it. Scope each
-connector credential to read-only access and to the data triage needs.
+**Results are not redacted.** The audit database stores connector output as returned, including
+any credential in it. The model provider receives the same output, encoded and possibly truncated,
+and the conversation and Slack receive what the model writes from it. Scope each connector
+credential to read-only access and to the data triage needs.
 
 ## Two things you cannot connect here
 

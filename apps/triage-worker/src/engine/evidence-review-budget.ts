@@ -98,6 +98,10 @@ export function citedEvidenceIds(candidate: TriageResult): Set<string> {
   ]);
 }
 
+// The history is repeated in every 96,000-character chunk prompt, so an operator-raised transcript
+// budget must not crowd out the records.
+const REVIEWER_PRIOR_MAX_CHARS = 32_000;
+
 /**
  * The reviewer judges the admitted records, so the tool steps that produced them are dropped rather
  * than repeated in every chunk, and older messages give way to the newest within the transcript budget.
@@ -111,7 +115,8 @@ function reviewerPrior(prior: ResumeInput['prior']): ResumeInput['prior'] {
   const pinned =
     messages.length > 1 && !isMarker(messages[0]!) && isMarker(messages[1]!) ? [messages[0]!] : [];
   const rest = messages.slice(pinned.length).filter((message) => !isMarker(message));
-  let remaining = transcriptBudgetChars() - (pinned[0]?.content.length ?? 0);
+  let remaining =
+    Math.min(transcriptBudgetChars(), REVIEWER_PRIOR_MAX_CHARS) - (pinned[0]?.content.length ?? 0);
   let start = rest.length;
   while (start > 0 && rest[start - 1]!.content.length <= remaining)
     remaining -= rest[--start]!.content.length;

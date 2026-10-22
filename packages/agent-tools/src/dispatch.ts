@@ -59,7 +59,7 @@ export async function runTool<I, O>(
  * Classifies a thrown tool error from typed connector fields, never its message.
  *
  * @remarks Reads `status`, `failureCategory` and a `TimeoutError` name; provider text can carry
- * secrets.
+ * secrets. A typed category wins over a status.
  * @param error - Value thrown by a tool handler.
  */
 export function classifyToolError(error: unknown): ToolFailure {
@@ -69,9 +69,11 @@ export function classifyToolError(error: unknown): ToolFailure {
   // GitHub reports an exhausted quota as 403, so the category wins over the status.
   if (failureCategory === 'rate_limited' || status === 429) return 'rate_limited';
   if (failureCategory === 'target_not_allowed') return 'target_not_allowed';
-  if (status === 404) return 'not_found';
+  // GitHub hides what a credential cannot see behind a 404 and tags it permission_denied, so the
+  // category wins over a 404 status: an invisible target is not proof of absence.
   if (failureCategory === 'permission_denied' || status === 401 || status === 403)
     return 'permission_denied';
+  if (status === 404) return 'not_found';
   if (failureCategory === 'unreachable' || failureCategory === 'tls') return 'unreachable';
   return 'provider_error';
 }
