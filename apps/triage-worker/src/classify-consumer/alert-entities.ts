@@ -20,7 +20,7 @@ const ADDRESS = /\b(\d{1,3}(?:\.\d{1,3}){3}):\d{1,5}\b/g;
 /**
  * Reads exact Kubernetes identities that Alertmanager descriptions print, never the Slack heading,
  * whose namespace label belongs to the exporter rather than the affected resource.
- * @param summary - Scrubbed alert text carried by one Slack observation.
+ * @param summary - Alert text carried by one Slack observation.
  * @param observedAt - Event time of that observation.
  */
 export function alertEntityCandidates(
