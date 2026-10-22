@@ -201,11 +201,18 @@ test('running images declare registry paths as application source, never a Helm 
 });
 
 test.each([
-  ['registry.example:5000/a/b/c/d/e:tag', ['a/b', 'a/b/c', 'a/b/c/d']],
+  ['registry.example:5000/a/b/c/d/e:tag', ['a/b', 'a/b/c', 'a/b/c/d', 'a/b/c/d/e']],
   ['nginx', ['library/nginx']],
   ['registry.example/Bad Path', []],
 ])('image %s yields bounded repository prefixes', (image, ids) => {
   expect(imageRepositoryRefs(image).map((ref) => ref.id)).toEqual(ids);
+});
+
+test('image prefixes stop at the deepest GitLab registry path', () => {
+  const segments = Array.from({ length: 30 }, (_, i) => `s${i}`);
+  const ids = imageRepositoryRefs(`registry.example/${segments.join('/')}:tag`).map((r) => r.id);
+  expect(ids).toHaveLength(23);
+  expect(ids.at(-1)).toBe(segments.slice(0, 24).join('/'));
 });
 
 test('missing resource-tree permission preserves application evidence as partial', async () => {

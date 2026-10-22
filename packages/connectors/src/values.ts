@@ -14,7 +14,8 @@ export function idStr(value: unknown): string {
 
 /**
  * Replace a provider file's Base64 `content` with its UTF-8 text so the model reads source directly.
- * Binary or non-UTF-8 content keeps its Base64 form.
+ * Content that is not valid UTF-8, or holds a NUL byte (git's own test for a binary file), keeps its
+ * Base64 form. A leading byte order mark is kept so the text matches the file.
  * @param file - A provider file response carrying `encoding: 'base64'` and `content`.
  */
 export function decodeBase64Content(file: unknown): unknown {
@@ -22,7 +23,7 @@ export function decodeBase64Content(file: unknown): unknown {
   if (record.encoding !== 'base64' || typeof record.content !== 'string') return file;
   let text: string;
   try {
-    text = new TextDecoder('utf-8', { fatal: true }).decode(
+    text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(
       Buffer.from(record.content.replace(/\s+/g, ''), 'base64'),
     );
   } catch {

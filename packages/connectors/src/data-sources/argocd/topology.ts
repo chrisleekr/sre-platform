@@ -15,6 +15,10 @@ import { ArgoApiError, connect, checkedJsonGet, validateName, type FetchLike } f
 import { readApplications, readScopedApplication } from './verification';
 import { safeHttpUrl } from './projection';
 
+// GitLab nests subgroups up to 20 levels under a top-level group, and a registry image adds up to
+// three name segments beneath its project, so no claimable image path is longer than this.
+const MAX_IMAGE_PATH_SEGMENTS = 24;
+
 /** Registry repository paths an image could belong to, from shortest to longest.
  * @param image - Image reference reported on an Argo CD resource-tree node.
  */
@@ -29,7 +33,7 @@ export function imageRepositoryRefs(image: string): TopologyRef[] {
   if (host === 'docker.io' && parts.length === 1) parts.unshift('library');
   if (!parts.every((part) => /^[a-z0-9][a-z0-9._-]*$/.test(part))) return [];
   // GitLab projects own two or more path segments; a sub-image path can sit beneath the project.
-  return parts.slice(1, 4).map((_, index) => ({
+  return parts.slice(1, MAX_IMAGE_PATH_SEGMENTS).map((_, index) => ({
     authority: `oci:${host}`,
     kind: 'repository',
     id: parts.slice(0, index + 2).join('/'),

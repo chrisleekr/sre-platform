@@ -15,6 +15,14 @@ describe('decodeBase64Content', () => {
     });
   });
 
+  test('keeps a leading byte order mark in the decoded text', () => {
+    const text = '\uFEFFname: api\n';
+    const out = decodeBase64Content({ encoding: 'base64', content: base64(text) }) as {
+      content: string;
+    };
+    expect(out.content).toBe(text);
+  });
+
   test('keeps binary and non-UTF-8 content as Base64', () => {
     const binary = {
       encoding: 'base64',
