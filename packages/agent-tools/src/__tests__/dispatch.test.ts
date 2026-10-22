@@ -8,6 +8,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as z from 'zod';
 import { makeFakeConnector } from '@sre/connectors';
+import {
+  SourceFileNotFoundError,
+  SourceRateLimitError,
+} from '@sre/connectors/src/source-file-error';
 import type { ConnectorConfig, ConnectorType, IDataSourceConnector } from '@sre/connectors';
 import { classifyToolError, runTool, toJsonSchema } from '../dispatch';
 import { makeInMemoryAuditSink } from '../audit';
@@ -421,10 +425,12 @@ describe('tool failure classes', () => {
       'rate_limited',
     ],
     [
-      'GitHubApiError 404',
+      'GitHubApiError 404, which hides what the credential cannot see',
       failing({ failureCategory: 'permission_denied', status: 404 }),
-      'not_found',
+      'permission_denied',
     ],
+    ['SourceFileNotFoundError', new SourceFileNotFoundError(), 'not_found'],
+    ['SourceRateLimitError', new SourceRateLimitError(), 'rate_limited'],
     [
       'ArgoApiError permission',
       failing({ failureCategory: 'permission_denied' }),
