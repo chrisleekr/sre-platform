@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import { randomUUID } from 'node:crypto';
 
-import { createIncident, incidents, recordToolCall } from '@sre/db';
+import { createIncident, incidents, jobs, recordToolCall } from '@sre/db';
 
 import { eq, sql } from 'drizzle-orm';
 
@@ -208,5 +208,35 @@ describe('investigation-run projections', () => {
         );
       }
     }
+  });
+});
+
+describe('POST /incidents/:id/generate-runbook onto a silenced automatic pass', () => {
+  test('returns 409 instead of handing the request to a pass that posts nothing', async () => {
+    const { id: incidentId } = await createIncident(__fixture.app.db, __fixture.tenantC, {
+      fingerprint: `runbook-silenced-${randomUUID()}`,
+      alertSource: 'slack',
+      service: 'runbook-silenced',
+      severity: 'sev3',
+    });
+    const automaticId = await __fixture.runbookQueue.enqueue({
+      tenantId: __fixture.tenantC,
+      type: 'runbook.generate',
+      payload: { incidentId, automatic: true },
+    });
+    await __fixture.admin.db
+      .update(jobs)
+      .set({ status: 'processing', payload: { incidentId, automatic: true, silenced: true } })
+      .where(eq(jobs.id, automaticId));
+
+    const response = await __fixture.api.request(`/incidents/${incidentId}/generate-runbook`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${await __fixture.sign(__fixture.orgC)}` },
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: 'an automatic runbook pass is finishing; retry shortly',
+    });
   });
 });

@@ -162,6 +162,17 @@ export class LockContentionError extends RetryableError {
   }
 }
 
+/**
+ * A runbook request coalesced onto an automatic pass that already chose silence, so nothing would
+ * answer it. Retry once that pass finishes and frees the pending slot.
+ */
+export class AutomaticPassFinishingError extends RetryableError {
+  constructor() {
+    super('An automatic pass is finishing; retry the request.');
+    this.name = 'AutomaticPassFinishingError';
+  }
+}
+
 /** The requested incident was joined while this job producer was waiting for its durable fence. */
 export class IncidentMovedError extends Error {
   constructor(

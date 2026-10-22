@@ -109,13 +109,13 @@ export async function validateLearningProvenance(
 export function makeRecordLearningTool(deps: {
   db: Db;
   embedder: Embedder;
-  /** Removes human identifiers; a learning never names a person. */
-  clean: (tenantId: string, text: string) => Promise<string>;
+  /** Removes human identifiers, including those seen in the incident; a learning never names a person. */
+  clean: (tenantId: string, incidentId: string, text: string) => Promise<string>;
   /**
    * Removes only member identifiers and mentions, so a topic such as `etcd@node1.service` survives.
    * A topic it changes is refused rather than stored under a rewritten merge key.
    */
-  cleanTopic: (tenantId: string, text: string) => Promise<string>;
+  cleanTopic: (tenantId: string, incidentId: string, text: string) => Promise<string>;
   maxPerRun?: number;
 }): ToolDefinition<RecordLearningInput, RecordLearningResult> {
   const max = deps.maxPerRun ?? MAX_LEARNINGS_PER_RUN;
@@ -142,7 +142,7 @@ export function makeRecordLearningTool(deps: {
     async handler(ctx, input) {
       if (saved >= max) return refuse(`This run already saved ${max} learnings.`);
       const topic = input.topic;
-      if ((await deps.cleanTopic(ctx.tenantId, topic)) !== topic)
+      if ((await deps.cleanTopic(ctx.tenantId, ctx.incidentId, topic)) !== topic)
         return refuse('topic names a person');
       const provenance = await validateLearningProvenance(
         deps.db,
@@ -154,7 +154,7 @@ export function makeRecordLearningTool(deps: {
       saved++;
       const result = await recordLearning(deps.db, deps.embedder, ctx.tenantId, {
         topic,
-        statement: await deps.clean(ctx.tenantId, input.statement),
+        statement: await deps.clean(ctx.tenantId, ctx.incidentId, input.statement),
         basis: input.basis,
         ...(provenance.source ? { source: provenance.source } : {}),
         sourceIncidentId: ctx.incidentId,

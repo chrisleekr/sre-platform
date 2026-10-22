@@ -16,6 +16,7 @@ export {
   DEFAULT_MAX_PROCESSING_MS,
   DEFAULT_STUCK_GRACE_MS,
   DeadlineExceededError,
+  AutomaticPassFinishingError,
   IncidentMovedError,
   IncidentUnavailableError,
   LockContentionError,

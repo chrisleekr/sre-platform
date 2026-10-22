@@ -19,6 +19,7 @@ import {
   widenCoalescedTopologyPass,
 } from './coalescing';
 import {
+  AutomaticPassFinishingError,
   COALESCING_TYPES,
   IncidentMovedError,
   IncidentUnavailableError,
@@ -122,8 +123,11 @@ export class QueueWriter {
         const id = inserted[0]?.id;
         if (id !== undefined) return { id, inserted: true };
         await widenCoalescedTopologyPass(tx, input);
-        await adoptCoalescedRunbookRequest(tx, input);
-        return { id: await findPendingByCoalesceKey(tx, input), inserted: false };
+        const answered = await adoptCoalescedRunbookRequest(tx, input);
+        const pending = await findPendingByCoalesceKey(tx, input);
+        // A silenced automatic pass still holds the slot. A finished one frees it for the next round.
+        if (!answered && pending !== null) throw new AutomaticPassFinishingError();
+        return { id: pending, inserted: false };
       });
       if (durable.id !== null && durable.inserted) {
         try {

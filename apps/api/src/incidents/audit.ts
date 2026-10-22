@@ -5,7 +5,11 @@ import {
   listSurfaceDeliveriesForMessages,
   type EvidencePageCursor,
 } from '@sre/db';
-import { IncidentMovedError, IncidentUnavailableError } from '@sre/queue';
+import {
+  AutomaticPassFinishingError,
+  IncidentMovedError,
+  IncidentUnavailableError,
+} from '@sre/queue';
 import { Hono } from 'hono';
 import { applyApprovalDecision } from '../approval-decision';
 import { type TenantAuthVariables } from '../auth';
@@ -158,6 +162,9 @@ export function registerIncidentAuditRoutes(
           },
           409,
         );
+      // Accepting would hand the request to a pass that posts nothing.
+      if (error instanceof AutomaticPassFinishingError)
+        return c.json({ error: 'an automatic runbook pass is finishing; retry shortly' }, 409);
       throw error;
     }
   });

@@ -43,6 +43,7 @@ const SECRET_PATTERNS: RegExp[] = [
   /Bearer\s+[A-Za-z0-9._~+/-]+=*/gi,
   /\bsk-[A-Za-z0-9]{20,}/g,
   /\bgh[pousr]_[A-Za-z0-9]{20,}/g,
+  /\bgithub_pat_[A-Za-z0-9_]{20,}/g,
   /\bglpat-[A-Za-z0-9_-]{20,}/g,
   /\bxox[baprs]-[A-Za-z0-9-]{10,}/g,
   /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g,
@@ -51,7 +52,8 @@ const KEY_VALUE_ASSIGNMENT =
   /\b([A-Za-z][A-Za-z0-9_.-]{1,80})(\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/g;
 const SENSITIVE_HEADER = /^(Authorization|Proxy-Authorization|Cookie|Set-Cookie)[^\S\r\n]*:/im;
 const CONNECTION_URL_USERINFO = /\b([a-z][a-z0-9+.-]*:\/\/)([^\s/:@]+):([^\s@]+)@/gi;
-const HIGH_ENTROPY = /\b[A-Za-z0-9]{32,}\b/g;
+// Alphanumeric bounds, not \b: `_` is a word character, so \b misses a run after `prod_`.
+const HIGH_ENTROPY = /(?<![A-Za-z0-9])[A-Za-z0-9]{32,}(?![A-Za-z0-9])/g;
 
 /**
  * Reports whether text contains a 32+ character run mixing lower case, upper case and digits.

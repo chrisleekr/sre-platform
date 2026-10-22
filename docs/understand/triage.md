@@ -298,23 +298,26 @@ anything is worth keeping, and most incidents leave nothing behind.
   a responder stated must cite one to five messages in this incident, each written by a linked,
   active workspace member, and those message IDs are kept as its source. The investigator sees the
   ID of every member's message for this purpose. A hypothesis is saved only when it is worded as
-  one, and never replaces an observed or responder fact. A topic that names a workspace member is
-  refused. Saving a learning is not evidence: it does not oblige
-  the investigator to reply, and it cannot close an open question.
+  one, and never replaces an observed or responder fact. A topic that names a workspace member, or
+  a name mentioned in the incident's conversation, is refused. Saving a learning is not evidence:
+  it does not oblige the investigator to reply, and it cannot close an open question.
 - **After an incident resolves or closes.** About ten minutes later the platform reviews the
   incident, its assessment and the responders' messages once. Only messages from linked workspace
-  members count as responder messages. If nothing is worth keeping it saves nothing and posts
-  nothing. If you ask for a runbook while this review is waiting or running, the review takes over
-  your request and posts its result, including when it finds nothing.
+  members count as responder messages. If no runbook or note is worth keeping it saves none and
+  posts nothing, though it may still save learnings. If you ask for a runbook while this review is
+  waiting or running, the review takes over your request and posts its result, including when it
+  finds nothing. If the review has already chosen to stay silent, a request from the conversation
+  waits for it to finish and then runs on its own, and the dashboard asks you to retry shortly.
 - **On request.** You can ask for a runbook in the conversation at any time.
 
 A review classifies the incident into one of three outcomes:
 
 - **A fix was confirmed**: writes a runbook.
 - **No fix, but diagnostically useful**: writes an investigation note.
-- **Nothing worth keeping**: writes nothing. On request it says so; after a resolve it stays silent.
+- **Nothing worth keeping**: writes no runbook or note. On request it says so; after a resolve it
+  stays silent.
 
-A runbook or note can also carry environment facts, which are saved as learnings. The review sees
+Any outcome can carry environment facts, which are saved as learnings. The review sees
 each responder message and each piece of evidence with its ID, and every fact must cite them under
 the same rule as during an investigation. A fact whose citations do not hold is dropped, not saved
 with a weaker basis. Learnings are kept one per topic, and a newer statement for a topic replaces

@@ -113,16 +113,18 @@ describe('automatic learning pass', () => {
     );
   });
 
-  test('drops a fact the provenance gate refuses and still saves the note', async () => {
+  test('drops an out-of-bounds fact and one the provenance gate refuses, and still saves the note', async () => {
     const fact = { topic: 'etcd data disk', statement: 'etcd is on sda per the thread' };
     const { handler, recordLearning, upsertRunbook, validateProvenance } = setup({
       distil: {
         ...investigationDistil,
-        environmentFacts: [{ ...fact, basis: 'responder', messageIds: ['msg-0'] }],
+        // null is how the schema hands back a fact outside its bounds.
+        environmentFacts: [null, { ...fact, basis: 'responder', messageIds: ['msg-0'] }],
       },
       provenance: { ok: false, reason: 'not a member line' },
     });
     await handler(makeJob());
+    expect(validateProvenance).toHaveBeenCalledTimes(1);
     expect(validateProvenance).toHaveBeenCalledWith('tenant-1', 'inc-1', {
       ...fact,
       basis: 'responder',
@@ -150,8 +152,11 @@ describe('environment fact bounds', () => {
     basis: 'observed',
     evidenceIds: ['ev-1'],
   };
-  const parse = (facts: unknown[]) =>
-    DistilSchema.safeParse({ ...investigationDistil, environmentFacts: facts }).success;
+  // A fact or list outside the bounds parses as dropped, so the runbook or note beside it survives.
+  const parse = (facts: unknown[]) => {
+    const parsed = DistilSchema.parse({ ...investigationDistil, environmentFacts: facts });
+    return parsed.environmentFacts;
+  };
 
   test('accepts facts within bounds and trims the topic', () => {
     const parsed = DistilSchema.parse({
@@ -170,12 +175,12 @@ describe('environment fact bounds', () => {
     ['a long statement', { statement: 'x'.repeat(501) }],
     ['a hypothesis basis', { basis: 'hypothesis' }],
     ['too many cited messages', { messageIds: ['1', '2', '3', '4', '5', '6'] }],
-  ])('refuses %s', (_label, change) => {
-    expect(parse([{ ...fact, ...change }])).toBe(false);
+  ])('drops %s alone and keeps the distil', (_label, change) => {
+    expect(parse([{ ...fact, ...change }, fact])).toEqual([null, fact]);
   });
 
-  test('refuses more facts than one run may save', () => {
-    expect(parse([fact, fact, fact])).toBe(true);
-    expect(parse([fact, fact, fact, fact])).toBe(false);
+  test('drops every fact when there are more than one run may save', () => {
+    expect(parse([fact, fact, fact])).toHaveLength(3);
+    expect(parse([fact, fact, fact, fact])).toBeUndefined();
   });
 });

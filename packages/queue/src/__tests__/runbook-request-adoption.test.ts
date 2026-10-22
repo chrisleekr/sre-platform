@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { createIncident, jobs } from '@sre/db';
+import { AutomaticPassFinishingError } from '../queue';
 import { createFixture } from './queue.fixture';
 
 // A responder's runbook request that coalesces onto a pending automatic pass must still be answered.
@@ -88,7 +89,22 @@ describe('runbook request adoption', () => {
     expect(pending).toHaveLength(2);
   });
 
-  test('a processing pass that already chose silence is not adopted', async () => {
+  test('a second request coalesces onto a pending request, which answers both', async () => {
+    const incidentId = await incident();
+    const firstId = await __fixture.q.enqueue({
+      tenantId: __fixture.tenant,
+      type: RUNBOOK,
+      payload: { incidentId, requestedBy: 'user-1' },
+    });
+    const secondId = await __fixture.q.enqueue({
+      tenantId: __fixture.tenant,
+      type: RUNBOOK,
+      payload: { incidentId, requestedBy: 'user-2' },
+    });
+    expect(secondId).toBe(firstId);
+  });
+
+  test('a request onto a pass that already chose silence is refused for retry', async () => {
     const incidentId = await incident();
     const automaticId = await __fixture.q.enqueue({
       tenantId: __fixture.tenant,
@@ -99,11 +115,13 @@ describe('runbook request adoption', () => {
       .update(jobs)
       .set({ status: 'processing', payload: { incidentId, automatic: true, silenced: true } })
       .where(eq(jobs.id, automaticId));
-    await __fixture.q.enqueue({
-      tenantId: __fixture.tenant,
-      type: RUNBOOK,
-      payload: { incidentId, requestedBy: 'user-1', requestedMessageId: 'message-1' },
-    });
+    await expect(
+      __fixture.q.enqueue({
+        tenantId: __fixture.tenant,
+        type: RUNBOOK,
+        payload: { incidentId, requestedBy: 'user-1', requestedMessageId: 'message-1' },
+      }),
+    ).rejects.toBeInstanceOf(AutomaticPassFinishingError);
     expect(await payloadOf(automaticId)).toEqual({ incidentId, automatic: true, silenced: true });
   });
 });

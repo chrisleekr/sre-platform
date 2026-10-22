@@ -9,6 +9,7 @@ describe('hasKnownCredential', () => {
     'Bearer abc.def',
     'sk-abcdefghijklmnopqrstuvwx',
     'ghp_abcdefghijklmnopqrstuvwx',
+    'github_pat_11ABCDEFG0abcdefghijkl_mnopqrstuvwxyz0123456789',
     'xoxb-1234567890-abc',
     'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln',
   ])('detects %j', (value) => {
@@ -50,6 +51,8 @@ describe('hasHighEntropyToken', () => {
     expect(hasHighEntropyToken('cause:aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV')).toBe(true);
     expect(hasHighEntropyToken('0123456789abcdef0123456789abcdef')).toBe(false);
     expect(hasHighEntropyToken('cause:deployment')).toBe(false);
+    // `_` is a word character, so a run after it has no \b boundary.
+    expect(hasHighEntropyToken('cause:prod_aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV')).toBe(true);
   });
 });
 

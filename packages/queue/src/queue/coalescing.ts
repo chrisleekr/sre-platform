@@ -53,33 +53,51 @@ export async function widenCoalescedTopologyPass(exec: Executor, input: JobInput
  *
  * @param exec - The enqueue transaction, so the update sees the row the conflict saw.
  * @param input - The incoming job; anything but a non-automatic `runbook.generate` is ignored.
+ * @returns False when no pending job will answer the request: the automatic pass already chose
+ *   silence or finished. The caller retries the request.
  */
-export async function adoptCoalescedRunbookRequest(exec: Executor, input: JobInput): Promise<void> {
-  if (input.type !== RUNBOOK_TYPE) return;
+export async function adoptCoalescedRunbookRequest(
+  exec: Executor,
+  input: JobInput,
+): Promise<boolean> {
+  if (input.type !== RUNBOOK_TYPE) return true;
   const payload = input.payload as Record<string, unknown> | null | undefined;
-  if (!payload || payload.automatic === true) return;
+  if (!payload || payload.automatic === true) return true;
   // An automatic pass posts nothing when it finds nothing or fails, so the request would go
   // unanswered. The request payload, capture fence included, replaces the automatic marker. A queued
   // row then runs as the request; a processing row already read its payload, so the consumer re-reads
   // it before choosing a prompt. A row that already chose silence is skipped, and the request retries.
   const sameKey = coalesceKeyFilter(input.type, input.payload);
-  if (!sameKey) return;
-  await exec
+  if (!sameKey) return true;
+  const pending = (...filters: SQL[]) =>
+    and(
+      eq(jobs.tenantId, input.tenantId),
+      eq(jobs.type, RUNBOOK_TYPE),
+      inArray(jobs.status, ['queued', 'processing']),
+      sameKey,
+      ...filters,
+    );
+  const adopted = await exec
     .update(jobs)
     .set({
       payload: sql`(${jobs.payload} - 'automatic') || ${JSON.stringify(payload)}::jsonb`,
       updatedAt: sql`now()`,
     })
     .where(
-      and(
-        eq(jobs.tenantId, input.tenantId),
-        eq(jobs.type, RUNBOOK_TYPE),
-        inArray(jobs.status, ['queued', 'processing']),
+      pending(
         sql`${jobs.payload}->>'automatic' = 'true'`,
         sql`coalesce(${jobs.payload}->>'silenced', 'false') <> 'true'`,
-        sameKey,
       ),
-    );
+    )
+    .returning({ id: jobs.id });
+  if (adopted.length > 0) return true;
+  // Another responder's pending request answers this one too.
+  const [answering] = await exec
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(pending(sql`coalesce(${jobs.payload}->>'automatic', 'false') <> 'true'`))
+    .limit(1);
+  return answering !== undefined;
 }
 
 /**

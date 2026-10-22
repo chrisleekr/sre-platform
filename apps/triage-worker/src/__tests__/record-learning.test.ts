@@ -290,6 +290,32 @@ describe('record_learning', () => {
     expect(await factTitled('etcd@node1.service')).toBeDefined();
   });
 
+  test('treats a mention label from the incident conversation as a person, as the distil does', async () => {
+    const incidentId = await incident();
+    const id = await evidence(incidentId);
+    await admin.db.execute(sql`
+      insert into incident_messages (tenant_id, incident_id, author, kind, content)
+      values (${tenantId}, ${incidentId}, 'human', 'text', 'ask <@U9|bob.vendor> about the disk')`);
+    const observed = { basis: 'observed', evidenceIds: [id] };
+    expect(
+      await runTool(newRun(), ctx(incidentId), {
+        ...observed,
+        topic: 'bob.vendor escalation path',
+        statement: 'the vendor escalation path is the storage queue',
+      }),
+    ).toMatchObject({ data: { recorded: false, reason: 'topic names a person' } });
+    expect(
+      await runTool(newRun(), ctx(incidentId), {
+        ...observed,
+        topic: 'storage vendor escalation',
+        statement: 'bob.vendor owns the storage escalation queue',
+      }),
+    ).toMatchObject({ data: { recorded: true } });
+    expect(await factTitled('storage vendor escalation')).toMatchObject({
+      content: expect.not.stringContaining('bob.vendor'),
+    });
+  });
+
   test('refuses a learning that carries credential material in its statement or topic', async () => {
     const incidentId = await incident();
     const id = await evidence(incidentId);

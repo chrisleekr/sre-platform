@@ -94,25 +94,6 @@ export function stripHumanIdentifiers(
   return (anyEmail ? result.replace(EMAIL, REPLACEMENT) : result).replace(HANDLE, REPLACEMENT);
 }
 
-/**
- * Builds a cleaner that strips the tenant's member identifiers and any mention from text the
- * platform is about to store as shared knowledge.
- *
- * @param listEmails - Emails of the tenant's members.
- * @param anyEmail - See stripHumanIdentifiers.
- */
-export function makeBlamelessCleaner(
-  listEmails: (tenantId: string) => Promise<string[]>,
-  anyEmail = true,
-): (tenantId: string, text: string) => Promise<string> {
-  return async (tenantId, text) =>
-    stripHumanIdentifiers(
-      text,
-      collectHumanIdentifiers(await listEmails(tenantId), text),
-      anyEmail,
-    );
-}
-
 // A systemd template instance, `name@instance.type`, for example etcd@node1.service. The instance holds
 // no dot, so an email whose domain merely ends in a unit type is still an email.
 const UNIT_NAME =

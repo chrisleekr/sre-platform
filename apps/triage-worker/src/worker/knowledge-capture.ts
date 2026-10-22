@@ -8,7 +8,11 @@ import {
   withTenant,
   type HumanMessage,
 } from '@sre/db';
-import { adoptCoalescedRunbookRequest, RetryableError } from '@sre/queue';
+import {
+  adoptCoalescedRunbookRequest,
+  AutomaticPassFinishingError,
+  RetryableError,
+} from '@sre/queue';
 import type { WorkerRuntime } from './runtime';
 
 /** Queue knowledge capture with the authenticated request and receipt in one transaction.
@@ -44,9 +48,8 @@ export async function requestKnowledgeCapture(
     let jobId: string | null = null;
     if (authorized && queue && confirmed) {
       const served = sql<boolean>`${jobs.payload}->>'requestedMessageId' = ${request.id}`;
-      const silenced = sql<boolean>`coalesce(${jobs.payload}->>'silenced', 'false') = 'true'`;
       const [existing] = await tx
-        .select({ id: jobs.id, served, silenced })
+        .select({ id: jobs.id, served })
         .from(jobs)
         .where(
           and(
@@ -64,13 +67,11 @@ export async function requestKnowledgeCapture(
         type: 'runbook.generate',
         payload: { incidentId, requestedBy: request.authorUserId, requestedMessageId: request.id },
       };
-      // A pass that already chose silence cannot answer and still holds the pending slot, so retry
-      // once it finishes and the request can take its own job.
-      if (existing && !existing.served && existing.silenced)
-        throw new RetryableError('An automatic pass is finishing; retry the request.');
       if (!existing) jobId = await queue.insertJobTx(tx, job);
-      // A pending automatic pass would otherwise absorb the request and stay silent.
-      else if (!existing.served) await adoptCoalescedRunbookRequest(tx, job);
+      // A pending automatic pass would otherwise absorb the request and stay silent. One that already
+      // chose silence or finished cannot answer, so retry once it frees the slot.
+      else if (!existing.served && !(await adoptCoalescedRunbookRequest(tx, job)))
+        throw new AutomaticPassFinishingError();
     }
     const { message } = await deps.hub.appendTxOnce(tx, tenantId, incidentId, {
       author: 'system',

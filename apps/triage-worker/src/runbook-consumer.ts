@@ -15,16 +15,12 @@ import {
   type SearchChunksParams,
   type UpsertRunbookInput,
 } from '@sre/db';
-import {
-  MAX_LEARNINGS_PER_RUN,
-  validateLearningProvenance,
-  type LearningProvenance,
-} from '@sre/agent-tools';
+import { validateLearningProvenance, type LearningProvenance } from '@sre/agent-tools';
 import { RetryableError, type Job, type JobContext } from '@sre/queue';
 import { and, eq, sql } from 'drizzle-orm';
 import type { NewMessage } from '@sre/hub';
 import { collectHumanIdentifiers, stripHumanIdentifiers, tenantMemberEmails } from './blameless';
-import { recordDistilFacts } from './runbook-learning';
+import { EnvironmentFactsSchema, recordDistilFacts, type DistilFact } from './runbook-learning';
 import { noteContent } from './runbook-note';
 import { requestFence, type RunbookRequestPayload } from './runbook-request';
 import { ProviderUnavailableError, type StructuredGenerator } from './engine/types';
@@ -40,18 +36,6 @@ const FAIL_MAX = 5;
 const SHORTLIST_K = 5;
 
 // --- Domain schemas (kept in the consumer, not the generic provider) -------------------------
-// Durable environment facts are saved as separate per-topic records so each is embedded on its
-// own and never cut off by the embedder's input limit inside a long runbook.
-// Same bounds as record_learning, so neither path can store what the other would refuse. Cited ids
-// are plain strings: one malformed id drops its fact in validation instead of failing the distil.
-const EnvironmentFactSchema = z.object({
-  topic: z.string().trim().min(3).max(120),
-  statement: z.string().trim().min(10).max(500),
-  basis: z.enum(['observed', 'responder']),
-  evidenceIds: z.array(z.string()).max(20).optional(),
-  messageIds: z.array(z.string()).max(5).optional(),
-});
-const EnvironmentFactsSchema = z.array(EnvironmentFactSchema).max(MAX_LEARNINGS_PER_RUN).optional();
 
 // Call 1: distil the incident into one of three mutually exclusive outcomes.
 export const DistilSchema = z.discriminatedUnion('outcome', [
@@ -140,7 +124,7 @@ export interface RunbookHandlerDeps {
   validateProvenance?: (
     tenantId: string,
     incidentId: string,
-    fact: z.infer<typeof EnvironmentFactSchema>,
+    fact: DistilFact,
   ) => Promise<LearningProvenance>;
   listMemberEmails?: (tenantId: string) => Promise<string[]>;
   getCapturedKnowledge?: (
@@ -260,7 +244,7 @@ export function makeRunbookHandler(
       (await listIncidentEvidencePage(appDb, tenantId, incidentId, { limit: 100 })).evidence);
   const validate =
     deps.validateProvenance ??
-    ((tenantId: string, incidentId: string, fact: z.infer<typeof EnvironmentFactSchema>) =>
+    ((tenantId: string, incidentId: string, fact: DistilFact) =>
       validateLearningProvenance(appDb, tenantId, incidentId, fact));
   const listEmails =
     deps.listMemberEmails ?? ((tenantId: string) => tenantMemberEmails(appDb, tenantId));
@@ -279,7 +263,6 @@ export function makeRunbookHandler(
         .limit(1);
       return row?.payload;
     });
-  // Silence is for a pass nobody asked for. A request adopted mid-run removed the marker.
   // Silence is for a pass nobody asked for. Choosing it is a conditional write, not a read, so a
   // request adopted in the gap before the job is marked done is answered by its own retry instead.
   const silence =
