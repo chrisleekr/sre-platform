@@ -190,26 +190,27 @@ export async function getBootstrapArray(
 }
 
 /**
- * Build a validated absolute URL under the tenant's `/api/v4` base. The path is resolved with WHATWG
- * URL normalization (so `..` is collapsed) and then two assertions close SSRF/traversal: the origin
- * must equal the SSRF-checked base origin, and the pathname must stay under `/api/v4/`. Query values
- * go through URLSearchParams (percent-encoded), never string concatenation; `per_page` is clamped.
- */
-/**
  * True when any path segment is `hooks` (project, group and system webhooks). A hook's URL includes
  * the platform's own relay channel URL, which is stored encrypted and must not reach tool output.
- * Segments are decoded first so `%68ooks` cannot slip past; an undecodable segment is refused.
+ * Segments are decoded first so `%68ooks` cannot slip past; an undecodable segment is refused. A
+ * format suffix is matched too, because GitLab's Grape routes also serve `hooks.json`.
  */
 export function isDeniedGitLabPath(pathname: string): boolean {
   return pathname.split('/').some((segment) => {
     try {
-      return decodeURIComponent(segment).toLowerCase() === 'hooks';
+      return /^hooks(\.[a-z0-9]+)?$/.test(decodeURIComponent(segment).toLowerCase());
     } catch {
       return true;
     }
   });
 }
 
+/**
+ * Build a validated absolute URL under the tenant's `/api/v4` base. The path is resolved with WHATWG
+ * URL normalization (so `..` is collapsed) and then two assertions close SSRF/traversal: the origin
+ * must equal the SSRF-checked base origin, and the pathname must stay under `/api/v4/`. Query values
+ * go through URLSearchParams (percent-encoded), never string concatenation; `per_page` is clamped.
+ */
 export function buildApiUrl(
   base: string,
   path: string,

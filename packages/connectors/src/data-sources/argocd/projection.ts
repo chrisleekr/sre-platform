@@ -159,11 +159,29 @@ export function looksLikeManifest(v: unknown): boolean {
   return v !== null && typeof v === 'object' && ('apiVersion' in v || 'kind' in v);
 }
 
+// Fields a Secret item keeps. Its states and diff are dropped: the connector does not trust Argo CD's
+// own Secret masking, matching the Kubernetes connector's refusal of Secret reads.
+const SECRET_IDENTITY_FIELDS = [
+  'group',
+  'kind',
+  'namespace',
+  'name',
+  'hook',
+  'modified',
+  'resourceVersion',
+] as const;
+
+function isSecretManifest(v: unknown): boolean {
+  if (Array.isArray(v)) return v.some(isSecretManifest);
+  return v !== null && typeof v === 'object' && (v as { kind?: unknown }).kind === 'Secret';
+}
+
 /**
  * Parse a managed-resources (drift diff) response. Each item's manifest state fields are JSON-encoded
  * k8s manifests; each is parsed and trimmed of bulky metadata, values unchanged. Any other string
  * field that parses to a manifest-shaped object (carries apiVersion/kind) is parsed too; a field that
- * does not parse is left as the original string.
+ * does not parse is left as the original string. A Secret item, or one whose state is a Secret,
+ * keeps only its identity fields.
  */
 export function parseManagedResources(data: unknown): unknown {
   const known = new Set<string>(STATE_FIELDS);
@@ -171,6 +189,7 @@ export function parseManagedResources(data: unknown): unknown {
   if (!Array.isArray(items)) return data;
   const parsedItems = items.map((it) => {
     const item = { ...obj(it) };
+    let secret = item.kind === 'Secret';
     for (const [field, v] of Object.entries(item)) {
       if (typeof v !== 'string' || v === '') continue;
       let parsed: unknown;
@@ -179,9 +198,15 @@ export function parseManagedResources(data: unknown): unknown {
       } catch {
         continue;
       }
+      if (isSecretManifest(parsed)) secret = true;
       if (known.has(field) || looksLikeManifest(parsed)) item[field] = trimObject(parsed);
     }
-    return item;
+    if (!secret) return item;
+    const identity: Record<string, unknown> = {
+      omitted: 'Secret manifests are not returned',
+    };
+    for (const field of SECRET_IDENTITY_FIELDS) if (field in item) identity[field] = item[field];
+    return identity;
   });
   return { ...obj(data), items: parsedItems };
 }

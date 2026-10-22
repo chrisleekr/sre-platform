@@ -85,6 +85,9 @@ describe('makeGitLabTools', () => {
     'groups/7/hooks',
     'hooks',
     'projects/42/%68ooks/',
+    'projects/42/hooks.json',
+    'groups/7/HOOKS.json',
+    'hooks.json',
   ])('api_get refuses webhook path %s without fetching', async (path) => {
     let fetches = 0;
     const c = makeGitLabConnector(

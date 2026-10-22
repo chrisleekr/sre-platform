@@ -155,7 +155,8 @@ export function makeArgoCdTools(
       name: 'get_managed_resources',
       description:
         'Get the live-vs-desired drift diff for an application (what has drifted from Git, the "why is ' +
-        'it OutOfSync" detail). Manifest values are returned unredacted. ' +
+        'it OutOfSync" detail). Manifest values are returned unredacted; Secret items keep only ' +
+        'their identity. ' +
         'appNamespace is needed only when the name is in several namespaces; ' +
         "if a call without it fails, call list_applications and retry with the application's namespace.",
       inputSchema: z.object({ name: z.string(), appNamespace: z.string().optional() }),

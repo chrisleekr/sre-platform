@@ -40,7 +40,8 @@ export const STATE_FIELDS = [
 // carry live Secret data). The connector does not trust Argo CD's own hideSecretData, so
 // managed-resources, resource (GetResource) and manifests / manifests-with-files (GetManifests) are
 // refused outright. server-side-diff is refused because Argo CD returns unmasked Secret data through
-// ServerSideDiff on affected versions. Reach manifests via get_managed_resources instead.
+// ServerSideDiff on affected versions. Reach manifests via get_managed_resources instead, which
+// omits Secret states.
 export const DENIED_SEGMENTS: ReadonlySet<string> = new Set([
   'managed-resources',
   'resource',

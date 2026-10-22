@@ -202,14 +202,14 @@ never used as health telemetry.
 One tool returns live and desired Kubernetes manifests, and a live secret contains its data. Argo CD
 masks secret values itself, but that masking has a
 [known bypass in the ServerSideDiff endpoint](https://github.com/argoproj/argo-cd/security/advisories/GHSA-3v3m-wc6v-x4x3)
-(Argo CD 3.2.0 through 3.3.8), so the platform does not rely on it, and the generic passthrough
-refuses `server-side-diff` paths.
+(Argo CD 3.2.0 through 3.3.8), so the platform does not rely on it. The generic passthrough refuses
+`server-side-diff` paths, and the drift diff tool returns a Secret only by its kind, namespace and
+name, without its live or desired state.
 
 The platform does not redact manifests. Each manifest is parsed and its bulky bookkeeping
-(`managedFields`, the last-applied annotation) is dropped, but secret and config values and
-container environment values are returned as Argo CD sends them, so any secret Argo CD fails to
-mask reaches the model provider, the evidence store, and Slack. A manifest that will not parse is
-returned as text.
+(`managedFields`, the last-applied annotation) is dropped, but config values and container
+environment values are returned as Argo CD sends them, so they reach the model provider, the
+evidence store, and Slack. A manifest that will not parse is returned as text.
 
 The generic passthrough tool still refuses every endpoint that can return a manifest and points the
 model at the drift diff tool. Application list and
