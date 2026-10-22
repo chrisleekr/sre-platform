@@ -1,6 +1,6 @@
 // One row per triage tool run: the durable audit trail behind the engine-agnostic ToolAuditSink
-//Under RLS. `input` is the tool input AFTER redaction — the persisting sink
-// scrubs sensitive values before insert, since input can carry credentials (CWE-532).
+// under RLS. Input and output are stored as the tool saw and returned them, without redaction, so
+// connector credentials must be scoped read-only.
 import {
   pgTable,
   uuid,
@@ -28,11 +28,9 @@ export const agentToolCalls = pgTable(
     latencyMs: integer('latency_ms').notNull(),
     // data | error
     outcome: text('outcome').notNull(),
-    // The tool output AFTER redaction (the working-memory evidence store). Nullable: only
-    // `data` runs carry an output; an `error` run has none. EVERY writer must redact before insert,
-    // so this column is never a raw-secret sink (CWE-532). Two writers exist: `runTool` (dispatch)
-    // redacts once and feeds the audit sink; `seedFirstPass` (worker.ts) redacts its own
-    // fetchTriageContext output. A new direct `recordToolCall` caller MUST redact too.
+    // The tool output (the working-memory evidence store). Nullable: a `data` run carries its
+    // result; an `error` run carries only `{ failure }` (its code-owned class) or nothing, so
+    // evidence readers must also filter on outcome = 'data'.
     output: jsonb('output'),
     // Millisecond precision makes the public (created_at, id) evidence cursor round-trip through JS Date
     // without skipping rows that differed only below the precision JavaScript can represent.

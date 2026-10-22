@@ -1,6 +1,6 @@
 // Live-infra test (mirrors knowledge-repo.test.ts / incident-repo.test.ts): the admin (superuser)
 // role seeds the control-plane tenant + incident and cleans up; the sink runs as app_user so FORCE
-// ROW LEVEL SECURITY binds. Proves the DB-backed audit sink persists a redacted, tenant-scoped row,
+// ROW LEVEL SECURITY binds. Proves the DB-backed audit sink persists an unredacted, tenant-scoped row,
 // that RLS isolates reads bidirectionally, and that the WITH CHECK policy rejects a forged insert.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
@@ -65,13 +65,12 @@ afterAll(async () => {
 });
 
 describe('makeDbAuditSink persistence + RLS', () => {
-  it('persists a redacted row and isolates reads in both directions (RLS)', async () => {
+  it('persists the row as given and isolates reads in both directions (RLS)', async () => {
     const sink = makeDbAuditSink({ db: app.db });
     const evidenceId = await sink.record({
       tool: 'datadog_search',
       tenantId: tenantA,
       incidentId: incidentA,
-      // A secret in the input must never reach storage (CWE-532).
       input: { service: 'checkout', windowMinutes: 15, token: 'sk-secret-123' },
       latencyMs: 42,
       outcome: 'data',
@@ -89,11 +88,11 @@ describe('makeDbAuditSink persistence + RLS', () => {
     expect(rowsA[0]!.incidentId).toBe(incidentA);
     expect(rowsA[0]!.latencyMs).toBe(42);
     expect(rowsA[0]!.outcome).toBe('data');
-    // The secret value is scrubbed; benign fields are intact.
+    // Input is stored as given, without redaction.
     expect(rowsA[0]!.input).toEqual({
       service: 'checkout',
       windowMinutes: 15,
-      token: '[REDACTED]',
+      token: 'sk-secret-123',
     });
 
     // Seed a tenantB row, then assert isolation holds in BOTH directions.

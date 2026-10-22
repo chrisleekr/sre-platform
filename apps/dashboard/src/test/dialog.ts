@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 
-/** jsdom 25 exposes HTMLDialogElement but not its modal lifecycle methods. */
+/** jsdom exposes HTMLDialogElement but not its modal lifecycle methods. */
 export function installDialogMethods() {
   const originalShowModal = HTMLDialogElement.prototype.showModal;
   const originalClose = HTMLDialogElement.prototype.close;

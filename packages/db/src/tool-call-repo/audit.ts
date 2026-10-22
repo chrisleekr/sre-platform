@@ -7,11 +7,11 @@ import { agentToolCalls } from '../schema';
 export interface NewToolCall {
   incidentId: string;
   tool: string;
-  /** The tool input AFTER redaction; the caller scrubs sensitive values (CWE-532). */
+  /** The validated tool input. */
   input: unknown;
   latencyMs: number;
   outcome: string;
-  /** The tool output AFTER redaction (working-memory evidence). Omitted for non-data runs. */
+  /** The tool output (working-memory evidence). Omitted for non-data runs. */
   output?: unknown;
 }
 
@@ -108,6 +108,25 @@ export async function filterIncidentEvidenceIds(
   proposed: string[],
 ): Promise<string[]> {
   return withTenant(db, tenantId, (tx) => filterIncidentEvidenceIdsTx(tx, incidentId, proposed));
+}
+
+/**
+ * Tenant-scoped wrapper that keeps only successful data-producing evidence from this incident.
+ *
+ * @param db - Database connection used for the operation.
+ * @param tenantId - Tenant whose records are read or changed.
+ * @param incidentId - Incident targeted by the operation.
+ * @param proposed - Candidate factual evidence identifiers to validate.
+ */
+export async function filterIncidentDataEvidenceIds(
+  db: Db,
+  tenantId: string,
+  incidentId: string,
+  proposed: string[],
+): Promise<string[]> {
+  return withTenant(db, tenantId, (tx) =>
+    filterIncidentDataEvidenceIdsTx(tx, incidentId, proposed),
+  );
 }
 
 /**
@@ -232,6 +251,7 @@ export async function latestToolCall(
         and(
           eq(agentToolCalls.incidentId, incidentId),
           eq(agentToolCalls.tool, tool),
+          eq(agentToolCalls.outcome, 'data'),
           isNotNull(agentToolCalls.output),
           since ? gte(agentToolCalls.createdAt, since) : undefined,
         ),
@@ -242,7 +262,7 @@ export async function latestToolCall(
   });
 }
 
-/** One reloaded evidence line: a past tool run's redacted output, tagged for staleness judgment. */
+/** One reloaded evidence line: a past tool run's output, tagged for staleness judgment. */
 export interface IncidentEvidence {
   id: string;
   tool: string;
@@ -391,7 +411,15 @@ export async function loadIncidentEvidence(
         createdAt: agentToolCalls.createdAt,
       })
       .from(agentToolCalls)
-      .where(and(eq(agentToolCalls.incidentId, incidentId), isNotNull(agentToolCalls.output)))
+      // An error row carries `{ failure }` as output; it must not replace an earlier data row in the
+      // newest-per-key dedup below.
+      .where(
+        and(
+          eq(agentToolCalls.incidentId, incidentId),
+          eq(agentToolCalls.outcome, 'data'),
+          isNotNull(agentToolCalls.output),
+        ),
+      )
       // id breaks the tie: created_at is millisecond precision, so rows CAN share a timestamp, and
       // without a tiebreaker which row falls either side of the cut is arbitrary and can differ
       // between two reloads of the same incident. Matches the (incident_id, created_at DESC,

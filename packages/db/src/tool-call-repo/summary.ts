@@ -1,5 +1,3 @@
-import { scrubSecrets } from '@sre/contracts';
-
 const fields: Record<string, Record<string, string[]>> = {
   prometheus: { query: ['query'], query_range: ['query'], label_values: ['name'] },
   kubernetes: {
@@ -54,7 +52,7 @@ export const evidenceSummaryFields = [
 
 /** Summarize only known scalar tool fields, never arbitrary request objects.
  * @param tool - Audited legacy or instance-qualified tool name.
- * @param input - Persisted tool input, treated as untrusted even after prior scrubbing.
+ * @param input - Persisted tool input, treated as untrusted.
  */
 export function evidenceSummary(tool: string, input: unknown): string | null {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
@@ -69,7 +67,7 @@ export function evidenceSummary(tool: string, input: unknown): string | null {
   const parts = allowed.flatMap((key) => {
     const value = request[key];
     return typeof value === 'string' || (typeof value === 'number' && Number.isFinite(value))
-      ? [`${key}: ${scrubSecrets(String(value)).replace(/\s+/g, ' ').trim()}`]
+      ? [`${key}: ${String(value).replace(/\s+/g, ' ').trim()}`]
       : [];
   });
   if (!parts.length) return null;

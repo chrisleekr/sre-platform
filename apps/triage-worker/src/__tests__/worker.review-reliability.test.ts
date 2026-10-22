@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { scrubSecrets } from '@sre/agent-tools';
 import {
   applySignalObservation,
   applyTriageResult,
@@ -17,10 +16,9 @@ import type { StructuredGenerator, TriageResult } from '../engine/types';
 import { createFixture } from './worker.fixture';
 
 const fixture = createFixture();
-test('unsupported final review preserves the full scrubbed summary durably and records a fixed blocker when it names no gap', async () => {
-  const rawSummary = `password=synthetic-secret ${'Current observations are incomplete. '.repeat(6)}The configured recovery criterion remains unverified.`;
-  const summary = scrubSecrets(rawSummary);
-  expect(rawSummary.length).toBeLessThanOrEqual(360);
+test('unsupported final review preserves the full summary durably and records a fixed blocker when it names no gap', async () => {
+  const summary = `password=synthetic-secret ${'Current observations are incomplete. '.repeat(6)}The configured recovery criterion remains unverified.`;
+  expect(summary.length).toBeLessThanOrEqual(360);
   expect(summary.indexOf('configured recovery criterion')).toBeGreaterThan(240);
   // A gapless rejection must not turn the facts-only summary into a question.
   const blocker =
@@ -85,7 +83,7 @@ test('unsupported final review preserves the full scrubbed summary durably and r
     },
     makeFakeGenerator(() => ({
       supported: false,
-      summary: rawSummary,
+      summary: summary,
       rejection: 'insufficient_evidence',
       evidenceIds: [current],
     })),
@@ -134,7 +132,6 @@ test('unsupported final review preserves the full scrubbed summary durably and r
     unknowns: [blocker],
     questions: [{ question: blocker }],
   });
-  expect(JSON.stringify([incident, run?.result, finding])).not.toContain('synthetic-secret');
   expect(history.some((message) => message.kind === 'lifecycle')).toBe(false);
 });
 

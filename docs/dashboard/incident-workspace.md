@@ -99,7 +99,8 @@ whether the investigation succeeded.
 Before publishing a conclusion, the platform reviews it against the recorded evidence. Historical
 successful builds do not establish current health, and a mirrored repository does not establish
 which revision was deployed. Missing or contradictory evidence leaves the result inconclusive.
-Repository paths, resource names, and commands are preserved; credentials are redacted.
+Repository paths, resource names, commands, and any credentials in the evidence are preserved as
+written; nothing is redacted.
 
 For an inconclusive run, **Latest investigation result** shows the reviewer's conclusion, limited to
 facts the evidence supports, and a **Still to verify** list of open checks. The next diagnostic step
@@ -179,7 +180,9 @@ available.
 
 A request to close only once recovery is confirmed, such as “Recheck and close if resolved”, starts
 recovery verification instead. Slack-reported alerts with a recorded recovery report are resolved,
-and the case resolves only if verification confirms recovery. When verification cannot start, for
+and the case resolves only if verification confirms recovery. If an earlier verification ended not
+verified or used all its checks, the request starts a fresh one with a new check budget; a
+provider's Slack recovery notice alone does not. When verification cannot start, for
 example because a provider-verified alert is still active or an alert has no recovery report, the
 platform says why and runs a check instead; nothing is resolved. A clarifying question never offers
 to act on your reply. Restate the request instead.

@@ -168,6 +168,8 @@ const job = (payload: InboundCandidate) => ({
   payload,
 });
 
+const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000);
+
 describe('repeat provider notifications', () => {
   test('a repeat attaches to the tracking incident without a new incident or engine run', async () => {
     const monitorKey = `slack:monitor-${randomUUID()}`;
@@ -210,21 +212,146 @@ describe('repeat provider notifications', () => {
   });
 
   test.each([
-    { name: 'two open incidents track the monitor', incidents: 2, ageHours: 0 },
-    { name: 'the tracking signal is older than the active window', incidents: 1, ageHours: 25 },
-  ])('falls through to classification when $name', async ({ incidents: count, ageHours }) => {
+    { name: 'it fired long ago and never recovered', older: 72, newer: null },
+    { name: 'two open incidents track it, the newer one wins', older: 48, newer: 1 },
+  ])('a repeat attaches when $name', async ({ older, newer }) => {
     const monitorKey = `slack:monitor-${randomUUID()}`;
-    await Promise.all(
-      Array.from({ length: count }, () =>
-        trackedIncident(monitorKey, new Date(Date.now() - ageHours * 3_600_000)),
-      ),
-    );
+    const first = await trackedIncident(monitorKey, hoursAgo(older));
+    const expected =
+      newer === null
+        ? first.incidentId
+        : (await trackedIncident(monitorKey, hoursAgo(newer))).incidentId;
+    const { handle, onOutcome, classifyFn } = handler(false);
+    const candidate = firingCandidate(monitorKey);
+
+    await handle(job(candidate));
+
+    expect(classifyFn).not.toHaveBeenCalled();
+    expect(onOutcome).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'belongs_to' }));
+    await expect(signalsOf(tenantId, candidate.externalId)).resolves.toEqual([
+      { incidentId: expected },
+    ]);
+  });
+
+  test('a newer recovered incident wins over an older one still active', async () => {
+    const monitorKey = `slack:monitor-${randomUUID()}`;
+    await trackedIncident(monitorKey, hoursAgo(5));
+    const newer = await trackedIncident(monitorKey, hoursAgo(1));
+    // As a recovery notice leaves it while verification runs.
+    await admin.db
+      .update(incidentSignals)
+      .set({ state: 'resolved', resolvedAt: hoursAgo(0.5) })
+      .where(eq(incidentSignals.id, newer.signalId));
+    const { handle, onOutcome, classifyFn } = handler(false);
+    const candidate = firingCandidate(monitorKey);
+
+    await handle(job(candidate));
+
+    expect(classifyFn).not.toHaveBeenCalled();
+    expect(onOutcome).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'belongs_to' }));
+    await expect(signalsOf(tenantId, candidate.externalId)).resolves.toEqual([
+      { incidentId: newer.incidentId },
+    ]);
+  });
+
+  test('a grouped message attaches when its incident tracks one alert active and one recovered', async () => {
+    const recoveredHoursAgo = 0.5;
+    const activeKey = `slack:monitor-${randomUUID()}`;
+    const recoveredKey = `slack:monitor-${randomUUID()}`;
+    const tracked = await trackedIncident(activeKey, hoursAgo(2));
+    const root = `root-${randomUUID()}`;
+    const recovered = await applySignalObservation(app.db, tenantId, {
+      incidentId: tracked.incidentId,
+      surface: 'slack',
+      channel: CHANNEL,
+      externalMessageId: root,
+      state: 'unknown',
+      summary: 'Checkout latency is high.',
+      contentHash: 'firing',
+      monitorKey: recoveredKey,
+      eventKey: `slack:${CHANNEL}:${root}:producer:${PRODUCER}`,
+      eventAt: hoursAgo(recoveredHoursAgo + 1),
+    });
+    await admin.db
+      .update(incidentSignals)
+      .set({ state: 'resolved', resolvedAt: hoursAgo(recoveredHoursAgo) })
+      .where(eq(incidentSignals.id, recovered.signal.id));
+    const { handle, onOutcome, classifyFn } = handler(false);
+    const candidate = firingCandidate(activeKey, recoveredKey);
+
+    await handle(job(candidate));
+
+    expect(classifyFn).not.toHaveBeenCalled();
+    expect(onOutcome).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'belongs_to' }));
+    await expect(signalsOf(tenantId, candidate.externalId)).resolves.toEqual([
+      { incidentId: tracked.incidentId },
+      { incidentId: tracked.incidentId },
+    ]);
+  });
+
+  test('a grouped message whose alert recovered before the active window is classified', async () => {
+    const recoveredHoursAgo = 25;
+    const activeKey = `slack:monitor-${randomUUID()}`;
+    const recoveredKey = `slack:monitor-${randomUUID()}`;
+    const tracked = await trackedIncident(activeKey, hoursAgo(2));
+    const root = `root-${randomUUID()}`;
+    const recovered = await applySignalObservation(app.db, tenantId, {
+      incidentId: tracked.incidentId,
+      surface: 'slack',
+      channel: CHANNEL,
+      externalMessageId: root,
+      state: 'unknown',
+      summary: 'Checkout latency is high.',
+      contentHash: 'firing',
+      monitorKey: recoveredKey,
+      eventKey: `slack:${CHANNEL}:${root}:producer:${PRODUCER}`,
+      eventAt: hoursAgo(recoveredHoursAgo + 1),
+    });
+    await admin.db
+      .update(incidentSignals)
+      .set({ state: 'resolved', resolvedAt: hoursAgo(recoveredHoursAgo) })
+      .where(eq(incidentSignals.id, recovered.signal.id));
+    const { handle, onOutcome, classifyFn } = handler(false);
+    const candidate = firingCandidate(activeKey, recoveredKey);
+
+    await handle(job(candidate));
+
+    expect(classifyFn).toHaveBeenCalledTimes(1);
+    expect(onOutcome).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'belongs_to' }));
+  });
+
+  test('a recovered signal older than the active window falls through to classification', async () => {
+    const monitorKey = `slack:monitor-${randomUUID()}`;
+    const tracked = await trackedIncident(monitorKey, hoursAgo(25));
+    await admin.db
+      .update(incidentSignals)
+      .set({ state: 'resolved', resolvedAt: hoursAgo(25) })
+      .where(eq(incidentSignals.id, tracked.signalId));
     const { handle, onOutcome, classifyFn } = handler(false);
 
     await handle(job(firingCandidate(monitorKey)));
 
     expect(classifyFn).toHaveBeenCalledTimes(1);
     expect(onOutcome).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'belongs_to' }));
+  });
+
+  test('a re-fire soon after a recovery attaches even when the last firing is old', async () => {
+    const monitorKey = `slack:monitor-${randomUUID()}`;
+    const tracked = await trackedIncident(monitorKey, hoursAgo(30));
+    await admin.db
+      .update(incidentSignals)
+      .set({ state: 'resolved', resolvedAt: hoursAgo(1) })
+      .where(eq(incidentSignals.id, tracked.signalId));
+    const { handle, onOutcome, classifyFn } = handler(false);
+    const candidate = firingCandidate(monitorKey);
+
+    await handle(job(candidate));
+
+    expect(classifyFn).not.toHaveBeenCalled();
+    expect(onOutcome).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'belongs_to' }));
+    await expect(signalsOf(tenantId, candidate.externalId)).resolves.toEqual([
+      { incidentId: tracked.incidentId },
+    ]);
   });
 
   test('a repeat for a resolved incident falls through to classification', async () => {
@@ -253,6 +380,24 @@ describe('repeat provider notifications', () => {
     expect(onOutcome).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'belongs_to' }));
     const attached = await signalsOf(tenantId, candidate.externalId);
     expect(attached.filter((row) => row.incidentId === tracked.incidentId)).toEqual([]);
+  });
+
+  test('a grouped message whose alerts are tracked by different incidents falls through', async () => {
+    const olderKey = `slack:monitor-${randomUUID()}`;
+    const newerKey = `slack:monitor-${randomUUID()}`;
+    const older = await trackedIncident(olderKey, hoursAgo(2));
+    const newer = await trackedIncident(newerKey, hoursAgo(1));
+    const { handle, onOutcome, classifyFn } = handler(false);
+    const candidate = firingCandidate(olderKey, newerKey);
+
+    await handle(job(candidate));
+
+    expect(classifyFn).toHaveBeenCalledTimes(1);
+    expect(onOutcome).not.toHaveBeenCalledWith(expect.objectContaining({ outcome: 'belongs_to' }));
+    const attached = await signalsOf(tenantId, candidate.externalId);
+    expect(
+      attached.filter((row) => [older.incidentId, newer.incidentId].includes(row.incidentId)),
+    ).toEqual([]);
   });
 
   test.each([

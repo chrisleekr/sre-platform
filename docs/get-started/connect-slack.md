@@ -174,8 +174,10 @@ and never resolves an incident on its own. Any message, from a bot or a person, 
 notice (for example a line starting `[RESOLVED]` or `Resolved:`) is recorded as a log entry and shows
 as **Resolution not matched**. So does an edit of a message the platform already tracks, and a
 classifier suggestion that a message resolves an open alert. None of these change any signal or
-incident. The exception is a bot's recovery notice for exactly one open incident from the same bot
-and channel: it shows as **Recovery reported** and is noted in that incident's conversation. Once
+incident. The exception is a bot's recovery notice for an open incident from the same bot and
+channel: it shows as **Recovery reported** and is noted in that incident's conversation. When
+several open incidents track the alert's monitor, the notice goes to the incident with the most
+recently seen alert. Once
 reports cover every active alert on the incident, and every one of those alerts was itself raised
 from Slack, the platform marks those alerts recovered and starts recovery verification. The incident
 resolves only if verification confirms recovery. An alert established by a connector or a native

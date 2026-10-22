@@ -86,16 +86,12 @@ its own: while `separateMajorMinor` is on, Renovate moves a group's majors to a 
 does not expose, so the API would lose its Slack connection; `bun run test:slack-socket-compat`
 fails on it. Lift the cap in the change that makes that check pass on the pinned Bun.
 
-`zod` is capped below 4.5 and declared with a tilde range. The Claude Agent SDK validates MCP tool
-input with its own inlined copy of the zod 4.4 core. From 4.5, zod marks a `.default()` field as
-`defaulted` rather than `optional`, the inlined core reads that as required, and every terminal tool
-call that omits a defaulted field is rejected before it reaches the engine. The Agent SDK runtime
-tests fail on it. Lift the cap in the change that moves to an Agent SDK release that bundles zod 4.5
-or later.
-
-`jsdom` is capped below 27. From 27 the selector engine and user-agent stylesheet changed, and
-dashboard `getByRole` queries by accessible name stop matching. Uncapped, it would keep the major
-branch failing and block every other major. Lift the cap in the change that migrates those tests.
+`zod` is capped below 4.7 and declared with a tilde range. The Claude Agent SDK validates MCP tool
+input with its own inlined zod core, 4.6 in the pinned release. A newer zod minor can change schema
+internals that core reads: zod 4.5 marked `.default()` fields `defaulted`, the older core read that
+as required, and every terminal tool call that omitted one was rejected. The Agent SDK runtime tests
+fail on such a mismatch. Raise the cap in the change that moves to an Agent SDK release bundling the
+matching core.
 
 The kind node image is capped below Kubernetes 1.36. The Argo CD live test pins `ARGOCD_VERSION` by
 hand, and Argo CD 3.4 is tested only up to Kubernetes 1.35, so raise the cap in the same change that

@@ -9,10 +9,10 @@ export class RepeatNotifications {
 
   /**
    * Returns the tracking incident when every alert in a bot firing message carries a monitor
-   * identity already tracked by an open signal, and those signals belong to one incident seen
-   * within the active window.
+   * identity already tracked by an open signal of one incident. When several open incidents track
+   * the monitor, the one holding the most recently seen signal wins.
    * @param tenantId - Owning tenant.
-   * @param candidate - Scrubbed inbound candidate.
+   * @param candidate - Inbound candidate.
    */
   async match(
     tenantId: string,
@@ -32,19 +32,27 @@ export class RepeatNotifications {
     const matched = await matchOpenProducerSignals(this.core, tenantId, candidate, {
       includeResolved: true,
     });
-    // An active episode wins, so an older open incident holding a resolved one cannot split it.
-    const active = matched.filter((signal) => signal.state !== 'resolved');
-    const signals = active.length > 0 ? active : matched;
-    // A grouped message can mix a tracked alert with a new one; the new alert needs classification.
-    const tracked = new Set(signals.map((signal) => signal.monitorKey));
-    if (candidate.observations?.some((observation) => !tracked.has(observation.monitorKey ?? null)))
-      return null;
-    if (new Set(signals.map((signal) => signal.incidentId)).size !== 1) return null;
-    const latest = signals.reduce((newest, signal) =>
+    if (matched.length === 0) return null;
+    // Refusing on two tracking incidents made every later firing open a third, so the newest wins.
+    // Resolving never moves lastSeenAt, so the incident under verification stays the newest and a
+    // re-fire stops its check.
+    const latest = matched.reduce((newest, signal) =>
       signal.lastSeenAt > newest.lastSeenAt ? signal : newest,
     );
-    // An old episode on a long-open incident is not evidence that this firing is the same one.
-    if (latest.lastSeenAt.getTime() < Date.now() - ACTIVE_WINDOW_MS) return null;
+    // A signal that never recovered is the same episode however long ago it fired. One that
+    // recovered longer ago than the window is a new episode needing its own classification; the
+    // window runs from the recovery, since resolving leaves lastSeenAt at the last firing.
+    const cutoff = Date.now() - ACTIVE_WINDOW_MS;
+    const current = (signal: (typeof matched)[number]) =>
+      signal.state !== 'resolved' || (signal.resolvedAt ?? signal.lastSeenAt).getTime() >= cutoff;
+    // A grouped message can mix a tracked alert with a new one; the new alert needs classification.
+    const tracked = new Set(
+      matched
+        .filter((signal) => signal.incidentId === latest.incidentId && current(signal))
+        .map((signal) => signal.monitorKey),
+    );
+    if (candidate.observations?.some((observation) => !tracked.has(observation.monitorKey ?? null)))
+      return null;
     return { incidentId: latest.incidentId, signalId: latest.id };
   }
 }

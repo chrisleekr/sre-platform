@@ -48,6 +48,11 @@ const signal = () => new AbortController().signal;
 function partiallyReviewed(unreviewed: InvestigationEvidence[]): TriageResult {
   return {
     ...candidate,
+    review: {
+      status: 'supported',
+      coverage: 'cited_only',
+      candidate: { outcome: candidate.outcome, confidence: candidate.confidence },
+    },
     unknowns: [
       {
         question: `Evidence review covered only the records this conclusion cites; ${unreviewed.length} uncited records were not reviewed and may contradict it.`,
@@ -62,7 +67,10 @@ function partiallyReviewed(unreviewed: InvestigationEvidence[]): TriageResult {
 test('an over-length reviewer field is trimmed instead of failing the review', async () => {
   const { generator } = recording(() => ({ ...supported, summary: 's'.repeat(2_000) }));
   const result = await reviewInvestigation(generator, candidate, [cited], signal());
-  expect(result).toBe(candidate);
+  expect(result).toEqual({
+    ...candidate,
+    review: expect.objectContaining({ status: 'supported' }),
+  });
 });
 
 test('an input budget failure is retried with only the cited records', async () => {

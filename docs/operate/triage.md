@@ -52,6 +52,17 @@ Platform settings, the saved value wins and the environment variable is ignored.
 The two budget caps drop the oldest material first, so a long-running incident keeps its most recent
 context.
 
+## When a tool call fails
+
+When a data source tool call fails, the investigation sees only a fixed failure class, never the
+provider's error text: `permission_denied`, `not_found`, `target_not_allowed`, `timeout`,
+`rate_limited`, `unreachable`, or `provider_error`. For `permission_denied` and `target_not_allowed` it
+is told not to repeat the call unchanged and to record a missing-capability question if the proof
+needs that data. For `not_found` it is told the target does not exist as named, so it should check the
+name or record the absence as evidence, and not repeat the call unchanged. The tool call
+audit row keeps the class beside its `error` outcome. A `permission_denied` class usually means the
+connector's credentials lack a read permission, such as Kubernetes RBAC for Secrets.
+
 ## When an investigation runs too long
 
 If an investigation exceeds its deadline, the run fails, the incident shows degraded or keeps its last assessment, and the job is retried once. Data source tool requests still in flight are cancelled at the same moment rather than running to their own timeout, and no further tool calls start. If the worker cannot cancel the stuck run, it restarts itself and logs `job handler stuck past deadline; recycling process`.
@@ -68,7 +79,16 @@ network equipment, ISP, or host-level logs, the run is recorded as blocked by a 
 instead, and the incident asks for that capability rather than showing a degraded investigation.
 This needs the investigation itself to have reported that gap as a missing capability, because only
 the investigation sees which tools are connected; otherwise the rejection is treated as missing
-evidence.
+evidence. When the investigation itself chose blocked by a missing capability, named that gap, and
+left no question an available check could answer, the run stays blocked after an
+insufficient-evidence rejection too. A contradiction always makes it inconclusive. Questions the
+investigation classified as an operator decision are a human choice, so the reviewer never rejects a
+conclusion for them.
+
+The run's stored result records how review decided: supported, rejected with its reason, or failed
+with a fixed failure kind and reason. It also keeps the investigation's own outcome and confidence
+from before review, whether review covered all records or only the cited ones, and the reviewer's
+explanation, cut to 4,000 characters. The run's confidence is the reviewed value.
 
 What else survives depends on why it was rejected:
 
@@ -99,7 +119,10 @@ retains the prior trusted assessment, and shows the current review blocker with 
 summary starts with "Evidence review did not complete" and states the blocker.
 
 Large evidence records are reviewed in bounded slices before a final assessment. Slice notes retain
-observation times, units, uncertainty, and conflicting facts. A slice that cannot retain its material
+observation times, units, uncertainty, and conflicting facts, and may cite any record admitted to the
+review. Records the conclusion cites anywhere, including in its hypotheses, causal findings, and the
+checks attempted for its open questions, are admitted to the review. The conversation history given
+to the reviewer leaves out tool steps and keeps only the newest messages within the transcript budget. A slice that cannot retain its material
 findings within the limits stops that review; partial coverage cannot authorize resolution.
 
 When review of an assessment or reply stops on its own size limits, the platform reviews once more
@@ -157,8 +180,8 @@ capped.
 
 ## Connecting your own tools
 
-You can point an external client at a single incident and get the same read-only, redacted, audited
-tools the platform uses itself.
+You can point an external client at a single incident and get the same read-only, audited tools the
+platform uses itself.
 
 After upgrading, replace existing `/mcp/incidents/<incident-uuid>` client addresses with
 `/mcp/providers/<sign-in-method-uuid>/incidents/<incident-uuid>`. The old address and its
@@ -201,7 +224,9 @@ from it. What discovery saves you is naming an authorization server by hand: the
 its own protected-resource metadata, and that metadata advertises exactly the one authorization
 server able to mint a token for it.
 
-Every call through this endpoint is redacted and audited exactly as an internal one is. Connector
-credentials are never exposed through it. A token without the right scope, a token from another
-sign-in method, an incident in another tenant, and an oversized request are all refused before any
-connector is contacted.
+Every call through this endpoint is audited exactly as an internal one is. Tool output is not
+redacted. The stored connector credentials are never returned, and connector tools refuse the
+provider reads known to return them, such as key-management, webhook-configuration, and Kubernetes
+Secret endpoints. A token without the right scope, a token from another sign-in method, an
+incident in another tenant, and an oversized request are all refused before any connector is
+contacted.

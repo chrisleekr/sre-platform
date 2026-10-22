@@ -27,7 +27,6 @@ import {
   trackedIncident,
   useRecoveryFixture,
 } from '../../classify-consumer/__tests__/recovery-report.fixture';
-import { RECOVERY_NOT_QUEUED } from '../../recovery-start';
 import { requestRecoveryVerification } from '../recovery-request';
 import type { WorkerRuntime } from '../runtime';
 
@@ -209,6 +208,122 @@ describe('responder-requested recovery verification', () => {
   });
 
   test.each([
+    { name: 'reported alerts', alreadyResolved: false },
+    { name: 'alerts that cleared before the verdict', alreadyResolved: true },
+  ])(
+    'a request after a not-verified verdict starts a fresh check ($name)',
+    async ({ alreadyResolved }) => {
+      const tracked = await reportedBeforeVerification();
+      if (alreadyResolved)
+        await admin.db
+          .update(incidentSignals)
+          .set({ state: 'resolved', clearProvenance: 'unknown', resolvedAt: new Date() })
+          .where(eq(incidentSignals.incidentId, tracked.incidentId));
+      await admin.db
+        .update(incidents)
+        .set({ recoveryState: 'not_verified', recoveryAttempt: 1, recoveryMaxChecks: 1 })
+        .where(eq(incidents.id, tracked.incidentId));
+      const request = await ask(tracked.incidentId, memberId);
+
+      expect(
+        await requestRecoveryVerification(
+          runtime(),
+          resumeJob,
+          tracked.incidentId,
+          request,
+          request.id,
+        ),
+      ).toBe('handled');
+
+      expect(await recoveryJobs(tracked.incidentId)).toHaveLength(1);
+      expect(await statusLines(tracked.incidentId)).toEqual([{ content: VERIFYING }]);
+      const [incident] = await admin.db
+        .select({
+          status: incidents.status,
+          recoveryState: incidents.recoveryState,
+          recoveryAttempt: incidents.recoveryAttempt,
+        })
+        .from(incidents)
+        .where(eq(incidents.id, tracked.incidentId));
+      expect(incident).toEqual({ status: 'open', recoveryState: null, recoveryAttempt: null });
+    },
+  );
+
+  test('a request after a spent budget with no verdict starts a fresh check', async () => {
+    const tracked = await reportedBeforeVerification();
+    await admin.db
+      .update(incidents)
+      .set({ recoveryState: null, recoveryAttempt: 3, recoveryMaxChecks: 3 })
+      .where(eq(incidents.id, tracked.incidentId));
+    const request = await ask(tracked.incidentId, memberId);
+
+    expect(
+      await requestRecoveryVerification(
+        runtime(),
+        resumeJob,
+        tracked.incidentId,
+        request,
+        request.id,
+      ),
+    ).toBe('handled');
+
+    expect(await recoveryJobs(tracked.incidentId)).toHaveLength(1);
+    const [incident] = await admin.db
+      .select({ recoveryAttempt: incidents.recoveryAttempt })
+      .from(incidents)
+      .where(eq(incidents.id, tracked.incidentId));
+    expect(incident!.recoveryAttempt).toBeNull();
+  });
+
+  test.each([
+    {
+      name: 'a check still verifying on its last attempt',
+      policy: 'verified_recovery' as const,
+      recoveryState: 'verifying' as const,
+      attempt: 3,
+    },
+    // Slack text never clears a provider_clear incident, so its verdict waits for the provider.
+    {
+      name: 'a provider_clear verdict',
+      policy: 'provider_clear' as const,
+      recoveryState: 'not_verified' as const,
+      attempt: 1,
+    },
+  ])('$name is queued without being restarted', async ({ policy, recoveryState, attempt }) => {
+    const tracked = await reportedBeforeVerification();
+    await admin.db
+      .update(incidents)
+      .set({
+        resolutionPolicy: policy,
+        recoveryState,
+        recoveryAttempt: attempt,
+        recoveryMaxChecks: attempt,
+      })
+      .where(eq(incidents.id, tracked.incidentId));
+    const request = await ask(tracked.incidentId, memberId);
+
+    expect(
+      await requestRecoveryVerification(
+        runtime(),
+        resumeJob,
+        tracked.incidentId,
+        request,
+        request.id,
+      ),
+    ).toBe('handled');
+
+    expect(await recoveryJobs(tracked.incidentId)).toHaveLength(1);
+    const [incident] = await admin.db
+      .select({
+        recoveryState: incidents.recoveryState,
+        recoveryAttempt: incidents.recoveryAttempt,
+      })
+      .from(incidents)
+      .where(eq(incidents.id, tracked.incidentId));
+    expect(incident).toEqual({ recoveryState, recoveryAttempt: attempt });
+  });
+
+  test.each([
     {
       name: 'a case whose response group still has an active alert',
       setup: async () => {
@@ -229,16 +344,17 @@ describe('responder-requested recovery verification', () => {
         'Reported alerts are resolved. Verification waits for the other incidents in this response group.',
     },
     {
-      name: 'a refused verification',
+      name: 'a case whose alerts cleared earlier with no check pending',
       setup: async () => {
         const tracked = await reportedBeforeVerification();
         await admin.db
-          .update(incidents)
-          .set({ recoveryState: 'not_verified' })
-          .where(eq(incidents.id, tracked.incidentId));
+          .update(incidentSignals)
+          .set({ state: 'resolved', clearProvenance: 'unknown', resolvedAt: new Date() })
+          .where(eq(incidentSignals.incidentId, tracked.incidentId));
         return tracked.incidentId;
       },
-      reason: RECOVERY_NOT_QUEUED,
+      reason:
+        'Recovery verification cannot start: every alert had already cleared and no check is pending, so there is no new recovery to verify.',
     },
     {
       name: 'a case with no alerts',

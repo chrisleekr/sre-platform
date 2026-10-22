@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from 'vitest';
 import { makeFakeGenerator } from '../fake';
-import { reviewInvestigation } from '../evidence-review';
+import { EVIDENCE_REVIEW_INSTRUCTION, reviewInvestigation } from '../evidence-review';
 import type { TriageResult } from '../types';
 
 const evidenceId = randomUUID();
@@ -86,7 +86,7 @@ test('an insufficient-evidence rejection keeps the demoted hypotheses, state and
   });
   expect(result.detail).toBeUndefined();
   expect(result.reviewGaps).toHaveLength(2);
-  expect(result.reviewGaps?.join(' ')).not.toContain(secret);
+  expect(result.reviewGaps?.join(' ')).toContain(secret);
   expect(result.unknowns).toEqual([
     priorGap,
     ...result.reviewGaps!.map((question) => ({
@@ -316,4 +316,102 @@ test('demotion moves the leading hypothesis first, so it still headlines once ev
     ['Limit too low', 'plausible'],
     ['Disk pressure', 'plausible'],
   ]);
+});
+
+const engineBlocked: TriageResult = {
+  ...candidate,
+  outcome: 'blocked_missing_capability',
+  unknowns: [capabilityGap],
+};
+const insufficientReview = () =>
+  makeFakeGenerator(() => ({
+    supported: false,
+    rejection: 'insufficient_evidence',
+    summary: 'Grafana was OOMKilled at 09:12Z.',
+    gaps: ['Confirm the hypervisor reclaimed memory at 09:12Z.'],
+    evidenceIds: [evidenceId],
+  }));
+
+test('an engine that chose blocked stays blocked when the reviewer finds evidence insufficient', async () => {
+  const result = await reviewInvestigation(
+    insufficientReview(),
+    engineBlocked,
+    evidence,
+    new AbortController().signal,
+  );
+  expect(result.outcome).toBe('blocked_missing_capability');
+  // The reviewer named missing proof, not a missing capability.
+  expect(result.unknowns?.at(-1)?.category).toBe('partial_evidence');
+  expect(result.review).toMatchObject({
+    status: 'rejected',
+    rejection: 'insufficient_evidence',
+    candidate: { outcome: 'blocked_missing_capability', confidence: 90 },
+  });
+});
+
+test('a contradiction overrides an engine blocked choice', async () => {
+  const result = await reviewInvestigation(
+    makeFakeGenerator(() => ({
+      supported: false,
+      rejection: 'contradictory_evidence',
+      summary: 'Grafana restarted twice after 09:00Z.',
+      evidenceIds: [evidenceId],
+    })),
+    engineBlocked,
+    evidence,
+    new AbortController().signal,
+  );
+  expect(result.outcome).toBe('inconclusive');
+});
+
+test('an engine blocked choice with an open observable check is not blocked', async () => {
+  const result = await reviewInvestigation(
+    insufficientReview(),
+    {
+      ...engineBlocked,
+      unknowns: [
+        capabilityGap,
+        { ...priorGap, category: 'observable', attemptedEvidenceIds: [evidenceId] },
+      ],
+    },
+    evidence,
+    new AbortController().signal,
+  );
+  expect(result.outcome).toBe('inconclusive');
+});
+
+test('an engine blocked choice that also saw a contradiction is not blocked', async () => {
+  const result = await reviewInvestigation(
+    insufficientReview(),
+    {
+      ...engineBlocked,
+      unknowns: [capabilityGap, { ...priorGap, category: 'contradictory_evidence' }],
+    },
+    evidence,
+    new AbortController().signal,
+  );
+  expect(result.outcome).toBe('inconclusive');
+});
+
+test('an engine blocked choice reviewed only on its cited records is not blocked', async () => {
+  // Uncited records too large for one review force the cited-only fallback.
+  const uncited = Array.from({ length: 3 }, () => ({
+    ...evidence[0]!,
+    id: randomUUID(),
+    output: 'x'.repeat(200_000),
+  }));
+  const result = await reviewInvestigation(
+    insufficientReview(),
+    engineBlocked,
+    [...evidence, ...uncited],
+    new AbortController().signal,
+  );
+  expect(result.review?.coverage).toBe('cited_only');
+  expect(result.outcome).toBe('inconclusive');
+});
+
+test('the reviewer is told an operator decision is not missing proof', () => {
+  expect(EVIDENCE_REVIEW_INSTRUCTION).toContain(
+    'A question classified operator_decision is a human choice, not missing proof. Never reject for it or list it in gaps.',
+  );
 });
