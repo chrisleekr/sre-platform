@@ -1,4 +1,3 @@
-import { scrubSecrets } from '@sre/agent-tools';
 import { RESOLUTION_POLICIES, type ResolutionPolicy } from '@sre/contracts';
 import { getIncidentSummary } from '@sre/db';
 import type { Hono } from 'hono';
@@ -41,7 +40,7 @@ export function registerResolutionPolicyRoute(
       );
     const result = await deps.hub.changeResolutionPolicy(tenantId, id, {
       policy: body.policy as ResolutionPolicy,
-      reason: scrubSecrets(body.reason.trim()),
+      reason: body.reason.trim(),
       requestId: body.requestId,
       expectedVersion: Number(body.expectedVersion),
       authorUserId: userId ?? null,

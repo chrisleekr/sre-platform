@@ -4,7 +4,6 @@ import type { SnapshotCache } from '@sre/queue';
 import { readTopologyRuntime } from '@sre/topology';
 import { entityCandidateKey } from '@sre/contracts';
 import { normalizeDiscoveredRuntimeObservation } from '@sre/connectors';
-import { scrubSecrets } from '@sre/agent-tools';
 import type { ResolvedObservation } from './incident-observations';
 import { ObservationNotFoundError, ObservationNotActionableError } from './observation-errors';
 
@@ -29,7 +28,7 @@ export async function resolveTopologyRuntimeObservation(
     throw new ObservationNotFoundError(
       'Topology service identity is unavailable or ambiguous. Refresh its evidence.',
     );
-  const observation = normalizeDiscoveredRuntimeObservation(evidence, new Date(), scrubSecrets);
+  const observation = normalizeDiscoveredRuntimeObservation(evidence, new Date());
   if (observation.state !== 'firing')
     throw new ObservationNotActionableError(
       'No current unhealthy runtime resources are associated with this service. Partial evidence does not prove recovery.',

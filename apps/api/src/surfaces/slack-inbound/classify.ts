@@ -15,7 +15,7 @@ type DurableClassify = Awaited<ReturnType<SlackInboundDeps['classifyQueue']['ins
  * @param deps - Runtime persistence and queue dependencies.
  * @param tx - Existing system transaction holding the stable-message lock.
  * @param config - Tenant-scoped Slack configuration.
- * @param payload - Scrubbed candidate written to the durable classify job.
+ * @param payload - Candidate written to the durable classify job.
  */
 export async function insertSlackClassifyTx(
   deps: SlackInboundDeps,

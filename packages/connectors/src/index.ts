@@ -135,7 +135,6 @@ export {
   type ConnectorVerificationObservationInput,
   type InfrastructureObservation,
   type ObservationState,
-  type ObservationTextScrubber,
   type TopologyServiceObservationInput,
 } from './subject-observations';
 export * from './types';

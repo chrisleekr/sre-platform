@@ -1,5 +1,3 @@
-import { scrubSecrets } from './redact';
-
 export type IncidentTitleSource =
   'stored' | 'linked_alert' | 'opening_request' | 'opening_context' | 'missing' | 'unavailable';
 export interface IncidentTitlePresentation {
@@ -12,7 +10,7 @@ export interface IncidentTitlePresentation {
  */
 export function meaningfulIncidentTitle(value: string | null | undefined): string | null {
   if (!value) return null;
-  const clean = scrubSecrets(value)
+  const clean = value
     .replace(/<@[A-Z0-9]+(?:\|[^>]+)?>/gi, '')
     .replace(/<![^>]+>/g, '')
     .replace(/<https?:\/\/[^>|]+\|([^>]+)>/g, '$1')

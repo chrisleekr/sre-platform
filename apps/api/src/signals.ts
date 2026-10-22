@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { scrubSecrets } from '@sre/agent-tools';
 import { routeToIncident, type RouteDeps } from '@sre/alerts';
 import type { Queue } from '@sre/queue';
 import {
@@ -75,7 +74,7 @@ function promotionBody(value: unknown): { criterion: string; reason: string } | 
   if (Object.keys(record).some((key) => !['criterion', 'reason'].includes(key))) return null;
   if (typeof record.criterion !== 'string' || !CRITERIA.has(record.criterion)) return null;
   if (typeof record.reason !== 'string') return null;
-  const reason = scrubSecrets(record.reason.trim());
+  const reason = record.reason.trim();
   return reason && reason.length <= 2_000 ? { criterion: record.criterion, reason } : null;
 }
 

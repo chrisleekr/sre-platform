@@ -1,6 +1,5 @@
 import { connectorConfigs, withTenant, type Db, type listIncidentSignals } from '@sre/db';
 import { inArray } from 'drizzle-orm';
-import { scrubSecrets } from '@sre/agent-tools';
 
 /** Reports present lifecycle authority without rewriting historical observations. */
 export async function publicSignalCoverage(
@@ -49,7 +48,6 @@ export async function publicSignalCoverage(
             : verified
               ? 'verified'
               : 'reverification_required',
-      alertName: signal.alertName ? scrubSecrets(signal.alertName) : signal.alertName,
     };
   });
 }

@@ -1,7 +1,6 @@
 import {
   SEMANTIC_DISPOSITION_CONTRACT_VERSION,
   SIGNAL_DISPOSITION_CORPUS_VERSION,
-  scrubSecrets,
 } from '@sre/contracts';
 import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
@@ -108,13 +107,9 @@ function ticketValues(input: NewSignalDisposition): SignalTicketFields | null {
   if (!Number.isInteger(horizon) || horizon < 1 || horizon > 10_080)
     throw new Error('ticket review horizon must be between 1 and 10080 minutes');
   return {
-    action: bounded(scrubSecrets(input.ticket.action), MAX_TEXT, 'ticket action'),
-    safeDeferralReason: bounded(
-      scrubSecrets(input.ticket.safeDeferralReason),
-      MAX_TEXT,
-      'safe deferral reason',
-    ),
-    riskIfIgnored: bounded(scrubSecrets(input.ticket.riskIfIgnored), MAX_TEXT, 'risk if ignored'),
+    action: bounded(input.ticket.action, MAX_TEXT, 'ticket action'),
+    safeDeferralReason: bounded(input.ticket.safeDeferralReason, MAX_TEXT, 'safe deferral reason'),
+    riskIfIgnored: bounded(input.ticket.riskIfIgnored, MAX_TEXT, 'risk if ignored'),
     reviewHorizonMinutes: horizon,
   };
 }
@@ -131,7 +126,7 @@ function sourceEventOrder(eventAt: Date, eventVersion?: string | null): bigint {
 }
 
 /**
- * Persists one scrubbed outcome and supersedes the prior signal version.
+ * Persists one outcome and supersedes the prior signal version.
  * @param db - Tenant-scoped database.
  * @param tenantId - Owning tenant.
  * @param input - Validated semantic outcome.
@@ -155,13 +150,11 @@ export async function recordSignalDisposition(
     surface: bounded(input.surface, 100, 'surface'),
     channel: bounded(input.channel, 500, 'channel'),
     threadId: bounded(input.threadId, 500, 'thread id'),
-    summary: boundedProjection(scrubSecrets(input.summary), MAX_TEXT, 'summary'),
-    reason: boundedProjection(scrubSecrets(input.reason), MAX_REASON, 'reason'),
-    service: input.service ? scrubSecrets(input.service).trim() || null : null,
+    summary: boundedProjection(input.summary, MAX_TEXT, 'summary'),
+    reason: boundedProjection(input.reason, MAX_REASON, 'reason'),
+    service: input.service ? input.service.trim() || null : null,
     severity: input.severity?.trim() || null,
-    proposedTitle: input.proposedTitle
-      ? scrubSecrets(input.proposedTitle).trim().slice(0, 200) || null
-      : null,
+    proposedTitle: input.proposedTitle ? input.proposedTitle.trim().slice(0, 200) || null : null,
     disposition: input.disposition,
     classificationMode: input.classificationMode ?? 'shadow',
     runtimeFingerprint: input.runtimeFingerprint?.trim() || null,

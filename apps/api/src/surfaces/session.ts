@@ -1,4 +1,3 @@
-import { scrubSecrets } from '@sre/agent-tools';
 import {
   MAX_CONTENT_CHARS,
   WS_CLOSE_POLICY,
@@ -309,14 +308,9 @@ export async function openIncidentSession(
           // reply carries the origin surface + the authed platform user from the ticket. A projected
           // agent/system message stays unattributed (null/null), never mislabeled as a dashboard human.
           const isHuman = resolvedAuthor === 'human';
-          // Scrub at ingest, mirroring the two Slack ingest points: a human who pastes a
-          // credential must not have it persisted raw in incident_messages nor egressed to the LLM on resume.
-          // This is the single write boundary, so everything downstream reads the scrubbed row. Human-only:
-          // an agent/system message projected through this path was already scrubbed at its own source
-          // (worker.ts), and re-running the pass over it would be redundant work on an already-clean string.
           const appended = await deps.hub.appendTxOnce(tx, tenantId, incidentId, {
             author: resolvedAuthor,
-            content: isHuman ? scrubSecrets(content) : content,
+            content,
             originSurface: isHuman ? 'dashboard' : undefined,
             authorUserId: isHuman ? userId : null,
             originMessageId:

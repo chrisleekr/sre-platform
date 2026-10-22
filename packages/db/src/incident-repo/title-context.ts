@@ -1,6 +1,5 @@
 import {
   meaningfulIncidentTitle,
-  scrubSecrets,
   openingIncidentTitle,
   type IncidentTitlePresentation,
 } from '@sre/contracts';
@@ -57,11 +56,7 @@ export async function presentIncidentTitles<T extends { id: string; title: strin
     `)),
     ]);
   }
-  return selected.map((original) => {
-    const item = {
-      ...original,
-      title: original.title ? scrubSecrets(original.title) : original.title,
-    };
+  return selected.map((item) => {
     const stored = meaningfulIncidentTitle(item.title);
     if (stored) return { ...item, displayTitle: stored, titleSource: 'stored' as const };
     const cohort = rows.filter((row) => row.incidentId === item.id);

@@ -13,7 +13,6 @@ import {
 import type { ConversationHub } from '@sre/hub';
 import { createHash } from 'node:crypto';
 import { and, eq, gte, isNull, like, lte, ne, type SQL } from 'drizzle-orm';
-import { scrubSecrets } from './redact';
 import { SubjectMissCache } from './subject-miss-cache';
 
 type Signal = typeof incidentSignals.$inferSelect;
@@ -166,7 +165,7 @@ export async function bindSignalFromSubject(input: {
       episode: { ...observation, startsAt },
     });
     if (bound.status === 'conflict') return { reason: 'provider_episode_already_bound' };
-    const url = scrubSecrets(groupKey.slice(STATUSCAKE_UPTIME_SUBJECT.length));
+    const url = groupKey.slice(STATUSCAKE_UPTIME_SUBJECT.length);
     const { message } = await hub.appendTxOnce(tx, tenantId, incident.id, {
       author: 'system',
       content: `Bound this notification to ${observation.provider} uptime test ${match.monitorId}, episode ${startsAt.toISOString()}. It is the only test in this connection that checks ${url}, and ${observation.provider} reports an outage covering the notification. Recovery still requires the provider to report this episode ended.`,

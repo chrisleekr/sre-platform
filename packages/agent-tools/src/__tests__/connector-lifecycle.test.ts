@@ -234,7 +234,7 @@ test('a signal whose provider read throws is reported and the next signal is sti
   ]);
 });
 
-test('provider text from a verified recovery is scrubbed before the signal stores it', async () => {
+test('provider text from a verified recovery is stored verbatim', async () => {
   const { tenantId, connectorId, signals } = await seed(1);
   const credential = `ghp_${'c'.repeat(36)}`;
 
@@ -257,8 +257,7 @@ test('provider text from a verified recovery is scrubbed before the signal store
     .where(eq(incidentSignals.id, signals[0]!.id));
   expect(stored!.state).toBe('resolved');
   const durable = JSON.stringify(stored);
-  expect(durable).toContain('Checkout');
-  expect(durable).not.toContain(credential);
+  expect(durable).toContain(`Checkout ${credential}`);
 });
 
 test('recovery takes response-group work locks before the incident row lock', async () => {

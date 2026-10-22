@@ -483,7 +483,7 @@ test('rejects a malformed webhook key before querying connector state', async ()
   expect(__fixture.postRoot).toHaveBeenCalledTimes(before);
 });
 
-test('redacts provider-controlled secrets before every durable and external sink', async () => {
+test('removes only the connector webhook token before every durable and external sink', async () => {
   const formattedSecret = `sk-${'Ab1'.repeat(12)}`;
   const keyNamedSecret = 'plain-value-hidden-by-sensitive-key';
   const body = __fixture.payload('fingerprint-redaction', '2026-08-26T02:10:00Z');
@@ -534,8 +534,9 @@ test('redacts provider-controlled secrets before every durable and external sink
   const rootText = String(__fixture.postRoot.mock.calls.at(-1)?.[2] ?? '');
   const allSinks = JSON.stringify({ persisted, queued, rootText });
 
-  expect(allSinks).not.toContain(formattedSecret);
-  expect(allSinks).not.toContain(keyNamedSecret);
+  // Provider content is not redacted; only this connector's own webhook token is removed.
+  expect(allSinks).toContain(formattedSecret);
+  expect(allSinks).toContain(keyNamedSecret);
   expect(allSinks).not.toContain(__fixture.EVENT_TOKEN);
   expect(allSinks).toContain('[REDACTED]');
 });

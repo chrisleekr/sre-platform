@@ -34,7 +34,7 @@ describe('Slack inbound processors', () => {
     expect(__fixture.enqueued).toHaveLength(0);
   });
 
-  test('a tracked message_changed edit is scrubbed and queued for fenced classification', async () => {
+  test('a tracked message_changed edit is queued verbatim for fenced classification', async () => {
     const externalMessageId = '1787280000.000300';
     await applySignalObservation(__fixture.app.db, __fixture.tenantId, {
       incidentId: __fixture.incidentId,
@@ -77,7 +77,7 @@ describe('Slack inbound processors', () => {
       payload: {
         externalId: externalMessageId,
         isEdit: true,
-        text: expect.not.stringContaining('sk-abcdefghijklmnopqrstuvwx1234'),
+        text: expect.stringContaining('sk-abcdefghijklmnopqrstuvwx1234'),
       },
     });
   });

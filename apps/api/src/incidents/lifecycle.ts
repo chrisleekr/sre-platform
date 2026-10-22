@@ -1,6 +1,5 @@
 import { registerInvestigationRetryRoute } from './investigation-retry';
 import { registerResolutionPolicyRoute } from './resolution-policy';
-import { scrubSecrets } from '@sre/agent-tools';
 import { getIncident, getIncidentSummary } from '@sre/db';
 import { Hono } from 'hono';
 import { requirePlatformAdmin, type TenantAuthVariables } from '../auth';
@@ -43,7 +42,7 @@ export function registerIncidentLifecycleRoutes(
 
     const result = await deps.hub.transitionIncident(tenantId, id, {
       to: body.to,
-      reason: scrubSecrets(body.reason.trim()),
+      reason: body.reason.trim(),
       transitionKey: `dashboard:${id}:${body.requestId}`,
       author: 'human',
       originSurface: 'dashboard',
@@ -101,7 +100,7 @@ export function registerIncidentLifecycleRoutes(
       return c.json({ error: 'invalid resolvedAt' }, 400);
 
     const result = await deps.hub.correctSignal(tenantId, id, signalId, {
-      reason: scrubSecrets(body.reason.trim()),
+      reason: body.reason.trim(),
       correctionKey: `dashboard-signal-correction:${id}:${signalId}:${body.requestId}`,
       author: 'human',
       originSurface: 'dashboard',
@@ -211,7 +210,7 @@ export function registerIncidentLifecycleRoutes(
 
     const result = await deps.hub.setIncidentArchived(tenantId, id, {
       archived: body.archived,
-      reason: scrubSecrets(body.reason.trim()),
+      reason: body.reason.trim(),
       archiveKey: `dashboard-archive:${id}:${body.requestId}`,
       author: 'human',
       originSurface: 'dashboard',

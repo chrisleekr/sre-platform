@@ -238,7 +238,7 @@ export async function saveGeneratedPostmortem(
  * @param tenantId - Tenant that owns the incident.
  * @param incidentId - Incident whose postmortem is edited.
  * @param revision - Revision the responder read before editing.
- * @param patch - Sections to replace; already scrubbed by the caller.
+ * @param patch - Sections to replace.
  */
 export async function updatePostmortemSections(
   db: Db,

@@ -22,7 +22,7 @@ export interface DeadJob {
   /** Set only when the named incident exists in the same tenant, so the link always resolves. */
   incidentId: string | null;
   incidentTitle: string | null;
-  /** Credential-scrubbed and shortened for display. */
+  /** Shortened for display. */
   lastError: string | null;
   createdAt: string;
   updatedAt: string;

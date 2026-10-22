@@ -326,7 +326,7 @@ try {
   assert.equal(
     impact.data.subjectRef,
     subject.capturedSnapshot.topologySubjectKey,
-    'Model-facing scope must survive the tool redactor',
+    'Model-facing scope must survive tool dispatch',
   );
   const sources = await runTool(makeReadTopologySourcesTool({ db: app.db }), sourceContext, {
     subjectKey: impact.data.subjectRef,

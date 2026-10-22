@@ -73,7 +73,7 @@ async function state() {
     posts: fixture.postRoot.mock.calls.length,
   };
 }
-test('Datadog scope secrets never reach the whole durable intake or triage payload, and duplicate identity stays stable', async () => {
+test('Datadog scope text reaches the durable intake and triage payload unredacted, and duplicate identity stays stable', async () => {
   const id = await seed('datadog');
   const credential = `ghp_${'a'.repeat(36)}`;
   const payload = dd({
@@ -93,7 +93,8 @@ test('Datadog scope secrets never reach the whole durable intake or triage paylo
   expect(triage.length).toBeGreaterThan(0);
   const durable = JSON.stringify({ intakes, triage });
   expect(durable).not.toContain(fixture.EVENT_TOKEN);
-  expect(durable).not.toContain(credential);
+  // Provider content is not redacted; only the connector's own webhook token is removed.
+  expect(durable).toContain(credential);
   expect(intakes[0]?.observation.monitorIdentity).toMatch(/^[a-f0-9]{64}$/);
 });
 test.each(['recovery-first', 'trigger-first'])(

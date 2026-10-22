@@ -254,8 +254,6 @@ describe('platform observation resolvers', () => {
       }),
     ]);
     expect(JSON.stringify(resolved)).not.toContain('must-never-persist');
-    expect(JSON.stringify(resolved)).not.toContain('abc.def.ghi123XYZ');
-    expect(JSON.stringify(resolved)).not.toContain('glpat-ABCDEF1234567890abcd');
     expect(resolved[1]!.subject.snapshot).not.toHaveProperty('url');
   });
 

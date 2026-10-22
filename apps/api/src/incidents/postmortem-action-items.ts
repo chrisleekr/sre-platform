@@ -1,4 +1,3 @@
-import { scrubSecrets } from '@sre/agent-tools';
 import {
   ACTION_ITEM_STATES,
   ACTION_ITEM_TYPES,
@@ -34,8 +33,8 @@ const oneOf = <T extends string>(values: readonly T[], value: unknown): value is
 /**
  * Accepts only an absolute https URL; anything else (http, javascript, relative) is rejected.
  * Userinfo, a recognised credential anywhere in the URL, and any query or fragment parameter whose
- * name is sensitive (`token`, `private_token`, `password`, ...) are refused rather than redacted:
- * the stored link is rendered to the whole tenant, and a scrubbed URL would be a broken link.
+ * name is sensitive (`token`, `private_token`, `password`, ...) are refused:
+ * the stored link is rendered to the whole tenant.
  * The high-entropy heuristic is not applied, so a long opaque path id (a document id) is accepted.
  */
 function parseTrackerUrl(value: unknown): string | null | false {
@@ -69,7 +68,7 @@ function parseDueAt(value: unknown): Date | null | false {
 
 function parseBounded(value: unknown, max: number): string | false {
   if (typeof value !== 'string') return false;
-  const text = scrubSecrets(value.trim());
+  const text = value.trim();
   return text && text.length <= max ? text : false;
 }
 

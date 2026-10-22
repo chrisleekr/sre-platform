@@ -2,7 +2,6 @@ export {
   storedAlertmanagerObservation,
   restoreStoredAlertmanagerEpisode,
 } from './stored-observation';
-import { redactInput, scrubSecrets } from '@sre/agent-tools';
 import type { SignalObservation } from '@sre/db';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { semanticMaterialText } from '@sre/connectors';
@@ -88,21 +87,12 @@ function scrubKnownSecret(value: string, secret: string): string {
   return secret ? value.split(secret).join('[REDACTED]') : value;
 }
 
+/** Removes this platform's own webhook token from a provider URL; provider content passes through.
+ * @param value - Provider-supplied URL.
+ * @param knownSecret - The connector's own webhook token.
+ */
 export function sanitizeProviderUrl(value: string, knownSecret: string): string {
-  const scrubbed = scrubSecrets(scrubKnownSecret(value, knownSecret));
-  try {
-    const url = new URL(scrubbed);
-    if (url.username) url.username = '[REDACTED]';
-    if (url.password) url.password = '[REDACTED]';
-    const queryEntries = Array.from(url.searchParams.entries());
-    for (const [key, item] of queryEntries) {
-      const sanitized = redactInput({ [key]: item }) as Record<string, string>;
-      url.searchParams.set(key, sanitized[key]!);
-    }
-    return url.toString();
-  } catch {
-    return scrubbed;
-  }
+  return scrubKnownSecret(value, knownSecret);
 }
 
 function stringMap(
@@ -156,12 +146,8 @@ export function normalizeAlert(value: unknown, knownSecret: string): NormalizedA
     Object.fromEntries(
       Object.entries(values).map(([key, item]) => [key, scrubKnownSecret(item, knownSecret)]),
     );
-  const sanitizedLabels = labels
-    ? (redactInput(withoutKnownSecrets(labels)) as Record<string, string>)
-    : null;
-  const sanitizedAnnotations = annotations
-    ? (redactInput(withoutKnownSecrets(annotations)) as Record<string, string>)
-    : null;
+  const sanitizedLabels = labels ? withoutKnownSecrets(labels) : null;
+  const sanitizedAnnotations = annotations ? withoutKnownSecrets(annotations) : null;
   const alertName = sanitizedLabels?.alertname?.trim();
   const rawMonitorId = labels?.sre_monitor_id?.trim();
   const generatorUrl = string(raw.generatorURL);
@@ -208,6 +194,8 @@ export function alertmanagerMonitorKey(
   alert: Pick<NormalizedAlert, 'alertName' | 'fingerprint' | 'labels'> &
     Partial<Pick<NormalizedAlert, 'monitorIdentity' | 'provider'>>,
 ): string {
+  // Labels stored before provider text stopped being redacted, or equal to the webhook token, can
+  // hold the marker; it identifies no monitor.
   const monitorIdentity =
     alert.monitorIdentity ??
     (alert.labels.sre_monitor_id?.trim() && alert.labels.sre_monitor_id.trim() !== '[REDACTED]'

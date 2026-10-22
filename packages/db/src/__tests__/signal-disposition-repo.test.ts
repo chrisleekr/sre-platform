@@ -108,7 +108,7 @@ describe('signal disposition repository', () => {
     expect(created.summary).toMatch(/^Long provider observation/);
   });
 
-  test('persists only the scrubbed bounded record, never an extra raw candidate', async () => {
+  test('persists only the bounded record, never an extra raw candidate', async () => {
     const rawMarker = `RAW-SECRET-${randomUUID()}`;
     const created = await recordSignalDisposition(app.db, tenantA, {
       ...input(`slack:C-SIGNALS:${randomUUID()}`),
@@ -130,27 +130,6 @@ describe('signal disposition repository', () => {
     expect([...columns].map((row) => row.column_name)).not.toEqual(
       expect.arrayContaining(['raw', 'candidate', 'payload']),
     );
-  });
-
-  test('scrubs common credentials from every free-form persisted field', async () => {
-    const privateKey =
-      '-----BEGIN PRIVATE KEY-----\nplain-private-material\n-----END PRIVATE KEY-----';
-    const created = await recordSignalDisposition(app.db, tenantA, {
-      ...input(`slack:C-SIGNALS:${randomUUID()}`),
-      summary: 'password=hunter2',
-      reason: 'postgres://alice:secret@db.example/app',
-      proposedTitle: privateKey,
-      ticket: {
-        action: 'rotate password=hunter2',
-        safeDeferralReason: 'postgres://alice:secret@db.example/app is reachable',
-        riskIfIgnored: privateKey,
-        reviewHorizonMinutes: 60,
-      },
-    });
-    const persisted = JSON.stringify(created);
-    for (const secret of ['hunter2', 'alice:secret', 'plain-private-material'])
-      expect(persisted).not.toContain(secret);
-    expect(persisted).toContain('[REDACTED]');
   });
 
   test('records the effective legacy-safe decision beside a shadow proposal', async () => {

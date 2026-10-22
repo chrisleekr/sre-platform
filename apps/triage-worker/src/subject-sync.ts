@@ -16,7 +16,6 @@ import {
   normalizeDiscoveredRuntimeObservation,
   type NormalizedSnapshot,
 } from '@sre/connectors';
-import { scrubSecrets } from '@sre/agent-tools';
 import type { SnapshotCache } from '@sre/queue';
 
 export class SubjectSyncUnavailableError extends Error {}
@@ -36,7 +35,7 @@ const atSyncTime = (
 
 const safeInfrastructure = (snapshot: NormalizedSnapshot): SubjectSyncObservation => {
   const syncedAt = new Date();
-  return atSyncTime(normalizeInfrastructureObservation(snapshot, syncedAt, scrubSecrets), syncedAt);
+  return atSyncTime(normalizeInfrastructureObservation(snapshot, syncedAt), syncedAt);
 };
 
 export function makeSubjectSyncResolver(deps: { db: Db; cache: SnapshotCache }) {
@@ -74,7 +73,6 @@ export function makeSubjectSyncResolver(deps: { db: Db; cache: SnapshotCache }) 
             succeededAt: config.verificationSucceededAt,
           },
           syncedAt,
-          scrubSecrets,
         ),
         syncedAt,
       );
@@ -122,10 +120,7 @@ export function makeSubjectSyncResolver(deps: { db: Db; cache: SnapshotCache }) 
         (tenant, source) => deps.cache.get(tenant, source.type, source),
       );
       const syncedAt = new Date();
-      return atSyncTime(
-        normalizeDiscoveredRuntimeObservation(evidence, syncedAt, scrubSecrets),
-        syncedAt,
-      );
+      return atSyncTime(normalizeDiscoveredRuntimeObservation(evidence, syncedAt), syncedAt);
     }
     const service = await withTenant(deps.db, tenantId, async (tx) => {
       const rows = await tx
@@ -156,7 +151,6 @@ export function makeSubjectSyncResolver(deps: { db: Db; cache: SnapshotCache }) 
           snapshots: serviceSnapshots,
         },
         syncedAt,
-        scrubSecrets,
       ),
       syncedAt,
     );

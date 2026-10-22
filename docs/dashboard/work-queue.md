@@ -40,7 +40,7 @@ Every dead job, newest first, with **Load more** for older ones.
 | **Type** | The kind of work that failed |
 | **Incident** | The incident the work belonged to, linked to its page. **No incident** means the work was not tied to one, or that incident no longer exists |
 | **Attempts** | How many times a worker tried it |
-| **Last error** | The final error, shortened, with recognisable credentials replaced by `[REDACTED]` |
+| **Last error** | The final error, shortened |
 | **Failed** | When the job was given up on |
 
 A dead job stays listed for at least a day after it fails. After that the worker removes it along

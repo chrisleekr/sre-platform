@@ -1,7 +1,7 @@
 import { recordSignalDisposition, type Db } from '@sre/db';
 import { alertText, service, severity, type NormalizedAlert } from './normalize';
 
-/** Persists one scrubbed direct-provider lifecycle observation for inbox analytics. */
+/** Persists one direct-provider lifecycle observation for inbox analytics. */
 export function recordAlertmanagerDisposition(input: {
   db: Db;
   tenantId: string;

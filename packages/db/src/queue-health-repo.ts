@@ -4,7 +4,6 @@
 // No index is added: live rows are few, and done/dead rows are pruned after the retention window,
 // so jobs_status_idx bounds each scan to a small set.
 import type { DeadJob, QueueHealth, QueueHealthRow } from '@sre/contracts';
-import { scrubSecrets } from '@sre/contracts';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { withTenant, type Executor } from './rls';
 import { incidents, jobs } from './schema';
@@ -21,10 +20,9 @@ export const DEAD_JOB_ERROR_MAX = 300;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Scrub before shortening: a cut could split a credential into a shape the scrubber no longer sees.
 function displayError(value: string | null): string | null {
   if (!value) return null;
-  const points = [...scrubSecrets(value)];
+  const points = [...value];
   return points.length > DEAD_JOB_ERROR_MAX
     ? `${points.slice(0, DEAD_JOB_ERROR_MAX - 1).join('')}…`
     : points.join('');

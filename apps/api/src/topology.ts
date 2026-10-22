@@ -1,6 +1,5 @@
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
-import { scrubSecrets } from '@sre/agent-tools';
 import { z } from 'zod';
 import {
   upsertService,
@@ -272,7 +271,7 @@ export function topologyRoutes(deps: TopologyRoutesDeps): Hono<{ Variables: Tena
       })),
       incidents: incidentMappings.map(({ incident }) => ({
         ...incident,
-        title: incident.title ? scrubSecrets(incident.title) : null,
+        title: incident.title || null,
       })),
     });
   });
@@ -407,7 +406,7 @@ export function topologyRoutes(deps: TopologyRoutesDeps): Hono<{ Variables: Tena
         circuitBreaker: body.circuitBreaker,
         protocol: body.protocol ?? null,
         environment: body.environment?.trim() ?? '',
-        rationale: body.rationale ? scrubSecrets(body.rationale) : null,
+        rationale: body.rationale || null,
         confirmedByUserId: body.rationale?.trim() ? c.get('tenant').userId : null,
       });
       return c.json({ dependency });
@@ -457,7 +456,7 @@ export function topologyRoutes(deps: TopologyRoutesDeps): Hono<{ Variables: Tena
       ...('protocol' in body ? { protocol: body.protocol } : {}),
       ...('rationale' in body
         ? {
-            rationale: body.rationale ? scrubSecrets(body.rationale) : null,
+            rationale: body.rationale || null,
             confirmedByUserId: body.rationale?.trim() ? c.get('tenant').userId : null,
           }
         : {}),

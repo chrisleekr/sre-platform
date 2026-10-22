@@ -2,7 +2,6 @@ import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { scrubSecrets } from '@sre/agent-tools';
 import { connectorConfigs, serviceRuntimeBindings, services, withTenant, type Db } from '@sre/db';
 import type { TenantAuthVariables } from './auth';
 
@@ -48,7 +47,6 @@ export function topologyBindingRoutes(db: Db) {
       return c.json({ error: parsed.error.issues.map((issue) => issue.message).join('; ') }, 400);
     const { tenantId, userId } = c.get('tenant');
     const { createService, replaceExisting, ...input } = parsed.data;
-    input.rationale = scrubSecrets(input.rationale);
     const result = await withTenant(db, tenantId, async (tx) => {
       await tx.execute(
         sql`select pg_advisory_xact_lock(hashtextextended(${`${tenantId}:runtime-mapping`}, 0))`,

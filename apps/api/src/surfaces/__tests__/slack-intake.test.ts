@@ -90,7 +90,7 @@ describe('durable Slack inbound pipeline', () => {
     await vi.waitFor(() => expect(publishJob).toHaveBeenCalledWith('job-1'));
   });
 
-  test('scrubs persisted event text and omits Slack capability fields before inserting the job', async () => {
+  test('keeps event text and omits Slack capability fields before inserting the job', async () => {
     const { pipeline, insertJobTx } = setup();
     const secret = 'AKIAIOSFODNN7EXAMPLE';
 
@@ -105,7 +105,7 @@ describe('durable Slack inbound pipeline', () => {
       payload: { body: Record<string, unknown> };
     };
     const persisted = JSON.stringify(inserted.payload.body);
-    expect(persisted).not.toContain(secret);
+    expect(persisted).toContain(secret);
     expect(persisted).not.toContain('legacy-verification-token');
     expect(persisted).not.toContain('capability-secret');
   });

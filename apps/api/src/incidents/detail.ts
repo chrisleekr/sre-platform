@@ -31,31 +31,13 @@ import {
   withTenant,
 } from '@sre/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { entityCapabilityGaps, scrubSecrets } from '@sre/agent-tools';
+import { entityCapabilityGaps } from '@sre/agent-tools';
 import { Hono } from 'hono';
 import { type TenantAuthVariables } from '../auth';
 
 import { UUID_RE, safeAssessment, safeSlackPermalink, type IncidentRouteDeps } from './support';
 import { incidentOperatorState } from './operator-state';
 import { readIncidentTagContext } from './tag-context';
-
-function publicIncidentTitle(title: string | null): string | null {
-  return title ? scrubSecrets(title) : title;
-}
-
-function publicIncidentRelations(relations: Awaited<ReturnType<typeof listIncidentRelations>>) {
-  return relations.map((relation) => ({
-    ...relation,
-    sourceIncident: {
-      ...relation.sourceIncident,
-      title: publicIncidentTitle(relation.sourceIncident.title),
-    },
-    targetIncident: {
-      ...relation.targetIncident,
-      title: publicIncidentTitle(relation.targetIncident.title),
-    },
-  }));
-}
 
 export function registerIncidentDetailRoutes(
   app: Hono<{ Variables: TenantAuthVariables }>,
@@ -74,7 +56,7 @@ export function registerIncidentDetailRoutes(
     const [presented] = await presentIncidentTitles(deps.db, tenantId, [incident]);
     return c.json({
       ...presented,
-      relations: publicIncidentRelations(relations),
+      relations,
     });
   });
 
@@ -233,7 +215,7 @@ export function registerIncidentDetailRoutes(
       progress,
       signals: publicSignals,
       llmUsage,
-      relations: publicIncidentRelations(relations),
+      relations,
       investigationSubject: investigationSubject
         ? {
             kind: investigationSubject.kind,
@@ -303,7 +285,7 @@ export function registerIncidentDetailRoutes(
         : null;
     if (!candidateKey || !serviceName || !rationaleInput)
       return c.json({ error: 'candidate, catalog service, and reason are required' }, 400);
-    const rationale = scrubSecrets(rationaleInput);
+    const rationale = rationaleInput;
     const updateMapping = () =>
       withTenant(deps.db, tenantId, async (tx) => {
         await enforceIncidentFeedbackAdmissionTx(tx, tenantId, userId);

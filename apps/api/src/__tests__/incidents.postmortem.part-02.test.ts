@@ -99,8 +99,9 @@ describe('postmortem document routes', () => {
     expect(res.status).toBe(200);
     const detail = (await res.json()) as PostmortemDetail;
     expect(detail.postmortem.revision).toBe(2);
-    // Human-authored text is scrubbed on the way in.
-    expect(detail.postmortem.summary).toBe('Checkout degraded for 42 minutes; token [REDACTED].');
+    expect(detail.postmortem.summary).toBe(
+      'Checkout degraded for 42 minutes; token sk-abcdefghijklmnopqrstuvwxyz123456.',
+    );
   });
 
   test('action items: https tracker only, owner attributed, done stamps completedAt', async () => {

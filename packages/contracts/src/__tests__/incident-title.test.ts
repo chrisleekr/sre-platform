@@ -23,10 +23,7 @@ test('uses the root excerpt rather than choosing convenient later conversation',
       .titleSource,
   ).toBe('missing');
 });
-test('bounds untrusted text and scrubs recognized credentials', () => {
-  expect(meaningfulIncidentTitle('Bearer abcdefghijklmnop request failed')).not.toContain(
-    'abcdefghijklmnop',
-  );
+test('bounds untrusted text and strips markup', () => {
   expect([...(meaningfulIncidentTitle('😀check '.repeat(100)) ?? '')]).toHaveLength(160);
   expect(meaningfulIncidentTitle('<img src=x onerror=bad>Check latency')).toBe('Check latency');
 });

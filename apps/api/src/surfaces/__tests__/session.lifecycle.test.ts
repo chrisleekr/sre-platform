@@ -155,31 +155,4 @@ describe('dashboard surface session', () => {
 
     await session!.close();
   });
-
-  // symmetry: Slack scrubs human text at both its ingest points, so the dashboard WS ingest must too.
-  // Otherwise a credential pasted into the chat box is persisted verbatim in incident_messages and
-  // re-egressed to the LLM on the resume this very post enqueues.
-  test('a pasted credential is scrubbed at the dashboard ingest boundary', async () => {
-    const id = await __fixture.freshIncident();
-    const c = __fixture.collector();
-    const { ticket } = await __fixture.mintTicket({ tenantId: __fixture.tenantA, sub: 'u' });
-    const session = await openIncidentSession(__fixture.deps, {
-      incidentId: id,
-      ticket,
-      sink: c.sink,
-    });
-
-    const secret = 'AKIAIOSFODNN7EXAMPLE';
-    const appended = await session!.adapter.ingest({ content: `try this key ${secret}` });
-    expect(appended.content).toContain('[REDACTED]');
-    expect(appended.content).not.toContain(secret);
-
-    // Durable in the canonical hub, not just the returned value: the hub row is what resume re-reads.
-    const history = await __fixture.hub.history(__fixture.tenantA, id);
-    const stored = history.find((m) => m.id === appended.id);
-    expect(stored?.content).toContain('[REDACTED]');
-    expect(history.some((m) => m.content.includes(secret))).toBe(false);
-
-    await session!.close();
-  });
 });

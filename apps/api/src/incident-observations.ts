@@ -30,7 +30,6 @@ import {
   normalizeTopologyServiceObservation,
   type NormalizedSnapshot,
 } from '@sre/connectors';
-import { scrubSecrets } from '@sre/agent-tools';
 import type { Queue, SnapshotCache } from '@sre/queue';
 import { openIncidentWorkspace, type OpenIncidentSubject } from '@sre/alerts';
 import {
@@ -58,7 +57,7 @@ const MAX_STRING = 500;
 
 const text = (value: unknown, max = MAX_STRING): string | undefined =>
   typeof value === 'string' && value.trim()
-    ? Array.from(scrubSecrets(value), (character) => {
+    ? Array.from(value, (character) => {
         const code = character.charCodeAt(0);
         return code < 0x20 || code === 0x7f ? ' ' : character;
       })
@@ -124,7 +123,7 @@ function infrastructureObservation(
   config: typeof connectorConfigs.$inferSelect,
   snapshot: NormalizedSnapshot,
 ): ResolvedObservation {
-  const observation = normalizeInfrastructureObservation(snapshot, new Date(), scrubSecrets);
+  const observation = normalizeInfrastructureObservation(snapshot, new Date());
   if (observation.state === 'resolved')
     throw new ObservationNotActionableError('observation is healthy');
   const explicitService = text(snapshot.metadata.service, 200);
@@ -138,7 +137,7 @@ function infrastructureObservation(
     source: 'platform',
     service: explicitService ?? 'unclassified',
     severity: observation.hasError ? 'sev2' : 'sev3',
-    title: `${scrubSecrets(snapshot.entityId).slice(0, 250)} needs attention`,
+    title: `${snapshot.entityId.slice(0, 250)} needs attention`,
     subject: {
       kind: 'infrastructure_resource',
       sourceId: config.id,
@@ -320,7 +319,6 @@ export async function resolveObservation(
         succeededAt: config.verificationSucceededAt,
       },
       new Date(),
-      scrubSecrets,
     );
     if (observation.state === 'unknown')
       throw new ObservationNotActionableError('connector has not been verified');
@@ -390,7 +388,6 @@ export async function resolveObservation(
       snapshots: runtime,
     },
     new Date(),
-    scrubSecrets,
   );
   if (observation.state === 'resolved')
     throw new ObservationNotActionableError('observation is healthy');

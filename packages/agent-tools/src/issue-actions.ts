@@ -22,7 +22,6 @@ import {
 } from '@sre/connectors';
 import type { IssueActionView, IssueDraftRequest, RepositoryIssue } from '@sre/contracts';
 import type { ConversationHub } from '@sre/hub';
-import { redactInput } from './redact';
 import { assertIssueAdmission } from './issue-admission';
 
 export const issueDraftSchema = z
@@ -39,13 +38,6 @@ export interface IssueActionDeps {
   resolveConnectors: (tenantId: string) => Promise<IDataSourceConnector[]>;
 }
 type Row = typeof issueActions.$inferSelect;
-
-/** Scrub issue content before preview, persistence or surface delivery.
- * @param value - Provider data or proposed fields.
- */
-export function publicIssueData<T>(value: T): T {
-  return redactInput(value) as T;
-}
 
 /** Expose only the saved preview and outcome, never configuration or credentials.
  * @param row - Tenant-scoped durable action.
@@ -122,21 +114,19 @@ export async function prepareIssueAction(
   requestKey: string,
   input: IssueDraftRequest,
 ): Promise<IssueActionView> {
-  const draft = issueDraftSchema.parse(publicIssueData(input));
+  const draft = issueDraftSchema.parse(input);
   if (!draft.number && (!draft.changes.title || draft.changes.state !== undefined))
     throw new IssueRequestError('A new issue needs a title and starts open.');
   await withTenant(deps.db, tenantId, (tx) => authorize(tx, tenantId, incidentId, userId));
   const source = await connector(deps, tenantId, draft.connectorId);
   source.issues!.validateChanges(draft.changes);
   const repository = await source.issues!.resolve(draft.repository, true);
-  const destination = publicIssueData({
+  const destination = {
     connectionName: source.name,
     provider: source.type,
     repositoryUrl: await source.issues!.repositoryUrl(repository.fullName),
-  });
-  const before = draft.number
-    ? publicIssueData(await source.issues!.get(repository.fullName, draft.number))
-    : null;
+  };
+  const before = draft.number ? await source.issues!.get(repository.fullName, draft.number) : null;
   const result = await withTenant(deps.db, tenantId, async (tx) => {
     await authorize(tx, tenantId, incidentId, userId);
     await lockConnectorLifecycle(tx, tenantId, source.id);
@@ -297,18 +287,17 @@ export async function decideIssueAction(
         claim.row.repository,
       );
       if (claim.row.number !== null) {
-        const current = publicIssueData(await prepared.get(claim.row.repository, claim.row.number));
+        const current = await prepared.get(claim.row.repository, claim.row.number);
         if (!isDeepStrictEqual(current, claim.row.before))
           throw new IssueRequestError(
             'The issue changed since this preview. Read it again and prepare a new draft.',
           );
       }
       sent = true;
-      result = publicIssueData(
+      result =
         claim.row.number === null
           ? await prepared.create(claim.row.repository, claim.row.changes)
-          : await prepared.update(claim.row.repository, claim.row.number, claim.row.changes),
-      );
+          : await prepared.update(claim.row.repository, claim.row.number, claim.row.changes);
       const unapplied = Object.entries(claim.row.changes)
         .filter(([key, value]) => {
           const actual = result![key as keyof RepositoryIssue];

@@ -1,4 +1,3 @@
-import { scrubSecrets } from '@sre/agent-tools';
 import {
   POSTMORTEM_TIMELINE_AT_MAX_CHARS,
   POSTMORTEM_TRIGGERS,
@@ -36,7 +35,7 @@ const isTrigger = (value: unknown): value is PostmortemTrigger =>
   typeof value === 'string' && (POSTMORTEM_TRIGGERS as readonly string[]).includes(value);
 
 const boundedText = (value: unknown): string | null =>
-  typeof value === 'string' && value.length <= MAX_SECTION_CHARS ? scrubSecrets(value) : null;
+  typeof value === 'string' && value.length <= MAX_SECTION_CHARS ? value : null;
 
 const textList = (value: unknown): string[] | null => {
   if (!Array.isArray(value) || value.length > MAX_LIST_ITEMS) return null;
@@ -83,12 +82,12 @@ function parseTimeline(value: unknown): PostmortemTimelineEntry[] | null {
     const text = boundedText(event);
     if (typeof at !== 'string' || at.length > POSTMORTEM_TIMELINE_AT_MAX_CHARS || text === null)
       return null;
-    out.push({ at: scrubSecrets(at), event: text });
+    out.push({ at, event: text });
   }
   return out;
 }
 
-/** Parses a PATCH body into the revision it presents and the scrubbed sections it replaces. */
+/** Parses a PATCH body into the revision it presents and the sections it replaces. */
 export function parsePostmortemPatch(
   value: unknown,
 ): { revision: number; patch: Partial<PostmortemSections> } | null {

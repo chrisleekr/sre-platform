@@ -1,4 +1,3 @@
-import { scrubSecrets } from '@sre/agent-tools';
 import { openIncidentWorkspace } from '@sre/alerts';
 import {
   countIncidentsByScope,
@@ -46,7 +45,6 @@ function incidentQueueState(incident: IncidentListItem) {
   );
   return {
     ...incident,
-    title: incident.title ? scrubSecrets(incident.title) : incident.title,
     attentionDecision: operator.attention?.decision ?? null,
     nextAutomation: operator.automation,
   };
@@ -71,17 +69,6 @@ function unavailableIncidentFreeStatus(): IncidentFreeStatusResponse {
     qualifyingActiveCount: 0,
     scope: { severities: ['sev1', 'sev2'] },
     lastIncident: null,
-  };
-}
-
-function publicIncidentFreeStatus(status: IncidentFreeStatusResponse): IncidentFreeStatusResponse {
-  if (status.state !== 'running' || !status.lastIncident) return status;
-  return {
-    ...status,
-    lastIncident: {
-      ...status.lastIncident,
-      title: status.lastIncident.title ? scrubSecrets(status.lastIncident.title) : null,
-    },
   };
 }
 
@@ -168,9 +155,7 @@ export function registerIncidentListRoutes(
           state !== 'open' && page.nextCursor ? encodeCursor(page.nextCursor, sort) : null,
         counts,
         operationalCounts,
-        ...(incidentFreeStatus
-          ? { incidentFreeStatus: publicIncidentFreeStatus(incidentFreeStatus) }
-          : {}),
+        ...(incidentFreeStatus ? { incidentFreeStatus } : {}),
       });
     }
     const status = c.req.query('status');
@@ -204,9 +189,9 @@ export function registerIncidentListRoutes(
       const request = parseManualIncidentRequest(raw);
       if (!request) return c.json({ error: 'invalid request' }, 400);
 
-      const title = scrubSecrets(request.title);
-      const description = scrubSecrets(request.description);
-      const service = scrubSecrets(request.service);
+      const title = request.title;
+      const description = request.description;
+      const service = request.service;
       const observedAt = new Date();
       try {
         const opened = await openIncidentWorkspace(

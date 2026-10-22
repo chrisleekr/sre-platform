@@ -3,7 +3,6 @@ import { and, eq, isNull, lt } from 'drizzle-orm';
 import {
   hasKnownCredential,
   isSensitiveKey,
-  scrubSecrets,
   topologyRefKey,
   topologyRelationKey,
   type ObservedTopologyFact,
@@ -98,11 +97,7 @@ function mergeFacts<T extends { evidenceAt?: string; network?: TopologyEntity['n
 }
 
 function cleanStrings(value: Record<string, string>) {
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter(([key]) => !isSensitiveKey(key))
-      .map(([key, text]) => [key, scrubSecrets(text)]),
-  );
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !isSensitiveKey(key)));
 }
 
 function boundInventory(
@@ -248,13 +243,13 @@ export async function persistTopologyDiscovery(
           : retainedRelationsInput;
       const entities = collection.entities.map((entity) => ({
         ...entity,
-        name: scrubSecrets(entity.name),
+        name: entity.name,
         scope: cleanStrings(entity.scope),
         attributes: cleanStrings(entity.attributes),
       }));
       const relations = collection.relations.map((relation) => ({
         ...relation,
-        description: scrubSecrets(relation.description),
+        description: relation.description,
         ...(relation.scope ? { scope: cleanStrings(relation.scope) } : {}),
         ...(relation.attributes ? { attributes: cleanStrings(relation.attributes) } : {}),
       }));

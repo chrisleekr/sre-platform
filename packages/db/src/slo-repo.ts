@@ -205,8 +205,7 @@ export const MAX_EVAL_ERROR_LEN = 500;
 // The only write the evaluator makes to a definition, and what makes a failing objective visible:
 // evaluation is best-effort, so a rejected query writes no burn event and would otherwise look
 // identical to an objective that has never run. Passing null on success clears a previous failure, so
-// a transient outage does not mark the objective broken forever. The message is truncated here; the
-// caller scrubs it, because a backend error can quote the request that produced it.
+// a transient outage does not mark the objective broken forever. The message is truncated here.
 //
 // Writes ONLY when the outcome changes, which is why the predicate carries `is distinct from` rather
 // than the caller comparing first. `slos` is a definition table: an unconditional write would make a
@@ -220,7 +219,7 @@ export const MAX_EVAL_ERROR_LEN = 500;
  * @param db - Database connection used for the operation.
  * @param tenantId - Tenant whose records are read or changed.
  * @param sloId - Objective whose attempt is being recorded.
- * @param error - Scrubbed failure message, or null when the attempt succeeded.
+ * @param error - Failure message, or null when the attempt succeeded.
  * @returns True when the stored outcome changed.
  */
 export async function recordEvalOutcome(

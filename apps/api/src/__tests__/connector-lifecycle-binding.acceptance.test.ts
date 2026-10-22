@@ -257,7 +257,7 @@ test('capacity rejection commits no partial binding or audit', async () => {
   });
   expect(await snapshot(id, signal.id)).toEqual(before);
 });
-test('the binding audit line stores a scrubbed reason, never the pasted credential', async () => {
+test('the binding audit line stores the operator reason verbatim', async () => {
   const { id, signal } = await seed();
   // Built at runtime so the literal never reads as a committed credential.
   const token = `ghp_${'a1B2c3D4e5'.repeat(3)}`;
@@ -276,8 +276,7 @@ test('the binding audit line stores a scrubbed reason, never the pasted credenti
   ).toBe(200);
   const { history } = await snapshot(id, signal.id);
   expect(history).toHaveLength(1);
-  expect(history[0]!.content).not.toContain(token);
-  expect(history[0]!.content).toContain('Reason: Checked with [REDACTED] against the provider');
+  expect(history[0]!.content).toContain(`Reason: Checked with ${token} against the provider`);
 });
 test('a generation change during the provider read cannot bind stale evidence, and another tenant sees no connector', async () => {
   const { id, signal } = await seed();

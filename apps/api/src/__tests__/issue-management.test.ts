@@ -38,22 +38,19 @@ async function confirm(id: string) {
 }
 
 describe.each(['github', 'gitlab'] as const)('%s authenticated issue lifecycle', (provider) => {
-  test('redacts pasted credentials without corrupting issue previews, reads or outcomes', async () => {
+  test('keeps issue content verbatim across previews, reads and outcomes', async () => {
     f.configure(provider);
     const action = await draft({ title: 'Diagnostic follow-up', body: 'password=example-value' });
-    expect(action.changes.body).toBe('password=[REDACTED]');
+    expect(action.changes.body).toBe('password=example-value');
     const result = await confirm(action.id);
     expect(result.status).toBe('succeeded');
-    expect(result.result?.body).toBe('password=[REDACTED]');
+    expect(result.result?.body).toBe('password=example-value');
     const read = await f.request(
       incidentId,
       `list?connectorId=${f.connectorId}&repository=team%2Fservice&number=12`,
     );
     expect(read.status).toBe(200);
-    expect(await read.json()).toMatchObject({ body: 'password=[REDACTED]' });
-    expect(JSON.stringify(await f.hub.history(f.tenantId, incidentId))).not.toContain(
-      'example-value',
-    );
+    expect(await read.json()).toMatchObject({ body: 'password=example-value' });
   });
 
   test('read, preview, create, edit, close and reopen persist receipts without unconfirmed writes', async () => {

@@ -21,7 +21,7 @@ export interface SloStatusView {
    * @remarks Evaluation is best-effort by contract: a query the backend rejects writes no burn event
    * and never dead-letters the job. Without this field an objective whose query is wrong is
    * indistinguishable from one that is merely new, and the operator's only signal is a worker log
-   * line they cannot reach. Already scrubbed and truncated by the writer.
+   * line they cannot reach. Already truncated by the writer.
    */
   lastEvaluationError: string | null;
   /** When the current failure was first seen, as an ISO 8601 string. Null whenever there is none. */
