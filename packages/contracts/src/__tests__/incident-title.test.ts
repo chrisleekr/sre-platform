@@ -45,6 +45,15 @@ test.each([
   },
 );
 
+test('strips labelled mentions and stays fast on unclosed mention runs', () => {
+  expect(meaningfulIncidentTitle('<@U123|alice> Checkout is timing out')).toBe(
+    'Checkout is timing out',
+  );
+  const started = performance.now();
+  meaningfulIncidentTitle(`${'<@0|'.repeat(50_000)}Check latency`);
+  expect(performance.now() - started).toBeLessThan(1_000);
+});
+
 test.each(['<script<script>>Check latency', '<img src=x onerror=bad', 'Check < latency > now'])(
   'does not retain markup delimiters in a title: %s',
   (value) => {

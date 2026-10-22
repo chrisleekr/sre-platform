@@ -5,13 +5,20 @@ export interface IncidentTitlePresentation {
   titleSource: IncidentTitleSource;
 }
 
+const MAX_TITLE_INPUT = 4_000;
+
 /** Keep a symptom or diagnostic request, not provider addressing or transport labels.
  * @param value - Untrusted stored title or bounded opening request.
  */
 export function meaningfulIncidentTitle(value: string | null | undefined): string | null {
   if (!value) return null;
+  // The markup patterns below rescan from every '<' on unclosed input, so bound the work. A title
+  // keeps at most 160 code points, which this prefix always covers.
   const clean = value
-    .replace(/<@[A-Z0-9]+(?:\|[^>]+)?>/gi, '')
+    .slice(0, MAX_TITLE_INPUT)
+    // A mention label excludes '<' (Slack escapes it as &lt;), so a run of unclosed `<@x|` fails at
+    // the next '<' instead of rescanning to the end of untrusted text.
+    .replace(/<@[A-Z0-9]+(?:\|[^<>]+)?>/gi, '')
     .replace(/<![^>]+>/g, '')
     .replace(/<https?:\/\/[^>|]+\|([^>]+)>/g, '$1')
     // Keep a separator so removing markup cannot join surrounding text into a new token.
