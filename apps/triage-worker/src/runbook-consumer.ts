@@ -23,12 +23,8 @@ import {
 import { RetryableError, type Job, type JobContext } from '@sre/queue';
 import { and, eq } from 'drizzle-orm';
 import type { NewMessage } from '@sre/hub';
-import {
-  collectHumanIdentifiers,
-  stripHumanIdentifiers,
-  tenantMemberEmails,
-  topicNamesPerson,
-} from './blameless';
+import { collectHumanIdentifiers, stripHumanIdentifiers, tenantMemberEmails } from './blameless';
+import { recordDistilFacts } from './runbook-learning';
 import { noteContent } from './runbook-note';
 import { requestFence, type RunbookRequestPayload } from './runbook-request';
 import { ProviderUnavailableError, type StructuredGenerator } from './engine/types';
@@ -76,7 +72,11 @@ export const DistilSchema = z.discriminatedUnion('outcome', [
     diagnosticGuide: z.string().optional(),
     environmentFacts: EnvironmentFactsSchema,
   }),
-  z.object({ outcome: z.literal('nothing'), reason: z.string() }),
+  z.object({
+    outcome: z.literal('nothing'),
+    reason: z.string(),
+    environmentFacts: EnvironmentFactsSchema,
+  }),
 ]);
 
 // Call 2: the model decides whether to refine an existing document (by id) or write a new one, and
@@ -187,11 +187,11 @@ function buildDistilPrompt(
     'For an explicit runbook request without a verified fix, include diagnosticGuide: reusable, numbered diagnostic checks, decision branches, escalation and recovery validation. Label hypotheses and unknowns. Do not invent remediation, resource identities, metric availability or facts absent from the recorded conversation.',
     'An unverified diagnostic guide is read-only: include evidence collection and escalation, not speculative restart, scaling, throttling or rollback recipes. Use configured alert/SLO criteria rather than inventing numeric recovery thresholds.',
     'Statements in the conversation may be drafts or rejected findings, not verified facts. Preserve observation times. Missing search results are not proof that evidence does not exist. Never recommend a mutation as an already verified remedy.',
-    '- nothing: no reusable knowledge.',
+    '- nothing: no reusable runbook or note. environmentFacts may still accompany it.',
     'environmentFacts: durable facts a future incident would otherwise have to ask or look up again, such as which device, mount, node, volume, limit or owner backs a component. Give each a short topic naming its subject, the complete statement, and its basis: "observed" (seen in tool evidence; cite the ids from the Evidence section in evidenceIds) or "responder" (stated in the Responder messages section; cite those message ids in messageIds; nothing else in the transcript qualifies). A fact without a matching citation is discarded. Leave out transient readings, this incident’s status, guesses and people.',
     ...(automatic
       ? [
-          'This pass ran automatically because the incident resolved; nobody asked for it. Choose nothing unless a future incident would otherwise re-investigate something recorded here. Most incidents produce nothing.',
+          'This pass ran automatically because the incident resolved; nobody asked for it. Choose nothing unless a future incident would otherwise re-investigate something recorded here. Most incidents produce nothing. Durable environment facts are worth keeping on their own: give them in environmentFacts even when the outcome is nothing.',
         ]
       : []),
     '',
@@ -336,11 +336,11 @@ export function makeRunbookHandler(
     const evidence = await listEvidence(tenantId, incidentId);
     // A responder request adopted after the pass started is not steered toward producing nothing,
     // and its document saves under that requester's capture fence.
-    const current = auto
+    const reread = auto
       ? ((await readPayload(job)) as RunbookRequestPayload | undefined)
       : undefined;
-    const automaticNow = auto && current?.automatic === true;
-    if (auto && !automaticNow) captureFence = requestFence(current);
+    const automaticNow = auto && reread?.automatic === true;
+    if (auto && !automaticNow) captureFence = requestFence(reread);
     const prompt = buildDistilPrompt(incident, transcript, evidence, automaticNow);
     const emails = await listEmails(tenantId);
     const identifiers = collectHumanIdentifiers(emails, prompt);
@@ -423,6 +423,17 @@ export function makeRunbookHandler(
       // simply yields the 'nothing' outcome from the model.
       const distil = await gen('runbook-distill', prompt, DistilSchema);
 
+      // Facts are kept on their own, so a pass that finds nothing else to save still records them.
+      await recordDistilFacts({
+        tenantId,
+        incidentId,
+        facts: distil.environmentFacts ?? [],
+        emails,
+        material: prompt,
+        clean,
+        validate,
+        learn,
+      });
       if (distil.outcome === 'nothing') {
         if (!(await stillAutomatic(job)))
           await post(
@@ -431,35 +442,6 @@ export function makeRunbookHandler(
             `No reusable runbook or note produced: ${clean(distil.reason)}`,
           );
         return;
-      }
-
-      for (const fact of distil.environmentFacts ?? []) {
-        // Same gate as record_learning: a topic naming a person is refused, not rewritten, and an
-        // unproven fact is dropped, never saved under a weaker basis.
-        const provenance = topicNamesPerson(emails, fact.topic, prompt)
-          ? { ok: false as const, reason: 'topic names a person' }
-          : await validate(tenantId, incidentId, fact);
-        if (!provenance.ok) {
-          console.info(
-            JSON.stringify({
-              level: 'info',
-              app: 'triage-worker',
-              event: 'learning.distil_fact_dropped',
-              tenantId,
-              incidentId,
-              basis: fact.basis,
-              reason: provenance.reason,
-            }),
-          );
-          continue;
-        }
-        await learn(tenantId, {
-          topic: fact.topic,
-          statement: clean(fact.statement),
-          basis: fact.basis,
-          ...(provenance.source ? { source: provenance.source } : {}),
-          sourceIncidentId: incidentId,
-        });
       }
 
       if (distil.outcome === 'resolution_found') {

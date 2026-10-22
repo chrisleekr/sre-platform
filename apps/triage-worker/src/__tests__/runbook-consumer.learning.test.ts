@@ -70,6 +70,18 @@ describe('automatic learning pass', () => {
     });
   });
 
+  test('records the facts of a nothing outcome and stays silent', async () => {
+    const fact = { topic: 'etcd wal disk', statement: 'the WAL is on nvme1n1', basis: 'observed' };
+    const { handler, append, recordLearning, upsertRunbook, generate } = setup({
+      distil: { ...nothingDistil, environmentFacts: [{ ...fact, evidenceIds: ['ev-1'] }] },
+    });
+    await handler(automaticJob());
+    expect(String(generate.mock.calls[0]![0])).toContain('worth keeping on their own');
+    expect(recordLearning.mock.calls[0]![1]).toMatchObject(fact);
+    expect(upsertRunbook).not.toHaveBeenCalled();
+    expect(append).not.toHaveBeenCalled();
+  });
+
   test('stays silent while the row is still automatic', async () => {
     const { handler, append } = setup({ distil: nothingDistil });
     await expect(handler(automaticJob())).resolves.toBeUndefined();
