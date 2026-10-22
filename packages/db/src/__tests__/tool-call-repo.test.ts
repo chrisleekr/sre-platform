@@ -1,5 +1,5 @@
 // "working memory" — Phase A RED. Drives the evidence-store surface before it exists:
-// agent_tool_calls.output (redacted tool output persisted in the SAME row as input) and
+// agent_tool_calls.output (tool output persisted in the SAME row as input) and
 // loadIncidentEvidence (resume reload — latest-per-(tool, canonical input), createdAt-tagged,
 // budget-bounded, RLS-scoped). Live-Postgres two-tenant harness mirrors composite-fk.test.ts /
 // incident-repo-embedding.test.ts: admin (superuser) seeds/cleans the control-plane tenants; the
@@ -71,8 +71,8 @@ async function readCalls(tenant: string, incidentId: string) {
   return rows as Array<(typeof rows)[number] & { output?: unknown; createdAt: Date }>;
 }
 
-describe('recordToolCall persists a redacted output', () => {
-  test('lists only bounded scrubbed summaries without raw request or output payloads', async () => {
+describe('recordToolCall persists output', () => {
+  test('lists only bounded summaries without full request or output payloads', async () => {
     const id = await recordToolCall(app.db, tenantA, {
       incidentId: incidentA,
       tool: 'prometheus_query_range',
@@ -89,7 +89,7 @@ describe('recordToolCall persists a redacted output', () => {
     const page = await toolCallRepo.listIncidentEvidencePage(app.db, tenantA, incidentA);
     const item = page.evidence.find((row) => row.id === id) as unknown as Record<string, unknown>;
     expect(item.summary).toEqual(expect.stringContaining('up{'));
-    expect(JSON.stringify(item)).not.toContain('abcdef123456');
+    expect(item.summary).toEqual(expect.stringContaining('Bearer abcdef123456'));
     expect(JSON.stringify(item)).not.toContain('do-not-project');
     expect(JSON.stringify(item)).not.toContain('output-must-stay-in-detail');
     expect(item).not.toHaveProperty('input');
@@ -99,8 +99,7 @@ describe('recordToolCall persists a redacted output', () => {
     ).toEqual([]);
   });
   test('C1 stores output in the SAME row as input, readable back under the owning tenant (RLS)', async () => {
-    // The caller redacts before persist; a `token` key must never reach the store.
-    const redactedOutput = { deploys: [{ changeId: 'deploy-marker-1', token: '[REDACTED]' }] };
+    const storedOutput = { deploys: [{ changeId: 'deploy-marker-1', token: 'raw-token' }] };
     const id = await recordToolCall(app.db, tenantA, {
       incidentId: incidentA,
       tool: 'datadog_query_metrics',
@@ -109,15 +108,15 @@ describe('recordToolCall persists a redacted output', () => {
       outcome: 'data',
       // RED: NewToolCall has no `output` field yet, and there is no `output` column, so this value
       // is dropped and reads back as undefined.
-      output: redactedOutput,
+      output: storedOutput,
     } as Parameters<typeof recordToolCall>[2] & { output: unknown });
 
     const rows = await readCalls(tenantA, incidentA);
     const row = rows.find((r) => r.id === id)!;
     expect(row).toBeDefined();
-    // Same row carries both input and the redacted output.
+    // Same row carries both input and the output, unredacted.
     expect(row.input).toEqual({ service: 'checkout', windowMinutes: 30 });
-    expect(row.output).toEqual(redactedOutput);
+    expect(row.output).toEqual(storedOutput);
   });
 });
 
@@ -363,6 +362,29 @@ describe('loadIncidentEvidence resume reload', () => {
     ).toEqual([]);
   });
 
+  test('a later failed retry of the same tool+input does not replace the reloaded data row', async () => {
+    // Error rows persist `{ failure }` as output, so a non-null output alone is not evidence. The
+    // tool name is unique to this test, so the filter below isolates it on the shared incident.
+    const call = { incidentId: incidentB, tool: 'retried', input: { n: 1 }, latencyMs: 1 };
+    const dataId = await recordToolCall(app.db, tenantB, {
+      ...call,
+      outcome: 'data',
+      output: { v: 'good' },
+    } as Parameters<typeof recordToolCall>[2] & { output: unknown });
+    await new Promise((r) => setTimeout(r, 5));
+    await recordToolCall(app.db, tenantB, {
+      ...call,
+      outcome: 'error',
+      output: { failure: 'timeout' },
+    } as Parameters<typeof recordToolCall>[2] & { output: unknown });
+
+    const evidence = await toolCallRepo.loadIncidentEvidence(app.db, tenantB, incidentB);
+    const retried = evidence.filter((e) => e.tool === 'retried');
+    expect(retried.map((e) => [e.id, e.output])).toEqual([[dataId, { v: 'good' }]]);
+    const latest = await toolCallRepo.latestToolCall(app.db, tenantB, incidentB, 'retried');
+    expect(latest?.id).toBe(dataId);
+  });
+
   test('C3 an unusable measure drops its own line, it does not disable the cap', async () => {
     // The guard's whole point: `used + NaN > budget` is false, so an unguarded NaN would keep every
     // line thereafter and unbound the prompt. A throwing measure must be contained the same way,
@@ -435,7 +457,7 @@ describe('loadIncidentEvidence resume reload', () => {
 });
 
 describe('human evidence ledger', () => {
-  test('paginates every audited run and lazy-loads redacted detail under RLS', async () => {
+  test('paginates every audited run and lazy-loads detail under RLS', async () => {
     const incidentId = (
       await createIncident(app.db, tenantA, {
         fingerprint: randomUUID(),
@@ -487,7 +509,7 @@ describe('human evidence ledger', () => {
     });
   });
 
-  test('searches prior redacted evidence within the owning incident and returns compact projections', async () => {
+  test('searches prior evidence within the owning incident and returns compact projections', async () => {
     const incidentId = (
       await createIncident(app.db, tenantA, {
         fingerprint: randomUUID(),

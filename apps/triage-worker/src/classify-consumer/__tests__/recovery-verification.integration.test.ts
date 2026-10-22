@@ -402,60 +402,81 @@ describe('Slack recovery verification', () => {
     expect(await recoveryJobs(tracked.incidentId)).toEqual([]);
   });
 
-  test('a re-fire during verification joins the same incident and adds an active signal', async () => {
-    const monitorKey = `slack:monitor-${randomUUID()}`;
-    const tracked = await trackedIncident(monitorKey);
-    const { handle, route } = handler();
-    await handle(job(resolvedCandidate(monitorKey)));
-    expect(await recoveryJobs(tracked.incidentId)).toHaveLength(1);
-    // Repeat matching only trusts a recently seen episode.
-    await admin.db
-      .update(incidentSignals)
-      .set({ lastSeenAt: new Date(Date.now() - 60_000) })
-      .where(eq(incidentSignals.id, tracked.signalId));
+  test.each([
+    { name: '', other: false },
+    { name: ' while an older open incident still tracks the monitor', other: true },
+  ])(
+    'a re-fire during verification joins the same incident and adds an active signal$name',
+    async ({ other }) => {
+      const monitorKey = `slack:monitor-${randomUUID()}`;
+      const tracked = await trackedIncident(monitorKey);
+      // Seen before the tracked incident and never recovered.
+      const older = other ? await trackedIncident(monitorKey) : null;
+      if (older)
+        await admin.db
+          .update(incidentSignals)
+          .set({ lastSeenAt: new Date('2026-09-19T00:00:00.000Z') })
+          .where(eq(incidentSignals.id, older.signalId));
+      const { handle, route } = handler();
+      await handle(job(resolvedCandidate(monitorKey)));
+      expect(await recoveryJobs(tracked.incidentId)).toHaveLength(1);
+      // Repeat matching only trusts a recently recovered episode.
+      await admin.db
+        .update(incidentSignals)
+        .set({ resolvedAt: new Date(Date.now() - 60_000) })
+        .where(eq(incidentSignals.id, tracked.signalId));
 
-    const externalId = `refire-${randomUUID()}`;
-    const eventKey = `slack:${CHANNEL}:${externalId}:producer:${PRODUCER}`;
-    const text = '[FIRING:1] Checkout error rate is high.';
-    await handle(
-      job(
-        resolvedCandidate(monitorKey, {
-          externalId,
-          eventKey,
-          eventAt: new Date().toISOString(),
-          text,
-          signalState: 'firing',
-          alertKind: 'firing',
-          contentHash: createHash('sha256').update(text).digest('hex'),
-          observations: [
-            {
-              externalMessageId: externalId,
-              state: 'firing',
-              summary: text,
-              contentHash: 'refire',
-              eventKey,
-              eventAt: new Date().toISOString(),
-              monitorKey,
-            },
-          ],
-        }),
-      ),
-    );
+      const externalId = `refire-${randomUUID()}`;
+      const eventKey = `slack:${CHANNEL}:${externalId}:producer:${PRODUCER}`;
+      const text = '[FIRING:1] Checkout error rate is high.';
+      await handle(
+        job(
+          resolvedCandidate(monitorKey, {
+            externalId,
+            eventKey,
+            eventAt: new Date().toISOString(),
+            text,
+            signalState: 'firing',
+            alertKind: 'firing',
+            contentHash: createHash('sha256').update(text).digest('hex'),
+            observations: [
+              {
+                externalMessageId: externalId,
+                state: 'firing',
+                summary: text,
+                contentHash: 'refire',
+                eventKey,
+                eventAt: new Date().toISOString(),
+                monitorKey,
+              },
+            ],
+          }),
+        ),
+      );
 
-    // The classifier double throws when called, so the repeat path attached it.
-    expect(route).not.toHaveBeenCalled();
-    expect((await signalStates(tracked.incidentId)).map((signal) => signal.state).sort()).toEqual([
-      'resolved',
-      'unknown',
-    ]);
-    // The new active signal retires the queued verification and clears the recovery projection.
-    expect((await recoveryJobs(tracked.incidentId)).map((row) => row.status)).toEqual(['done']);
-    const [projection] = await admin.db
-      .select({ recoveryState: incidents.recoveryState, nextCheck: incidents.recoveryNextCheckAt })
-      .from(incidents)
-      .where(eq(incidents.id, tracked.incidentId));
-    expect(projection).toEqual({ recoveryState: null, nextCheck: null });
-  });
+      // The classifier double throws when called, so the repeat path attached it.
+      expect(route).not.toHaveBeenCalled();
+      expect((await signalStates(tracked.incidentId)).map((signal) => signal.state).sort()).toEqual(
+        ['resolved', 'unknown'],
+      );
+      // The new active signal retires the queued verification and clears the recovery projection.
+      expect((await recoveryJobs(tracked.incidentId)).map((row) => row.status)).toEqual(['done']);
+      const [projection] = await admin.db
+        .select({
+          recoveryState: incidents.recoveryState,
+          nextCheck: incidents.recoveryNextCheckAt,
+        })
+        .from(incidents)
+        .where(eq(incidents.id, tracked.incidentId));
+      expect(projection).toEqual({ recoveryState: null, nextCheck: null });
+      if (older) {
+        expect(await signalStates(older.incidentId)).toEqual([
+          { state: 'unknown', clearProvenance: null },
+        ]);
+        expect(await recoveryJobs(older.incidentId)).toEqual([]);
+      }
+    },
+  );
 
   test('an Alertmanager message edited to resolved and back to firing no longer reads as recovered', async () => {
     const root = `grouped-${randomUUID()}`;

@@ -1,15 +1,15 @@
 import * as z from 'zod';
-import { redactInput } from './redact';
 import type {
   ToolContext,
   ToolDefinition,
+  ToolFailure,
   ToolHandlerResult,
   ToolOutcome,
   ToolResult,
 } from './types';
 
 /**
- * Executes one investigator tool through validation, redaction, and durable audit.
+ * Executes one investigator tool through validation and durable audit.
  *
  * @remarks Provider errors become secret-free unavailable results, while audit failures propagate.
  * Once `ctx.signal` has aborted, the call throws the signal's reason instead, so a cancelled run
@@ -32,31 +32,20 @@ export async function runTool<I, O>(
   try {
     result = await tool.handler(ctx, input);
     outcome = result.available ? 'data' : result.reason;
-  } catch {
+  } catch (error) {
     // An abort surfaces as whatever the provider client throws; the run's reason is what the queue
     // and engine account for, and it needs no audit row because the run itself is ending.
     if (ctx.signal?.aborted) throw ctx.signal.reason;
-    result = { available: false, reason: 'error' };
+    result = { available: false, reason: 'error', failure: classifyToolError(error) };
     outcome = 'error';
   }
-  // Single output-redaction point (CWE-532): scrub the handler's data ONCE, then feed the SAME
-  // redacted value to BOTH the model (the returned result the loop renders) and the audit sink
-  // (persisted to agent_tool_calls.output). An `error` carries no data, so nothing to redact.
-  // `redactInput` recurses without cycle detection, so a handler returning a circular object graph
-  // would throw here (outside the handler try) and reject the whole engine job; degrade to an `error`
-  // result instead so one pathological tool never poison-loops triage. Raw error text stays out
-  // (CWE-209).
-  let output: unknown;
-  if (result.available) {
-    try {
-      output = redactInput(result.data);
-      result = { available: true, data: output as O };
-    } catch {
-      result = { available: false, reason: 'error' };
-      outcome = 'error';
-      output = undefined;
-    }
-  }
+  // The model and the audit sink see the same handler data. An `error` carries no data, only its
+  // code-owned failure class; raw error text stays out (CWE-209).
+  const output = result.available
+    ? result.data
+    : result.failure
+      ? { failure: result.failure }
+      : undefined;
   const evidenceId = await ctx.audit.record({
     ...meta,
     latencyMs: Date.now() - startedAt,
@@ -64,6 +53,29 @@ export async function runTool<I, O>(
     output,
   });
   return { ...result, evidenceId };
+}
+
+/**
+ * Classifies a thrown tool error from typed connector fields, never its message.
+ *
+ * @remarks Reads `status`, `failureCategory` and a `TimeoutError` name; provider text can carry
+ * secrets. A typed category wins over a status.
+ * @param error - Value thrown by a tool handler.
+ */
+export function classifyToolError(error: unknown): ToolFailure {
+  if (typeof error !== 'object' || error === null) return 'provider_error';
+  const { name, status, failureCategory } = error as Record<string, unknown>;
+  if (name === 'TimeoutError') return 'timeout';
+  // GitHub reports an exhausted quota as 403, so the category wins over the status.
+  if (failureCategory === 'rate_limited' || status === 429) return 'rate_limited';
+  if (failureCategory === 'target_not_allowed') return 'target_not_allowed';
+  // GitHub hides what a credential cannot see behind a 404 and tags it permission_denied, so the
+  // category wins over a 404 status: an invisible target is not proof of absence.
+  if (failureCategory === 'permission_denied' || status === 401 || status === 403)
+    return 'permission_denied';
+  if (status === 404) return 'not_found';
+  if (failureCategory === 'unreachable' || failureCategory === 'tls') return 'unreachable';
+  return 'provider_error';
 }
 
 /**

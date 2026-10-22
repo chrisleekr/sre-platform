@@ -110,7 +110,7 @@ export async function listIncidentEvidencePage(
         outcome: agentToolCalls.outcome,
         latencyMs: agentToolCalls.latencyMs,
         recordedAt: agentToolCalls.createdAt,
-        hasOutput: sql<boolean>`${agentToolCalls.output} is not null`,
+        hasOutput: sql<boolean>`${agentToolCalls.outcome} = 'data' and ${agentToolCalls.output} is not null`,
         input: sql<unknown>`jsonb_strip_nulls(jsonb_build_object(${sql.join(
           evidenceSummaryFields.flatMap((key) => [
             sql`${key}::text`,
@@ -150,7 +150,7 @@ export async function listIncidentEvidencePage(
 }
 
 /**
- * One redacted evidence record, scoped to both tenant and incident.
+ * One evidence record, scoped to both tenant and incident.
  *
  * @param db - Database connection used for the operation.
  * @param tenantId - Tenant whose records are read or changed.
@@ -171,7 +171,7 @@ export async function getIncidentEvidence(
         outcome: agentToolCalls.outcome,
         latencyMs: agentToolCalls.latencyMs,
         recordedAt: agentToolCalls.createdAt,
-        hasOutput: sql<boolean>`${agentToolCalls.output} is not null`,
+        hasOutput: sql<boolean>`${agentToolCalls.outcome} = 'data' and ${agentToolCalls.output} is not null`,
         input: agentToolCalls.input,
         output: agentToolCalls.output,
       })

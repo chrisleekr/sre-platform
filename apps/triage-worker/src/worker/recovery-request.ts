@@ -6,7 +6,7 @@ import {
   type HumanMessage,
 } from '@sre/db';
 import { RetryableError, type Job } from '@sre/queue';
-import { RECOVERY_NOT_QUEUED, startReportedRecoveryTx } from '../recovery-start';
+import { startReportedRecoveryTx } from '../recovery-start';
 import type { WorkerRuntime } from './runtime';
 
 const CHECK_INSTEAD = 'Running a check instead; nothing will be resolved.';
@@ -58,7 +58,10 @@ export async function requestRecoveryVerification(
       const { message } = await append(FORBIDDEN);
       return { message, jobId: null };
     }
-    const state = await startReportedRecoveryTx(tx, deps.queue, job.tenantId, incidentId);
+    // A responder asking again is the review a finished verdict waits for, so it may start a new check.
+    const state = await startReportedRecoveryTx(tx, deps.queue, job.tenantId, incidentId, {
+      restartFinished: true,
+    });
     // Checked after the signal locks are held; throwing rolls back the resolution.
     if (!(await humanMessageFenceMatchesTx(tx, incidentId, fence)))
       throw new RetryableError(
@@ -70,8 +73,8 @@ export async function requestRecoveryVerification(
     const content = state.queued
       ? 'Verifying recovery. The incident resolves only if verification confirms it.'
       : state.prepared
-        ? // The responder asked for a recheck, so a refused verification still runs one.
-          `${RECOVERY_NOT_QUEUED} ${CHECK_INSTEAD}`
+        ? // Restarts leave the queue nothing to refuse: alerts cleared earlier, no check pending.
+          `Recovery verification cannot start: every alert had already cleared and no check is pending, so there is no new recovery to verify. ${CHECK_INSTEAD}`
         : state.resolved.length > 0
           ? `Reported alerts are resolved. Verification waits for the other incidents in this response group. ${CHECK_INSTEAD}`
           : state.durable

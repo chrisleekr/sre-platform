@@ -26,3 +26,7 @@ one deployment share infrastructure and nothing else.
 
 **Credentials never leave in plaintext.** Connector and Slack credentials are encrypted at rest and
 decrypted only at the moment of use. Nothing displays them back, and nothing writes them to a log.
+Connector tools also refuse the provider reads known to return them, such as key-management,
+webhook-configuration, and Kubernetes Secret endpoints. This covers the platform's own credentials
+only: tool output, evidence, and Slack text are not redacted, so a credential inside data a connector
+returns is stored and sent to the model provider.

@@ -63,14 +63,9 @@
       "allowedVersions": "<3"
     },
     {
-      "description": "The Claude Agent SDK inlines its own zod 4.4 core to validate MCP tool input. zod 4.5 marks a .default() field optin 'defaulted', which that core reads as required, so every terminal tool call that omits a defaulted field fails validation. The agent-sdk runtime tests fail on it. Lift this cap once the Agent SDK bundles zod 4.5 or later.",
+      "description": "The Claude Agent SDK validates MCP tool input with its own inlined zod core, 4.6 in 0.3.306. A newer zod minor can change schema internals that core reads, as 4.5 did when it marked .default() fields defaulted. The agent-sdk runtime tests fail on such a mismatch. Raise this cap with the Agent SDK release that bundles the matching core.",
       "matchPackageNames": ["zod"],
-      "allowedVersions": "<4.5"
-    },
-    {
-      "description": "jsdom 27 changed its selector engine and user-agent stylesheet, and dashboard getByRole queries by accessible name stop matching. Left uncapped, it would keep the all-major branch red and block every other major. Lift this cap in the change that migrates the dashboard tests.",
-      "matchPackageNames": ["jsdom"],
-      "allowedVersions": "<27"
+      "allowedVersions": "<4.7"
     },
     {
       "description": "Every non-major update across all managers lands in one weekly branch.",

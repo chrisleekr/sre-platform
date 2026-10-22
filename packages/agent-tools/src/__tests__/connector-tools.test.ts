@@ -117,11 +117,13 @@ describe('connectorTools adapter', () => {
     expect(result).toEqual({
       available: false,
       reason: 'error',
+      failure: 'provider_error',
       evidenceId: expect.any(String),
     });
     expect(audit.records).toHaveLength(1);
     expect(audit.records[0]!.outcome).toBe('error');
-    expect(audit.records[0]!.output).toBeUndefined(); // no data on an error run
+    // No data on an error run, only its code-owned class.
+    expect(audit.records[0]!.output).toEqual({ failure: 'provider_error' });
     // The raw upstream error text (which carried a secret) never reaches the audit row (CWE-209).
     expect(JSON.stringify(audit.records[0])).not.toContain(RAW_SECRET);
   });

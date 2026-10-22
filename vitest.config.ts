@@ -51,6 +51,7 @@ export default defineConfig({
           name: 'ui',
           include: ['apps/dashboard/**/*.{test,spec}.{ts,tsx,js,jsx}'],
           exclude: VITEST_EXCLUDE,
+          setupFiles: ['./apps/dashboard/src/test/tailwind-display.ts'],
           // Declares no global setup and no maxWorkers pin. Every file under apps/dashboard
           // reaches only @sre/contracts, which has no dependencies, so this project starts no
           // container and shares no process state.

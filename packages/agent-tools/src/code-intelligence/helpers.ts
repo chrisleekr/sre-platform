@@ -1,7 +1,7 @@
 import type { IDataSourceConnector, RuntimeArtifact, SourceRepository } from '@sre/connectors';
 import {
   deploymentBoundaryAsOf,
-  filterIncidentEvidenceIds,
+  filterIncidentDataEvidenceIds,
   getIncidentSummary,
   incidentSignalOnset,
   type DeploymentBoundary,
@@ -37,8 +37,9 @@ export function codeContextReader(deps: InvestigateCodeDeps): CodeContextReader 
     sources: (tenantId, incidentId, legacyService) =>
       readIncidentTopologySources(deps.db, tenantId, incidentId, legacyService),
     onset: (tenantId, incidentId) => incidentSignalOnset(deps.db, tenantId, incidentId),
+    // A failed read stores `{ failure }` as output and is not source evidence for a code finding.
     evidenceIds: (tenantId, incidentId, proposed) =>
-      filterIncidentEvidenceIds(deps.db, tenantId, incidentId, proposed),
+      filterIncidentDataEvidenceIds(deps.db, tenantId, incidentId, proposed),
     deploymentBoundary: (tenantId, service, repository, at) =>
       deploymentBoundaryAsOf(deps.db, tenantId, {
         service,

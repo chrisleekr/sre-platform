@@ -32,7 +32,7 @@ Each entry is a name, a description, an input schema, and a body.
 ```
 
 Adding an entry to that array is the whole change. Binding to the engine, per-tenant scoping,
-redaction, auditing, and the published documentation table all happen above this layer and apply to
+auditing, and the published documentation table all happen above this layer and apply to
 every tool uniformly.
 
 The description is not decoration. It is the only thing the model reads when deciding whether this

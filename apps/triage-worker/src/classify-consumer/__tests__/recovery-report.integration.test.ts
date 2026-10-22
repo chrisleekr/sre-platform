@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { incidentSignals, incidents } from '@sre/db';
+import { RecoveryReports } from '../recovery-report';
 import {
   CHANNEL,
   PRODUCER,
@@ -115,26 +116,90 @@ describe('Slack recovery notices', () => {
     expect(await disposition(candidate.eventKey)).toEqual([]);
   });
 
-  test.each([
-    { name: 'no open signal carries the monitor', incidents: 0 },
-    { name: 'two open incidents carry the monitor', incidents: 2 },
-  ])('an ambiguous notice stays unmatched when $name', async ({ incidents: count }) => {
-    const monitorKey = `slack:monitor-${randomUUID()}`;
-    const tracked = await Promise.all(
-      Array.from({ length: count }, () => trackedIncident(monitorKey)),
-    );
+  test('a notice no open signal carries stays unmatched', async () => {
     const { handle, onOutcome } = handler();
-    const candidate = resolvedCandidate(monitorKey);
+    const candidate = resolvedCandidate(`slack:monitor-${randomUUID()}`);
 
     await handle(job(candidate));
 
     expect(onOutcome).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: 'resolution_unmatched' }),
     );
-    for (const item of tracked) expect(await reportMessages(item.incidentId)).toEqual([]);
     expect(await disposition(candidate.eventKey)).toEqual([
       expect.objectContaining({ disposition: 'log', correlatedIncidentId: null }),
     ]);
+  });
+
+  test('a notice for a monitor two open incidents track links to the most recently seen, also on redelivery', async () => {
+    const monitorKey = `slack:monitor-${randomUUID()}`;
+    const newer = await trackedIncident(monitorKey);
+    const older = await trackedIncident(monitorKey);
+    // Created last and seen first, so only lastSeenAt can pick the earlier incident.
+    await admin.db
+      .update(incidentSignals)
+      .set({ lastSeenAt: new Date('2026-09-19T00:00:00.000Z') })
+      .where(eq(incidentSignals.id, older.signalId));
+    const { handle, onOutcome } = handler();
+    const candidate = resolvedCandidate(monitorKey);
+    // A wrong link on redelivery is otherwise masked: the status line and disposition already exist.
+    const link = vi.spyOn(RecoveryReports.prototype, 'link');
+
+    try {
+      await handle(job(candidate));
+      expect(await signalStates(newer.incidentId)).toEqual([
+        { state: 'resolved', clearProvenance: 'unknown' },
+      ]);
+      // The first delivery resolved the newer signal; the older one is still active.
+      await handle(job(candidate));
+      const links = await Promise.all(link.mock.results.map((result) => result.value));
+      expect(links).toEqual([
+        expect.objectContaining({ incidentId: newer.incidentId, signalId: newer.signalId }),
+        expect.objectContaining({ incidentId: newer.incidentId, signalId: newer.signalId }),
+      ]);
+    } finally {
+      link.mockRestore();
+    }
+
+    expect(onOutcome.mock.calls.map(([event]) => event.outcome)).toEqual([
+      'resolution_reported',
+      'resolution_reported',
+    ]);
+    expect(await reportMessages(newer.incidentId)).toHaveLength(1);
+    expect(await reportMessages(older.incidentId)).toEqual([]);
+    expect(await signalStates(older.incidentId)).toEqual([
+      { state: 'unknown', clearProvenance: null },
+    ]);
+    expect(await disposition(candidate.eventKey)).toEqual([
+      expect.objectContaining({
+        correlatedIncidentId: newer.incidentId,
+        correlatedSignalId: newer.signalId,
+      }),
+    ]);
+  });
+
+  test('a notice links to an incident still firing, not a newer one recovered before the window', async () => {
+    const monitorKey = `slack:monitor-${randomUUID()}`;
+    const active = await trackedIncident(monitorKey);
+    const stale = await trackedIncident(monitorKey);
+    const candidate = resolvedCandidate(monitorKey);
+    const hoursAgo = (hours: number) =>
+      new Date(new Date(candidate.eventAt).getTime() - hours * 60 * 60 * 1000);
+    await admin.db
+      .update(incidentSignals)
+      .set({ lastSeenAt: hoursAgo(30) })
+      .where(eq(incidentSignals.id, active.signalId));
+    await admin.db
+      .update(incidentSignals)
+      .set({ state: 'resolved', lastSeenAt: hoursAgo(27), resolvedAt: hoursAgo(26) })
+      .where(eq(incidentSignals.id, stale.signalId));
+    const { handle } = handler();
+
+    await handle(job(candidate));
+
+    expect(await signalStates(active.incidentId)).toEqual([
+      { state: 'resolved', clearProvenance: 'unknown' },
+    ]);
+    expect(await reportMessages(stale.incidentId)).toEqual([]);
   });
 
   test('a notice for an already resolved incident is not linked', async () => {

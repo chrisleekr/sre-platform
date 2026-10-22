@@ -1,4 +1,3 @@
-import { scrubSecrets } from '@sre/agent-tools';
 import { ZodError, type infer as Infer, type ZodType } from 'zod';
 import { ProviderRateLimitError } from './types';
 import { parseWithLengthRepair } from './structured-repair';
@@ -13,10 +12,12 @@ export { EvidenceReviewFailure } from './evidence-review-contracts';
 import type { reportRecoverySchema } from './report-recovery';
 import type {
   InvestigationEvidence,
+  ResumeInput,
   StructuredGenerator,
   TriageInput,
   TriageResult,
 } from './types';
+import { ELISION_MARKER, transcriptBudgetChars } from '../worker/transcript';
 
 interface Review {
   correctedRecovery?: Infer<typeof reportRecoverySchema>;
@@ -85,7 +86,7 @@ const CITED_COVERAGE =
   'Only the records this conclusion cites. Uncited run output was not reviewed; its absence proves nothing.';
 
 /** Evidence the candidate relies on, including records its hypotheses say contradict it. */
-function citedEvidenceIds(candidate: TriageResult): Set<string> {
+export function citedEvidenceIds(candidate: TriageResult): Set<string> {
   return new Set([
     ...(candidate.evidenceIds ?? []),
     ...(candidate.recovery?.evidenceIds ?? []),
@@ -95,6 +96,32 @@ function citedEvidenceIds(candidate: TriageResult): Set<string> {
       ...(hypothesis.contradictingEvidenceIds ?? []),
     ]),
   ]);
+}
+
+// The history is repeated in every 96,000-character chunk prompt, so an operator-raised transcript
+// budget must not crowd out the records.
+const REVIEWER_PRIOR_MAX_CHARS = 32_000;
+
+/**
+ * The reviewer judges the admitted records, so the tool steps that produced them are dropped rather
+ * than repeated in every chunk, and older messages give way to the newest within the transcript budget.
+ */
+function reviewerPrior(prior: ResumeInput['prior']): ResumeInput['prior'] {
+  const isMarker = (message: ResumeInput['prior'][number]) =>
+    message.author === ELISION_MARKER.author && message.content === ELISION_MARKER.content;
+  const messages = prior.filter((message) => message.kind !== 'tool_step');
+  // splitResumeInput pins the opener ahead of its marker; the opener survives the trim and an existing
+  // marker is neither charged to the budget nor repeated.
+  const pinned =
+    messages.length > 1 && !isMarker(messages[0]!) && isMarker(messages[1]!) ? [messages[0]!] : [];
+  const rest = messages.slice(pinned.length).filter((message) => !isMarker(message));
+  let remaining =
+    Math.min(transcriptBudgetChars(), REVIEWER_PRIOR_MAX_CHARS) - (pinned[0]?.content.length ?? 0);
+  let start = rest.length;
+  while (start > 0 && rest[start - 1]!.content.length <= remaining)
+    remaining -= rest[--start]!.content.length;
+  const elided = start > 0 || messages.length > pinned.length + rest.length;
+  return [...pinned, ...(elided ? [{ ...ELISION_MARKER }] : []), ...rest.slice(start)];
 }
 
 /** Review one record set; `scope` prefixes every coverage statement the reviewer sees. */
@@ -108,7 +135,18 @@ async function reviewRecords(
   task: TriageInput | undefined,
   scope: string,
 ): Promise<Review> {
-  const context = { task: task ? { ...task, evidence: undefined } : undefined, candidate };
+  const context = {
+    task: task
+      ? {
+          ...task,
+          evidence: undefined,
+          ...('prior' in task && Array.isArray(task.prior)
+            ? { prior: reviewerPrior(task.prior) }
+            : {}),
+        }
+      : undefined,
+    candidate,
+  };
   const allowed = new Set(evidence.flatMap((record) => (record.id ? [record.id] : [])));
   const generate = async <T>(
     value: unknown,
@@ -117,7 +155,7 @@ async function reviewRecords(
     responseSchema: ZodType<T>,
   ): Promise<T> => {
     signal.throwIfAborted();
-    const prompt = scrubSecrets(JSON.stringify(value));
+    const prompt = JSON.stringify(value);
     if (prompt.length > cap)
       throw new EvidenceReviewFailure(
         `Evidence review ${stage} input budget exceeded (${prompt.length} > ${cap}); coverage is incomplete.`,
@@ -169,12 +207,11 @@ async function reviewRecords(
     evidence,
     coverage: `${scope}Bounded records, not proof of historical absence`,
   };
-  if (scrubSecrets(JSON.stringify(single)).length <= 160_000)
-    return finalReview(single, 160_000, 'single');
+  if (JSON.stringify(single).length <= 160_000) return finalReview(single, 160_000, 'single');
 
   const records = evidence.map((record) => ({
     id: record.id,
-    content: scrubSecrets(JSON.stringify(record)),
+    content: JSON.stringify(record),
   }));
   if (records.reduce((total, record) => total + record.content.length, 0) > 480_000)
     throw new EvidenceReviewFailure(
@@ -185,8 +222,7 @@ async function reviewRecords(
     evidenceSlices: slices,
     coverage: `${scope}Partial record slices; offsets are half-open serialized-record character ranges.`,
   });
-  const fits = (slices: Slice[]) =>
-    scrubSecrets(JSON.stringify(chunkInput(slices))).length <= 96_000;
+  const fits = (slices: Slice[]) => JSON.stringify(chunkInput(slices)).length <= 96_000;
   if (!fits([]))
     throw new EvidenceReviewFailure('Evidence review context exceeds the chunk input budget.');
   const chunks: Slice[][] = [];
@@ -196,7 +232,7 @@ async function reviewRecords(
       signal.throwIfAborted();
       if (chunks.length === 6)
         throw new EvidenceReviewFailure(
-          `Evidence review chunk budget exceeded; repeated context uses ${scrubSecrets(JSON.stringify(context)).length} characters of each 96,000-character prompt. Coverage is incomplete.`,
+          `Evidence review chunk budget exceeded; repeated context uses ${JSON.stringify(context).length} characters of each 96,000-character prompt. Coverage is incomplete.`,
         );
       const slice = (endOffset: number): Slice => ({
         evidenceId: record.id!,
@@ -243,7 +279,7 @@ async function reviewRecords(
   });
   // Reserve the maximum permitted review output before spending any provider calls.
   const reserved = chunks.map((slices) => ({ slices: ranges(slices), review: 'x'.repeat(4_000) }));
-  if (scrubSecrets(JSON.stringify(synthesisInput(reserved))).length > 96_000)
+  if (JSON.stringify(synthesisInput(reserved)).length > 96_000)
     throw new EvidenceReviewFailure(
       'Evidence review context leaves insufficient synthesis budget.',
     );
@@ -262,8 +298,15 @@ async function reviewRecords(
     // The slice reviewer ran out of its own output bounds; that is a budget limit, not a finding.
     if (!review.complete)
       throw new EvidenceReviewFailure('Evidence review slice coverage is incomplete.', 'budget');
-    const permitted = new Set(slices.map((slice) => slice.evidenceId));
-    if (review.notes.some((note) => note.evidenceIds.some((id) => !permitted.has(id))))
+    // A note must rest on a record this chunk read; it may relate that record to another admitted one.
+    const read = new Set(slices.map((slice) => slice.evidenceId));
+    if (
+      review.notes.some(
+        (note) =>
+          !note.evidenceIds.some((id) => read.has(id)) ||
+          note.evidenceIds.some((id) => !allowed.has(id)),
+      )
+    )
       throw new EvidenceReviewFailure(
         'Evidence review slice cited foreign or unadmitted evidence.',
         'validation',

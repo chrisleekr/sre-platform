@@ -59,8 +59,8 @@ function SlackConfiguration({
       >
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
           <h2 id={connectionTitleId} className="font-medium">
-            <span>Slack</span>
-            <span> connection</span>
+            {/* The space sits between the spans: dom-accessibility-api, used by Testing Library, trims each child's text. */}
+            <span>Slack</span> <span>connection</span>
           </h2>
           <span
             className={`rounded px-2 py-0.5 text-xs font-medium ${

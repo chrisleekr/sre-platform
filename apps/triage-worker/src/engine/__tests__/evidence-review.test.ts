@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, vi } from 'vitest';
-import { makeFakeGenerator } from '../fake';
-import { reviewInvestigation } from '../evidence-review';
+import { makeFakeEngine, makeFakeGenerator } from '../fake';
+import { reviewedEngine, reviewInvestigation } from '../evidence-review';
+import { investigationRunResult } from '../../worker/run-result';
 import { recordedEvidenceTool } from '../recorded-evidence';
 import { ProviderRateLimitError, type TriageResult, type TriageRuntime } from '../types';
 
@@ -40,7 +41,14 @@ test.each(['x', '\\"\n'])(
       [record],
       new AbortController().signal,
     );
-    expect(result).toBe(largeCandidate);
+    expect(result).toEqual({
+      ...largeCandidate,
+      review: {
+        status: 'supported',
+        coverage: 'full',
+        candidate: { outcome: 'conclusive', confidence: 95 },
+      },
+    });
     expect(prompts.length).toBeGreaterThan(1);
     expect(prompts.length).toBeLessThanOrEqual(7);
     expect(prompts.every((prompt) => prompt.length <= 96_000)).toBe(true);
@@ -140,7 +148,14 @@ test('a supported conclusion survives a successful review', async () => {
   }));
   expect(
     await reviewInvestigation(generator, candidate, evidence, new AbortController().signal),
-  ).toBe(candidate);
+  ).toEqual({
+    ...candidate,
+    review: {
+      status: 'supported',
+      coverage: 'full',
+      candidate: { outcome: 'conclusive', confidence: 95 },
+    },
+  });
 });
 
 test.each(['invalid', 'foreign evidence', 'unavailable'])(
@@ -492,3 +507,92 @@ test.each(['invalid_output', 'chunk_budget', 'foreign_evidence'] as const)(
     });
   },
 );
+
+test('a record cited only by an unknown is admitted and the rejection provenance persists', async () => {
+  const attemptedId = randomUUID();
+  const attempted = {
+    id: attemptedId,
+    tool: 'k8s',
+    input: {},
+    output: 'forbidden',
+    createdAt: new Date(),
+  };
+  const engine = reviewedEngine(
+    {
+      ...makeFakeEngine(),
+      investigate: async () => ({
+        ...candidate,
+        evidenceIds: [evidenceId],
+        unknowns: [
+          {
+            question: 'Which secret rotated?',
+            category: 'missing_capability',
+            evidenceKind: null,
+            attemptedEvidenceIds: [attemptedId],
+          },
+        ],
+      }),
+    },
+    makeFakeGenerator((prompt) => {
+      expect(JSON.parse(prompt).evidence.map((record: { id: string }) => record.id)).toContain(
+        attemptedId,
+      );
+      return {
+        supported: false,
+        rejection: 'insufficient_evidence',
+        summary: 'Delivery fails its checksum check.',
+        detail: 'Healthy delivery is contradicted by nothing yet proven.',
+        evidenceIds: [attemptedId],
+      };
+    }),
+  );
+  const runtime = {
+    tools: [],
+    ctx: { audit: { record: vi.fn() } },
+    readEvidence: async (id: string) =>
+      id === evidenceId ? evidence[0]! : id === attemptedId ? attempted : null,
+    signal: new AbortController().signal,
+  } as unknown as TriageRuntime;
+  const result = await engine.investigate(
+    {
+      incident: {
+        id: 'i',
+        tenantId: 't',
+        service: 's',
+        severity: 'sev3',
+        fingerprint: 'f',
+        alertSource: 'slack',
+      },
+    },
+    runtime,
+  );
+  expect(result.evidenceIds).toEqual([attemptedId]);
+  expect(investigationRunResult(result)).toMatchObject({
+    confidence: 0,
+    review: {
+      status: 'rejected',
+      rejection: 'insufficient_evidence',
+      coverage: 'full',
+      candidate: { outcome: 'conclusive', confidence: 95 },
+      detail: 'Healthy delivery is contradicted by nothing yet proven.',
+    },
+  });
+});
+
+test('a failed review records its code-owned kind and reason, never provider text', async () => {
+  const result = await reviewInvestigation(
+    makeFakeGenerator(() => {
+      throw new Error('private provider text');
+    }),
+    candidate,
+    evidence,
+    new AbortController().signal,
+  );
+  expect(result.review).toEqual({
+    status: 'failed',
+    failureKind: 'provider',
+    failureReason: 'Evidence review single provider was unavailable; coverage is incomplete.',
+    candidate: { outcome: 'conclusive', confidence: 95 },
+  });
+  expect(JSON.stringify(result)).not.toContain('private provider text');
+});

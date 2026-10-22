@@ -60,6 +60,37 @@ describe('renderModelToolResult', () => {
     );
     expect(result.receipt.outcome).toBe('unavailable');
   });
+
+  test.each([
+    ['permission_denied', 'Do not repeat this call unchanged; record a missing_capability unknown'],
+    [
+      'not_found',
+      'check the name or record its absence as evidence. Do not repeat this call unchanged',
+    ],
+    ['target_not_allowed', 'Do not repeat this call unchanged'],
+    ['timeout', 'retry later or use another check'],
+    ['rate_limited', 'retry later or use another check'],
+    ['unreachable', 'retry later or use another check'],
+    ['provider_error', 'retry later or use another check'],
+  ] as const)('names a %s failure and how to proceed', (failure, guidance) => {
+    const result = renderModelToolResult(
+      'k8s',
+      {
+        available: false,
+        reason: 'error',
+        failure,
+        evidenceId: '11111111-1111-4111-8111-111111111111',
+      },
+      600,
+    );
+    expect(result.content).toMatch(
+      new RegExp(`^error: ${failure}\\. .*; evidenceId: 11111111-1111-4111-8111-111111111111$`),
+    );
+    expect(result.content).toContain(guidance);
+    // An absent target is not a missing tool.
+    if (failure === 'not_found') expect(result.content).not.toContain('missing_capability');
+    expect(result).toMatchObject({ isError: true, receipt: { outcome: 'unavailable' } });
+  });
 });
 
 describe('the tool-result cap has one owner', () => {
