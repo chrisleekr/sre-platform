@@ -83,15 +83,27 @@ export function episodeGroupingPolicy(settings: Record<string, unknown>): {
   };
 }
 
+// Each token character matches itself, any percent-encoding of its UTF-8 bytes in either hex case,
+// or '+' for a space, so a fully, partly or mixed encoded copy in a URL is removed too.
+function knownSecretPattern(secret: string): RegExp {
+  const hex = (byte: number) =>
+    `%${byte
+      .toString(16)
+      .padStart(2, '0')
+      .replace(/[a-f]/g, (d) => `[${d}${d.toUpperCase()}]`)}`;
+  const parts = [...secret].map((ch) => {
+    const forms = [
+      ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+      [...new TextEncoder().encode(ch)].map(hex).join(''),
+    ];
+    if (ch === ' ') forms.push('\\+');
+    return `(?:${forms.join('|')})`;
+  });
+  return new RegExp(parts.join(''), 'g');
+}
+
 function scrubKnownSecret(value: string, secret: string): string {
-  if (!secret) return value;
-  const encoded = encodeURIComponent(secret);
-  // A URL usually carries the token percent-encoded, as a path or query value or a form value with
-  // '+' for space; producers may write the hex in either case.
-  const pattern = [...new Set([encoded, encoded.replace(/%20/g, '+')])]
-    .map((form) => form.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join('|');
-  return value.split(secret).join('[REDACTED]').replace(new RegExp(pattern, 'gi'), '[REDACTED]');
+  return secret ? value.replace(knownSecretPattern(secret), '[REDACTED]') : value;
 }
 
 /** Removes this platform's own webhook token from a provider URL; provider content passes through.

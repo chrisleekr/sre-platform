@@ -96,6 +96,7 @@ test('shared background source reads need no incident and return bounded evidenc
     input,
   );
   expect(result).toMatchObject({ status: 'read', file: { revision, startLine: 1, endLine: 120 } });
+  expect(result.file!.excerpt).toContain('glpat-ABCDEF1234567890abcd');
   expect(result.file!.excerpt.length).toBeLessThanOrEqual(16384);
   expect(fixture.audit.records).toEqual([]);
 });
