@@ -23,11 +23,9 @@ export class DegradedSignalRouter {
   async failOpen(
     error: unknown,
     candidate: InboundCandidate,
-    scrubbedCandidate: InboundCandidate,
     job: Job,
     signal: AbortSignal,
     fingerprint: string,
-    scrubbedText: string,
     mode: 'shadow' | 'enforce',
   ): Promise<void> {
     const tenantId = job.tenantId;
@@ -48,9 +46,7 @@ export class DegradedSignalRouter {
     await persistEffectiveDisposition({
       core: this.core,
       candidate,
-      scrubbedCandidate,
       job,
-      scrubbedText,
       disposition: 'investigate',
       mode,
       reason: 'Classifier failed open to investigation after its bounded retry policy.',
@@ -67,8 +63,8 @@ export class DegradedSignalRouter {
         error instanceof ProviderUnavailableError ? 'provider_unavailable' : 'classifier_error',
     };
     try {
-      const signals = this.core.signalsFor(scrubbedCandidate);
-      const opener = this.core.openerFor(candidate, scrubbedText);
+      const signals = this.core.signalsFor(candidate);
+      const opener = this.core.openerFor(candidate, candidate.text);
       const joinCohort = this.core.cohortJoinTx(tenantId, candidate.channel, opener);
       const cohortJobIds: string[] = [];
       const routed = await this.core.routeOrRetry(
@@ -78,9 +74,9 @@ export class DegradedSignalRouter {
           fingerprint,
           service: serviceForChannel(candidate.channel),
           severity: DEGRADED_SEVERITY,
-          title: providerAlertTitle(scrubbedText, scrubbedCandidate.observations),
+          title: providerAlertTitle(candidate.text, candidate.observations),
           investigationStatus: 'degraded',
-          context: scrubbedCandidate.raw,
+          context: candidate.raw,
           opener,
           origin: {
             surface: 'slack',
@@ -99,16 +95,16 @@ export class DegradedSignalRouter {
       if (routed.reused && routed.incidentId)
         await this.attachments.foldIntoOwner(
           tenantId,
-          scrubbedCandidate,
-          scrubbedText,
+          candidate,
+          candidate.text,
         )(routed.incidentId);
     } catch (routeError) {
       if (signal.aborted) throw signal.reason;
       if (!(routeError instanceof ThreadAlreadyBoundError)) throw routeError;
       await this.attachments.foldIntoOwner(
         tenantId,
-        scrubbedCandidate,
-        scrubbedText,
+        candidate,
+        candidate.text,
       )(routeError.incidentId);
     }
     await this.core.emitOutcome(outcome);

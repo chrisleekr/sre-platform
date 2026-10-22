@@ -435,13 +435,11 @@ describe('production semantic routing', () => {
     const result = await proposeSemanticDisposition({
       core,
       candidate: value,
-      scrubbedCandidate: value,
       job: job(enforceTenant, value),
       signal: new AbortController().signal,
       candidates: [],
       resolutionCandidates,
       allResolutionCandidates,
-      scrubbedText: value.text,
     });
 
     expect(result).toMatchObject({

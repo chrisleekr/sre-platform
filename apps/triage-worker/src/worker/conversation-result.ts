@@ -10,7 +10,6 @@ import {
 } from '@sre/db';
 import type { TriageResult } from '../engine/types';
 import { approvalActionId } from '../engine/approval-id';
-import { publicModelText } from '../public-output';
 import type { PersistOptions } from './contracts';
 import { incidentFindingPayload, investigationRunCompletion } from './run-result';
 import type { WorkerRuntime } from './runtime';
@@ -34,8 +33,8 @@ export async function persistConversationResult(
   const { deps } = runtime;
   const disposition = result.disposition;
   if (disposition === 'reply') {
-    const content = publicModelText(result.detail ?? '');
-    const summary = publicModelText(result.summary);
+    const content = result.detail ?? '';
+    const summary = result.summary;
     const replyKind =
       result.replyPurpose === 'clarification_request'
         ? priorInvestigationStatus === 'degraded'
@@ -145,11 +144,7 @@ async function persistApprovalTx(
   const approval = result.approval;
   let message = null;
   if (approval) {
-    const prompt = publicModelText(approval.prompt);
-    const options = approval.options.map((option) => ({
-      ...option,
-      label: publicModelText(option.label),
-    }));
+    const { prompt, options } = approval;
     let { row, inserted } = await createApprovalTx(tx, tenantId, {
       incidentId,
       actionId: approvalActionId(prompt, options),
@@ -188,7 +183,7 @@ function persistNewerContext(
   options: Pick<PersistOptions, 'runId' | 'resumeMessageId' | 'priorInvestigationStatus'>,
 ) {
   return persistNonPromotingRun({
-    runtime: runtime,
+    runtime,
     tenantId,
     incidentId,
     runId: options.runId,

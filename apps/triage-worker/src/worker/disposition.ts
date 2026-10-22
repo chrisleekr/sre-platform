@@ -13,7 +13,6 @@ import {
   ProviderUnavailableError,
   type TriageResult,
 } from '../engine/types';
-import { publicModelText } from '../public-output';
 import type {
   IncidentRow,
   PersistOptions,
@@ -191,9 +190,7 @@ export class WorkerDisposition {
         ? 'needs_human'
         : (recovery?.outcome ?? (recovery?.recovered ? 'recovered' : 'needs_human'));
     const delay = recovery?.recheckAfterMinutes;
-    const scheduleReason = recovery?.scheduleReason
-      ? publicModelText(recovery.scheduleReason)
-      : null;
+    const scheduleReason = recovery?.scheduleReason ? recovery.scheduleReason : null;
     const scheduleDelayMinutes =
       outcome === 'recheck' &&
       context.attempt < context.maxChecks &&
@@ -220,7 +217,7 @@ export class WorkerDisposition {
       recovery?.questions?.find((question) => question.resolutionRelevance === 'blocking')
         ?.nextAction ?? recovery?.nextStep;
     const nextStep = requiredAction
-      ? publicModelText(requiredAction)
+      ? requiredAction
       : outcome === 'needs_human' && context.attempt >= context.maxChecks
         ? 'Automated recovery monitoring is exhausted; a responder must review the remaining condition.'
         : null;
@@ -236,29 +233,19 @@ export class WorkerDisposition {
       restoreInvestigationStatus: context.restoreInvestigationStatus,
       verificationStartedAt: context.verificationStartedAt,
       eventKey: context.eventKey,
-      content: publicModelText(
-        recoveryFinding(result, outcome, context.attempt, context.maxChecks, nextCheckAt),
-      ),
-      summary: publicModelText(result.summary),
+      content: recoveryFinding(result, outcome, context.attempt, context.maxChecks, nextCheckAt),
+      summary: result.summary,
       outcome,
       attempt: context.attempt,
       maxChecks: context.maxChecks,
       recoveryEvidenceIds: recovery?.evidenceIds ?? [],
-      recoveryUnknowns: (recovery?.unknowns ?? []).map(publicModelText),
-      ...(recovery?.questions !== undefined
-        ? {
-            recoveryQuestions: recovery.questions.map((question) => ({
-              ...question,
-              question: publicModelText(question.question),
-              nextAction: publicModelText(question.nextAction),
-            })),
-          }
-        : {}),
+      recoveryUnknowns: recovery?.unknowns ?? [],
+      ...(recovery?.questions !== undefined ? { recoveryQuestions: recovery.questions } : {}),
       recoveryNextStep: nextStep,
       recoveryChecks: (recovery?.evidence ?? []).map((check) => ({
-        name: publicModelText(check.name),
-        before: check.before ? publicModelText(check.before) : null,
-        now: publicModelText(check.now),
+        name: check.name,
+        before: check.before || null,
+        now: check.now,
       })),
       finding: incidentFindingPayload(
         {
@@ -400,7 +387,7 @@ export class WorkerDisposition {
       await deps.hub.append(tenantId, incidentId, {
         author: 'agent',
         kind: 'silent',
-        content: publicModelText(result.summary),
+        content: result.summary,
       });
       if (resumeMessageId)
         await advanceResumeWatermark(deps.appDb, tenantId, incidentId, resumeMessageId);

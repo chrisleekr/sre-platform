@@ -18,6 +18,7 @@ import { RetryableError } from '@sre/queue';
 import { createHash } from 'node:crypto';
 import { entityCandidateKey } from '@sre/contracts';
 import { priorThreadMessage } from './attachments';
+import { alertEntityCandidates } from './alert-entities';
 import { joinSlackAlertCohortTx } from './cohort';
 import type {
   AuthorizedResolutionCandidate,
@@ -31,8 +32,8 @@ import { ACTIVE_WINDOW_MS, CAP_N, INBOUND_DEDUP_TTL_SEC, RETRIEVE_K } from './co
 export const serviceForChannel = (channel: string): string => `slack:${channel}`;
 /**
  * Selects a concise incident title from normalized provider evidence.
- * @param text - Scrubbed inbound message text used when the adapter supplied no alert name.
- * @param observations - Scrubbed normalized observations carried by the inbound message.
+ * @param text - Inbound message text used when the adapter supplied no alert name.
+ * @param observations - Normalized observations carried by the inbound message.
  */
 export function providerAlertTitle(
   text: string,
@@ -73,13 +74,10 @@ export function fingerprintFor(
   return `slack:${createHash('sha256').update(serialized).digest('hex')}`;
 }
 
-function inferredServiceCandidate(
-  service: string,
-  observedAt: Date,
-): ReturnType<typeof entityCandidate> | null {
+function inferredServiceCandidates(service: string, observedAt: Date) {
   if (service === 'unknown' || service === 'unclassified' || service.startsWith('slack:'))
-    return null;
-  return entityCandidate(service, observedAt);
+    return [];
+  return [entityCandidate(service, observedAt)];
 }
 
 function entityCandidate(service: string, observedAt: Date) {
@@ -258,9 +256,9 @@ export class ClassifyCore {
     }
   }
 
-  async seedEmbedding(tenantId: string, incidentId: string, scrubbedText: string): Promise<void> {
+  async seedEmbedding(tenantId: string, incidentId: string, text: string): Promise<void> {
     try {
-      const [vector] = await this.deps.embedder.embed([scrubbedText]);
+      const [vector] = await this.deps.embedder.embed([text]);
       if (vector) await setIncidentEmbedding(this.deps.appDb, tenantId, incidentId, vector);
     } catch {
       console.warn(
@@ -275,13 +273,13 @@ export class ClassifyCore {
     }
   }
 
-  async buildCandidates(tenantId: string, scrubbedText: string): Promise<IncidentSummary[]> {
+  async buildCandidates(tenantId: string, text: string): Promise<IncidentSummary[]> {
     const since = new Date(Date.now() - ACTIVE_WINDOW_MS);
     try {
       const active = await listActiveIncidents(this.deps.appDb, tenantId, { since });
       if (active.length <= CAP_N) return active;
       return await retrieveNearestActive(this.deps.appDb, this.deps.embedder, tenantId, {
-        text: scrubbedText,
+        text: text,
         k: RETRIEVE_K,
         since,
       });
@@ -344,17 +342,16 @@ export class ClassifyCore {
       purpose?: 'incident' | 'health_check';
     },
     context: unknown,
-    scrubbedSeed: string,
+    seed: string,
     opener: NonNullable<IncidentSignal['opener']>,
     onThreadTaken: (ownerIncidentId: string) => Promise<void>,
     options: OpenIncidentOptions = {},
   ): Promise<void> {
-    const inferredService = inferredServiceCandidate(fields.service, new Date());
     const enrichSignal = (signal: NonNullable<OpenIncidentOptions['signal']>) => ({
       ...signal,
+      // An inferred service resolves to needs_evidence, which would block an exact alert resource.
       affectedEntities:
-        signal.affectedEntities ??
-        (inferredService ? [{ ...inferredService, observedAt: signal.eventAt.toISOString() }] : []),
+        signal.affectedEntities ?? inferredServiceCandidates(fields.service, signal.eventAt),
     });
     const enrichedSignals = options.signals?.map(enrichSignal);
     const enrichedSignal = options.signal ? enrichSignal(options.signal) : undefined;
@@ -412,7 +409,7 @@ export class ClassifyCore {
       await onThreadTaken(created.incidentId);
       return;
     }
-    await this.seedEmbedding(tenantId, created.incidentId, scrubbedSeed);
+    await this.seedEmbedding(tenantId, created.incidentId, seed);
   }
 
   /**
@@ -458,6 +455,11 @@ export class ClassifyCore {
           },
         ];
     return observations.map((observation) => {
+      // A person's wording is not provider evidence, so only bot alert text names entities.
+      const affectedEntities =
+        candidate.author === 'human'
+          ? []
+          : alertEntityCandidates(observation.summary, new Date(observation.eventAt));
       const monitorKey =
         observation.monitorKey ??
         (observation.providerGroupKey
@@ -481,6 +483,7 @@ export class ClassifyCore {
         clearProvenance: undefined,
         ...(monitorKey ? { monitorKey } : {}),
         eventAt: new Date(observation.eventAt),
+        ...(affectedEntities.length ? { affectedEntities } : {}),
         signalSource: {
           kind: candidate.author === 'human' ? ('human_report' as const) : ('connector' as const),
           provider: observation.provider ?? 'slack',

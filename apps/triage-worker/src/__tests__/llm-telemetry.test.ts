@@ -7,7 +7,7 @@ const attribute = (key: string, value: unknown) => ({
 });
 
 describe('Claude native OTLP receiver', () => {
-  test('accepts only its bearer and persists redacted standard provider logs', async () => {
+  test('accepts only its bearer and persists standard provider logs unredacted', async () => {
     const events: Array<{ kind: string; payload: unknown; bodyBytes?: number }> = [];
     const receiver = await startClaudeTelemetry(async (event) => {
       events.push(event);
@@ -60,8 +60,7 @@ describe('Claude native OTLP receiver', () => {
       kind: 'api_request',
     });
     expect(JSON.stringify(events[0]!.payload)).toContain('provider request accepted');
-    expect(JSON.stringify(events[0]!.payload)).not.toContain('abc.def.ghi123XYZ');
-    expect(JSON.stringify(events[0]!.payload)).toContain('[REDACTED]');
+    expect(JSON.stringify(events[0]!.payload)).toContain('abc.def.ghi123XYZ');
     expect(receiver.env).not.toHaveProperty('OTEL_LOG_RAW_API_BODIES');
   });
 

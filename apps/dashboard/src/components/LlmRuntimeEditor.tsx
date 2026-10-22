@@ -365,8 +365,8 @@ export function LlmRuntimeEditor({
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <p className="max-w-3xl text-xs text-ink-muted">
-          Standard Claude provider telemetry is accepted only on an authenticated loopback receiver,
-          recursively redacted, and linked to the durable invocation ledger. Raw API bodies stay
+          Standard Claude provider telemetry is accepted only on an authenticated loopback receiver
+          and linked to the durable invocation ledger. It is not redacted. Raw API bodies stay
           disabled.
         </p>
         <button

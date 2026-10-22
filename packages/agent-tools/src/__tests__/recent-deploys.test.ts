@@ -116,6 +116,20 @@ describe('makeFetchRecentDeploysTool', () => {
     expect(result.data[0]!.sha).toBe('sha-orders');
   });
 
+  it('reads tenant-wide recent deploys when the incident service is a Slack channel placeholder', async () => {
+    const result = await runTool(
+      tool,
+      { ...makeCtx(makeInMemoryAuditSink()), service: 'slack:C07EWAS8132' },
+      {},
+    );
+    if (!result.available) throw new Error('expected available data');
+    expect(result.data.map((d) => d.sha)).toEqual([
+      'sha-orders',
+      'sha-checkout-new',
+      'sha-checkout-old',
+    ]);
+  });
+
   it('records exactly one audit entry with outcome data', async () => {
     const audit = makeInMemoryAuditSink();
     await runTool(tool, makeCtx(audit), {});

@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { entityCandidateKey, type AffectedEntityCandidate } from '@sre/contracts';
 import type { Job } from '@sre/queue';
+import { alertEntityCandidates } from '../../classify-consumer/alert-entities';
 import type { VisionModel } from '../../engine/types';
 import type { IncidentRow } from '../contracts';
 import type { WorkerRuntime } from '../runtime';
-import { WorkerEvidence } from '../evidence';
+import { firstPassScope, WorkerEvidence } from '../evidence';
 
 const dbMocks = vi.hoisted(() => ({
   uninterpretedImages: vi.fn(),
@@ -107,5 +109,82 @@ describe('WorkerEvidence attachment interpretation', () => {
       reason,
     );
     expect(dbMocks.setInterpretation).not.toHaveBeenCalled();
+  });
+});
+
+const candidate = (
+  kind: 'namespace' | 'node',
+  stableId: string,
+  provenance: AffectedEntityCandidate['provenance']['kind'] = 'provider_label',
+): AffectedEntityCandidate => ({
+  key: entityCandidateKey(kind, stableId, {}),
+  kind,
+  stableId,
+  displayName: stableId,
+  scope: {},
+  provenance: { kind: provenance, source: kind },
+  confidence: 75,
+  observedAt: new Date().toISOString(),
+  completeness: 'partial',
+  requiredCapabilities: ['runtime'],
+});
+
+describe('firstPassScope', () => {
+  test('a resolved subject namespace replaces alert-labelled namespaces', () => {
+    const labelled = candidate('namespace', 'monitoring');
+    expect(
+      firstPassScope({
+        observations: [{ signalId: 'signal-1', source: null, candidates: [labelled] }],
+        topology: {
+          resolutions: [
+            {
+              candidateKey: 'workload-1',
+              status: 'resolved',
+              subjectKey: 'subject-1',
+              candidateSubjectKeys: ['subject-1'],
+            },
+          ],
+          subjects: [
+            {
+              key: 'subject-1',
+              kind: 'workload',
+              name: 'checkout',
+              scope: { namespace: 'shop' },
+              resourceKeys: [],
+              sources: [],
+              stale: false,
+            },
+          ],
+          relations: [],
+        },
+      }),
+    ).toEqual({ namespaces: ['shop'], nodes: [] });
+  });
+
+  test('with nothing resolved, labels scope the read and inferred candidates do not', () => {
+    const candidates = [
+      ...alertEntityCandidates('Job gitlab/backup-1 failed to complete.', new Date()),
+      candidate('namespace', 'gitlab'),
+      candidate('namespace', 'billing', 'classifier_inference'),
+      candidate('node', '192.168.1.202'),
+      candidate('node', '192.168.1.202'),
+      candidate('node', '10.0.0.9', 'classifier_inference'),
+    ];
+    expect(
+      firstPassScope({
+        observations: [{ signalId: 'signal-1', source: null, candidates }],
+        topology: { resolutions: [], subjects: [], relations: [] },
+      }),
+    ).toEqual({ namespaces: ['gitlab'], nodes: ['192.168.1.202'] });
+  });
+
+  test('a Slack alert workload alone scopes the read to its namespace', () => {
+    const candidates = alertEntityCandidates('Job gitlab/backup-1 failed to complete.', new Date());
+    expect(
+      firstPassScope({
+        observations: [{ signalId: 'signal-1', source: null, candidates }],
+        topology: { resolutions: [], subjects: [], relations: [] },
+      }),
+    ).toEqual({ namespaces: ['gitlab'], nodes: [] });
   });
 });

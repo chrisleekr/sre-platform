@@ -136,26 +136,20 @@ export class ClassifyAttachments {
   foldIntoOwner(
     tenantId: string,
     candidate: InboundCandidate,
-    scrubbedText: string,
+    text: string,
   ): (owner: string) => Promise<void> {
     return async (owner) => {
       if (candidate.author === 'bot') {
-        await this.attachBot(tenantId, owner, candidate, scrubbedText);
+        await this.attachBot(tenantId, owner, candidate, text);
         return;
       }
-      await this.attachHuman(
-        tenantId,
-        owner,
-        candidate.channel,
-        candidate.externalId,
-        scrubbedText,
-      );
+      await this.attachHuman(tenantId, owner, candidate.channel, candidate.externalId, text);
     };
   }
 }
 
 /** Keep imported history distinct from the authenticated current request.
- * @param content - Scrubbed prior provider messages.
+ * @param content - Prior provider messages.
  * @param sourceId - Idempotent current-message origin.
  */
 export function priorThreadMessage(content: string, sourceId: string): NewMessage {

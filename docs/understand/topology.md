@@ -21,8 +21,8 @@ change these assignments; support impersonation remains read-only.
 | Source | Contributes |
 | --- | --- |
 | Kubernetes | Resources, ownership, routing references and explicit service-to-pod declarations |
-| Argo CD | Managed resources and deployment configuration sources |
-| GitHub and GitLab | Authorized repositories and service descriptors |
+| Argo CD | Managed resources, deployment configuration sources and running image paths |
+| GitHub and GitLab | Authorized repositories, service descriptors and GitLab registry image prefixes |
 | Prometheus | Scrape targets and runtime references |
 | Datadog | Hosts, monitors, Software Catalog declarations, optional APM calls and log traffic |
 | Grafana | Dashboard and datasource references |
@@ -117,6 +117,24 @@ A catalog service is a logical application, not a namespace or deployment name. 
 keeps service and resource identities separate. Similar names, shared infrastructure and shared
 repositories do not merge them. Ambiguous references stay unresolved.
 
+### Identities in alert text
+
+Alertmanager notifications posted to Slack carry no labels, but their descriptions name resources.
+The platform reads exact identities from bot alert text only: `Deployment`, `Pod`, `Job`,
+`StatefulSet`, `DaemonSet` and `CronJob` written as `namespace/name`, `namespace X ... pod Y` and
+`pod/Y in namespace X` on one line, and in-cluster hostnames such as `api.payments.svc.cluster.local`. A scrape address such as
+`192.168.1.203:9100` becomes a node candidate only when nothing else was named. The heading's
+namespace is the exporter's, so it is never read. Only the first 4096 characters of each alert are
+scanned.
+
+Such a candidate resolves only when exactly one fresh discovered resource has the same kind, name and
+namespace, and the same cluster or connection when the candidate names one; a pod then resolves to its owning workload or declared service. Several matches stay
+ambiguous. When the alert text names a resource, the classifier's guessed service is not added as a
+second candidate, because a guess can never resolve and would block the exact resource. Labels from
+an Alertmanager webhook keep plain name selection. Nodes and namespaces have no source of their own, so an unresolved one does not block
+source selection for the incident's other resources. These candidates never rewrite the incident's
+service, which stays the objective and ownership key.
+
 Optional catalog runtime mappings identify a Kubernetes connection, namespace, environment and,
 where needed, application label. Several environments can belong to one catalog service, but two
 clusters with the same namespace remain separate scopes. Environment filters select observations;
@@ -140,7 +158,15 @@ without a service link, the resource remains inspectable but service impact stay
 
 Source resolution follows exact runtime references through controller ownership and Argo CD
 management, not sibling workloads. Pod source annotations are declarations; Argo CD paths and
-revisions describe deployment configuration. Neither proves image provenance.
+revisions describe deployment configuration. None of these proves image provenance.
+
+Argo CD reports the images each pod in an application runs, and each image attaches to that pod
+only, so a workload reaches its own images through controller ownership, never a sibling's. With
+tag and digest removed, the first two, three
+and four path segments of each image are compared with GitLab container registry prefixes. A prefix
+names exactly one project, so `registry.example.com/group/project/worker` resolves to
+`group/project`. Images on registries no connected project claims, such as Docker Hub, stay
+unresolved. Image paths carry no commit, so code reads still need a recorded revision.
 
 Source reads require a currently authorized repository, an immutable recorded revision and a path
 inside its associated component. Missing revisions never fall back to a moving branch; ambiguous
@@ -152,8 +178,7 @@ authorization and connection generation. Changed or unverifiable access discards
 reports **source changed**. A newer observation of the same unchanged association does not invalidate it.
 Human-confirmed catalog context remains usable when that service has no automatic identity.
 
-Bounded source files are redacted before selecting numbered line excerpts, preserving line numbers
-without exposing multiline credential fragments. GitHub reads immutable Git trees and regular-file
+Bounded source files are returned as numbered line excerpts without redaction. GitHub reads immutable Git trees and regular-file
 blobs. Symlinks, submodules, incomplete trees and paths deeper than 32 segments are unavailable.
 Source content is untrusted evidence, not permission to change systems or establish mappings.
 

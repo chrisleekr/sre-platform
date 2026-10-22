@@ -1,4 +1,4 @@
-import { scrubSecrets, type ToolDefinition } from '@sre/agent-tools';
+import type { ToolDefinition } from '@sre/agent-tools';
 import * as z from 'zod';
 import type { EvidenceReceipt } from './evidence-closure';
 import type { InvestigationEvidence, TriageRuntime } from './types';
@@ -33,7 +33,7 @@ export function recordedEvidenceTool(
           ? cached.get(evidenceId)
           : null;
       if (!evidence || evidence.id !== evidenceId) return { available: false, reason: 'error' };
-      const text = scrubSecrets(JSON.stringify(evidence));
+      const text = JSON.stringify(evidence);
       return {
         available: true,
         data: {

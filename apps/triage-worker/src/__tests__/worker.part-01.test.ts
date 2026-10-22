@@ -96,7 +96,7 @@ describe('TriageWorker', () => {
     ).toHaveLength(1);
   });
 
-  test('persists redacted unknowns and next step from the engine result', async () => {
+  test('persists unknowns and next step from the engine result verbatim', async () => {
     const { id } = await createIncident(__fixture.app.db, __fixture.tenantId, {
       fingerprint: `fp-${randomUUID()}`,
       alertSource: 'datadog',
@@ -156,13 +156,13 @@ describe('TriageWorker', () => {
       engineModel: 'fake-evidence',
       unknowns: [
         {
-          question: 'Whether [REDACTED] was rotated',
+          question: `Whether ${secret} was rotated`,
           category: 'operator_decision',
           evidenceKind: null,
           attemptedEvidenceIds: [],
         },
       ],
-      nextStep: 'Compare the pool config using [REDACTED]',
+      nextStep: `Compare the pool config using ${secret}`,
     });
   });
 
@@ -322,10 +322,16 @@ describe('TriageWorker', () => {
       payload: { incidentId: id },
     });
     expect(await correlatedWorker.tick('correlated-first-pass')).toBe(1);
-    expect(githubFetch).toHaveBeenCalledWith({ service: 'correlated-checkout', windowMinutes: 60 });
+    const scope = { namespaces: [], nodes: [] };
+    expect(githubFetch).toHaveBeenCalledWith({
+      service: 'correlated-checkout',
+      windowMinutes: 60,
+      scope,
+    });
     expect(kubernetesFetch).toHaveBeenCalledWith({
       service: 'correlated-checkout',
       windowMinutes: 60,
+      scope,
     });
     const modelEvidence = JSON.stringify(captured?.evidence ?? []);
     expect(modelEvidence).toContain('acme/checkout');
@@ -343,7 +349,10 @@ describe('TriageWorker', () => {
     expect(captured?.evidence).toEqual([
       expect.objectContaining({ id: evidence[0]!.id, tool: 'fetch_triage_context' }),
     ]);
+    // Input matches rows stored before scoping, so evidence dedupe still replaces them.
+    expect(evidence[0]!.input).toEqual({ service: 'correlated-checkout', windowMinutes: 60 });
     expect(evidence[0]!.output).toMatchObject({
+      scope,
       sources: [{ source: 'github' }, { source: 'kubernetes' }],
       unavailable: [],
     });

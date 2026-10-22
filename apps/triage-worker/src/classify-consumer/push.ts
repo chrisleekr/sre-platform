@@ -12,7 +12,6 @@ import { ClassifyCore, fingerprintFor, providerAlertTitle, serviceForChannel } f
 import { DegradedSignalRouter } from './degraded-routing';
 import { RecoveryReports } from './recovery-report';
 import { RepeatNotifications } from './repeats';
-import { scrubInboundCandidate } from './scrub-candidate';
 import { SupersessionGuard } from './supersession';
 import { VerdictRouter } from './verdict-routing';
 import {
@@ -45,27 +44,23 @@ export class PushHandler {
     if (signal.aborted) throw signal.reason;
     if (await this.supersession.stop(candidate, job)) return;
     const fingerprint = fingerprintFor(candidate);
-    const { scrubbedText, scrubbedCandidate } = scrubInboundCandidate(candidate);
     // Slack presentation is advisory. Native or connector-read evidence uses the provider intake.
     // A recovery notice that covers every active alert starts recovery verification; the incident
     // resolves only when verification confirms recovery, never from Slack text alone.
-    if (scrubbedCandidate.signalState === 'resolved' || scrubbedCandidate.isEdit) {
-      const resolved = scrubbedCandidate.signalState === 'resolved';
+    if (candidate.signalState === 'resolved' || candidate.isEdit) {
+      const resolved = candidate.signalState === 'resolved';
       // One fenced pass: the fence records this event as decided when it returns, so a second pass
       // for the same event would read as superseded and skip its work.
       const routed = await this.supersession.fenced(candidate, job, async () => {
         // An alert message edited back to firing withdraws the recovery its earlier edit reported.
         let reported: Awaited<ReturnType<RecoveryReports['link']>> = null;
-        if (resolved) reported = await this.reports.link(tenantId, scrubbedCandidate);
+        if (resolved) reported = await this.reports.link(tenantId, candidate);
         // Only a firing edit: an unclassifiable rewrite says nothing about the alert's state.
-        else if (scrubbedCandidate.signalState === 'firing')
-          await this.reports.reopen(tenantId, scrubbedCandidate);
+        else if (candidate.signalState === 'firing') await this.reports.reopen(tenantId, candidate);
         await persistDeterministicDisposition({
           core: this.core,
           candidate,
-          scrubbedCandidate,
           job,
-          scrubbedText,
           disposition: 'log',
           reason: reported
             ? 'Provider reported recovery in Slack; recovery verification decides resolution.'
@@ -85,7 +80,7 @@ export class PushHandler {
             : {}),
         });
         // After the report is recorded, so this notice counts toward the incident's coverage.
-        if (reported) await this.reports.settle(tenantId, reported.incidentId, scrubbedCandidate);
+        if (reported) await this.reports.settle(tenantId, reported.incidentId, candidate);
         return reported;
       });
       if (!routed.executed) return;
@@ -98,14 +93,14 @@ export class PushHandler {
     }
     // A repeat of a tracked monitor is an occurrence of that incident, not a new one. It is
     // attached without a reassessment so it spends no engine run; ambiguity falls through.
-    const repeat = await this.repeats.match(tenantId, scrubbedCandidate);
+    const repeat = await this.repeats.match(tenantId, candidate);
     const attached = repeat
       ? await this.supersession.fenced(candidate, job, () =>
           this.attachments.attachBot(
             tenantId,
             repeat.incidentId,
-            scrubbedCandidate,
-            scrubbedText,
+            candidate,
+            candidate.text,
             false,
             { requireActive: true },
           ),
@@ -117,9 +112,7 @@ export class PushHandler {
       await persistDeterministicDisposition({
         core: this.core,
         candidate,
-        scrubbedCandidate,
         job,
-        scrubbedText,
         disposition: 'log',
         reason: 'Repeat notification of a monitor already tracked by an open incident.',
         correlated: { decision: 'belongs_to', ...repeat },
@@ -127,21 +120,16 @@ export class PushHandler {
       await this.outcome(candidate, job, 'belongs_to');
       return;
     }
-    const resolutionCandidates = await this.core.buildResolutionCandidates(
-      tenantId,
-      scrubbedCandidate,
-    );
-    const candidates = await this.core.buildCandidates(tenantId, scrubbedText);
+    const resolutionCandidates = await this.core.buildResolutionCandidates(tenantId, candidate);
+    const candidates = await this.core.buildCandidates(tenantId, candidate.text);
     const semanticResult = await proposeSemanticDisposition({
       core: this.core,
       candidate,
-      scrubbedCandidate,
       job,
       signal,
       candidates,
       resolutionCandidates: resolutionCandidates.forModel,
       allResolutionCandidates: resolutionCandidates.all,
-      scrubbedText,
     });
     if (semanticResult.error) {
       if (deps.semanticDispositionEnabled) {
@@ -149,11 +137,9 @@ export class PushHandler {
           this.degraded.failOpen(
             semanticResult.error,
             candidate,
-            scrubbedCandidate,
             job,
             signal,
             fingerprint,
-            scrubbedText,
             semanticResult.mode,
           ),
         );
@@ -167,11 +153,9 @@ export class PushHandler {
         this.degraded.failOpen(
           new Error('semantic classifier unavailable'),
           candidate,
-          scrubbedCandidate,
           job,
           signal,
           fingerprint,
-          scrubbedText,
           mode,
         ),
       );
@@ -180,7 +164,7 @@ export class PushHandler {
     const fallback = {
       service: serviceForChannel(candidate.channel),
       severity: DEGRADED_SEVERITY,
-      title: providerAlertTitle(scrubbedText, scrubbedCandidate.observations),
+      title: providerAlertTitle(candidate.text, candidate.observations),
     } as const;
     let verdict: CorrelationVerdict;
     try {
@@ -189,9 +173,9 @@ export class PushHandler {
           ? deps.llm.execute(
               { tenantId, jobId: job.id, operation: 'classify', signal },
               ({ classifier }) =>
-                classifier.classify(scrubbedCandidate, candidates, resolutionCandidates.forModel),
+                classifier.classify(candidate, candidates, resolutionCandidates.forModel),
             )
-          : deps.classify!.classify(scrubbedCandidate, candidates, resolutionCandidates.forModel, {
+          : deps.classify!.classify(candidate, candidates, resolutionCandidates.forModel, {
               signal,
             }),
       );
@@ -199,16 +183,7 @@ export class PushHandler {
       if (signal.aborted) throw signal.reason;
       if (await this.supersession.stop(candidate, job)) return;
       await this.supersession.fenced(candidate, job, () =>
-        this.degraded.failOpen(
-          error,
-          candidate,
-          scrubbedCandidate,
-          job,
-          signal,
-          fingerprint,
-          scrubbedText,
-          mode,
-        ),
+        this.degraded.failOpen(error, candidate, job, signal, fingerprint, mode),
       );
       return;
     }
@@ -219,9 +194,7 @@ export class PushHandler {
       await persistDeterministicDisposition({
         core: this.core,
         candidate,
-        scrubbedCandidate,
         job,
-        scrubbedText,
         disposition: 'log',
         reason: 'A model recovery suggestion requires connector verification.',
       });
@@ -238,9 +211,7 @@ export class PushHandler {
         const authorized = await persistEffectiveDisposition({
           core: this.core,
           candidate,
-          scrubbedCandidate,
           job,
-          scrubbedText,
           disposition: semantic.disposition,
           mode,
           reason: semantic.reason,
@@ -265,20 +236,16 @@ export class PushHandler {
       await persistLegacyEffectiveDisposition({
         core: this.core,
         candidate,
-        scrubbedCandidate,
         job,
-        scrubbedText,
         mode,
         decision: verdict.decision,
-        hasResolutionIntent: resolutionIntentSupported(scrubbedText),
+        hasResolutionIntent: resolutionIntentSupported(candidate.text),
       });
     const applied = await this.supersession.fenced(candidate, job, () =>
       this.verdicts.apply({
         candidate,
-        scrubbedCandidate,
         job,
         fingerprint,
-        scrubbedText,
         verdict,
         candidates,
         resolutionCandidates: resolutionCandidates.forModel,
@@ -305,9 +272,7 @@ export class PushHandler {
       await persistEffectiveDisposition({
         core: this.core,
         candidate,
-        scrubbedCandidate,
         job,
-        scrubbedText,
         disposition: semantic.disposition,
         mode,
         reason: semantic.reason,

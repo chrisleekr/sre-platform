@@ -68,27 +68,6 @@ describe('buildEvidenceBrief', () => {
     expect(brief).toContain('abc123');
   });
 
-  test('redacts secret-keyed connector data before it reaches the brief (CWE-532)', async () => {
-    // The degrade brief becomes a durable finding + hub + Slack message and does NOT pass through the
-    // onStep scrub choke point, so it must redact here (matching seedFirstPass). A regression guard:
-    // the brief used to inherit this redaction via runTool, which it no longer calls.
-    const secretConnector: IDataSourceConnector = {
-      id: '00000000-0000-4000-8000-000000000003',
-      name: 'Secret GitLab',
-      type: 'gitlab',
-      snapshot: async () => [],
-      fetchTriageContext: async () => ({
-        source: 'gitlab',
-        data: { apiToken: 'topsecretvalue', service: 'checkout' },
-      }),
-      tools: () => [],
-      probe: async () => ({ status: 'healthy', reachable: true, authorized: true, warnings: [] }),
-    };
-    const brief = await buildEvidenceBrief(ctxWith([secretConnector]), 'checkout', 30);
-    expect(brief).not.toContain('topsecretvalue');
-    expect(brief).toContain('[REDACTED]');
-  });
-
   test('skips a connector whose fetchTriageContext throws, never rejecting the brief', async () => {
     const ctx = ctxWith([throwingConnector(), dataConnector()]);
     const brief = await buildEvidenceBrief(ctx, 'checkout', 30);

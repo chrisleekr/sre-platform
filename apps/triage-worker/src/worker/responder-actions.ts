@@ -1,5 +1,4 @@
 import * as z from 'zod';
-import { scrubSecrets } from '@sre/agent-tools';
 import { INVESTIGATION_RETRY_ORIGIN_PREFIX } from '@sre/contracts';
 import type { HumanMessage } from '@sre/db';
 import type { Job } from '@sre/queue';
@@ -169,7 +168,7 @@ export async function processResponderActions(
       await runtime.deps.hub.appendOnce(job.tenantId, incidentId, {
         author: 'agent',
         kind: 'reply',
-        content: scrubSecrets(intent.reason),
+        content: intent.reason,
         originMessageId: `intent-clarification:${message.id}`,
       });
       await checkpoint(message.id);
@@ -225,7 +224,7 @@ export async function processResponderActions(
       incidentId,
       {
         to: intent.to!,
-        reason: scrubSecrets(intent.reason),
+        reason: intent.reason,
         transitionKey: `verbal:${incidentId}:${message.id}`,
         author: 'human',
         originSurface: message.originSurface ?? undefined,

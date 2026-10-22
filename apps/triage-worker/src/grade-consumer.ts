@@ -13,7 +13,6 @@ import { RetryableError, type Job, type JobContext } from '@sre/queue';
 import { collectHumanIdentifiers, stripHumanIdentifiers } from './blameless';
 import { ProviderUnavailableError, type StructuredGenerator } from './engine/types';
 import type { LlmRuntimeManager } from './llm-runtime';
-import { publicModelText } from './public-output';
 
 // Bounded redelivery on a provider outage, then give up silently: nobody asked for a grade in the
 // thread, so a "grading failed" line would be toil the platform created.
@@ -166,7 +165,7 @@ export function makeGradeHandler(
       incidentId,
       runId,
       verdict: grade.verdict,
-      rationale: stripHumanIdentifiers(publicModelText(grade.rationale), identifiers),
+      rationale: stripHumanIdentifiers(grade.rationale, identifiers),
     });
   };
 }

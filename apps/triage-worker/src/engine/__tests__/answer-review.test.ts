@@ -457,7 +457,7 @@ test.each(['foreign', 'unavailable'] as const)(
   },
 );
 
-test('recovery questions retain failed attempt receipts, discard invented links and scrub nested text', () => {
+test('recovery questions retain failed attempt receipts and discard invented links', () => {
   const unavailable = randomUUID();
   const forged = randomUUID();
   const result = restrictEvidenceToReceipts({
@@ -489,13 +489,11 @@ test('recovery questions retain failed attempt receipts, discard invented links 
   expect(stored.recovery).toMatchObject({
     questions: [
       {
-        question: 'Is password=[REDACTED] accepted?',
-        nextAction: 'Inspect Authorization: [REDACTED]',
+        question: 'Is password=private-value accepted?',
+        nextAction: 'Inspect Authorization: Bearer private-token',
         attemptedEvidenceIds: [unavailable],
       },
     ],
-    unknowns: ['Is password=[REDACTED] accepted?'],
+    unknowns: ['Is password=private-value accepted?'],
   });
-  expect(JSON.stringify(stored)).not.toContain('private-value');
-  expect(JSON.stringify(stored)).not.toContain('private-token');
 });

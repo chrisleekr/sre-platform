@@ -240,6 +240,29 @@ test('a captured Kubernetes resource maps through the observed APM resource link
   ).toBe('needs_evidence');
 });
 
+test('an alert-named pod selects its source subject even when a node in the same alert stays unmapped', async () => {
+  const labelled = (kind: 'workload' | 'node', stableId: string, scope: Record<string, string>) =>
+    candidate({
+      key: entityCandidateKey(kind, stableId, scope),
+      kind,
+      stableId,
+      scope,
+      provenance: { kind: 'provider_label', source: 'alert_text' },
+    });
+  const id = await incident([
+    labelled('workload', 'api-pod', { namespace: 'production' }),
+    labelled('node', '192.168.1.203', {}),
+  ]);
+  const context = await resolveIncidentTopologyContext(app.db, tenantId, id);
+  expect(context?.topology.resolutions.map((item) => item.status)).toEqual([
+    'resolved',
+    'unmapped',
+  ]);
+  expect((await readIncidentTopologySources(app.db, tenantId, id))?.subject?.key).toBe(
+    topologyRefKey(checkout.ref),
+  );
+});
+
 test('missing environment returns candidates rather than arbitrarily choosing production', async () => {
   const id = await incident([candidate({ scope: {} })]);
   const context = await resolveIncidentTopologyContext(app.db, tenantId, id);

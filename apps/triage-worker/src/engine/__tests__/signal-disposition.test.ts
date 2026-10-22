@@ -96,7 +96,7 @@ describe('semantic disposition schema', () => {
 });
 
 describe('durable semantic classification operation', () => {
-  test('uses one generation over durable scrubbed context without diagnostic tools', async () => {
+  test('uses one generation over durable context without diagnostic tools', async () => {
     const { classifyDurableSignal, SEMANTIC_DISPOSITION_RUBRIC } = await loadDisposition();
     const generate = vi.fn(async (_request: Record<string, unknown>, _system: string) => ticket);
     const rawMarker = 'RAW-SECRET-MUST-NOT-APPEAR';
@@ -147,68 +147,6 @@ describe('durable semantic classification operation', () => {
     expect(prompt).toContain('user-visible');
     expect(prompt).toMatch(/uncertain|ambigu/i);
     expect(prompt).toContain('ticket');
-  });
-
-  test('removes common credentials from the model request and structured result', async () => {
-    const { classifyDurableSignal } = await loadDisposition();
-    const privateKey =
-      '-----BEGIN PRIVATE KEY-----\nplain-private-material\n-----END PRIVATE KEY-----';
-    const generate = vi.fn(async (_request: Record<string, unknown>, _system: string) => ({
-      ...ticket,
-      action: 'rotate password=hunter2',
-      safeDeferralReason: 'database postgres://alice:secret@db.example/app is reachable',
-      riskIfIgnored: privateKey,
-    }));
-    const result = await classifyDurableSignal(
-      {
-        signalId: 'signal-secret',
-        jobId: 'job-secret',
-        summary: `DATABASE_URL=postgres://alice:secret@db.example/app ${privateKey}`,
-        source: 'slack-human',
-        author: 'human',
-        service: null,
-        signalState: 'unknown',
-      },
-      { generate },
-    );
-
-    const request = JSON.stringify(generate.mock.calls[0]![0]);
-    const output = JSON.stringify(result);
-    for (const secret of ['hunter2', 'alice:secret', 'plain-private-material']) {
-      expect(request).not.toContain(secret);
-      expect(output).not.toContain(secret);
-    }
-    expect(request).toContain('[REDACTED]');
-    expect(output).toContain('[REDACTED]');
-  });
-
-  test('scrubs secrets from every model-authored persisted field', async () => {
-    const { classifyDurableSignal } = await loadDisposition();
-    const secret = 'AKIAIOSFODNN7EXAMPLE';
-    const result = await classifyDurableSignal(
-      {
-        signalId: 'signal-secret',
-        jobId: 'job-secret',
-        summary: 'A scrubbed active provider signal.',
-        source: 'alertmanager',
-        author: 'provider',
-        service: 'api',
-        signalState: 'firing',
-      },
-      {
-        generate: async () => ({
-          ...ticket,
-          service: `api-${secret}`,
-          title: `Review ${secret}`,
-          reason: `Reason ${secret}`,
-          action: `Action ${secret}`,
-          safeDeferralReason: `Deferral ${secret}`,
-          riskIfIgnored: `Risk ${secret}`,
-        }),
-      },
-    );
-    expect(JSON.stringify(result)).not.toContain(secret);
-    expect(JSON.stringify(result)).toContain('[REDACTED]');
   });
 
   test('never silently logs an active provider firing signal', async () => {

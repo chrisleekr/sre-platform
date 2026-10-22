@@ -61,10 +61,13 @@ export interface TriageInput {
  */
 export interface ResumeInput extends TriageInput {
   humanMessage: string;
-  prior: { author: string; kind: string; content: string }[];
+  /** Set when a workspace member wrote humanMessage, so record_learning can cite it. */
+  humanMessageId?: string;
+  /** messageId is set only on a member-attributed human line, the only kind a learning may cite. */
+  prior: { author: string; kind: string; content: string; messageId?: string }[];
   /**
    * Evidence already gathered for this incident, reloaded from the durable tool-call store (
-   * working memory): the latest redacted output per (tool, input), createdAt-tagged for staleness.
+   * working memory): the latest output per (tool, input), createdAt-tagged for staleness.
    * The engine renders it as a TOON block so a resume reuses prior tool runs instead of re-fetching.
    * Optional: absent when nothing was gathered.
    */
@@ -138,6 +141,21 @@ export interface RankedHypothesis {
 
 export type TerminalOutcome = InvestigationRunOutcome;
 
+/** What the evidence reviewer received and returned, kept so a rejected run can be audited. */
+export interface EvidenceReviewProvenance {
+  status: 'supported' | 'rejected' | 'failed';
+  rejection?: 'insufficient_evidence' | 'contradictory_evidence' | 'missing_capability';
+  failureKind?: 'budget' | 'validation' | 'provider';
+  /** Code-owned failure text, never provider output. */
+  failureReason?: string;
+  /** cited_only when the review budget left uncited records unreviewed; absent when it failed. */
+  coverage?: 'full' | 'cited_only';
+  /** The engine's own verdict before review; the result's confidence is the reviewed value. */
+  candidate: { outcome: TerminalOutcome; confidence: number };
+  /** Reviewer explanation, capped at 4,000 characters. */
+  detail?: string;
+}
+
 export interface TriageResult {
   provider: string;
   /** Engine-agnostic session id stored on the incident (not a Claude-only handle). */
@@ -161,8 +179,8 @@ export interface TriageResult {
   /** Whether a reply answers the responder or requests information needed to proceed. */
   replyPurpose?: 'answer' | 'clarification_request';
   /** For 'approval': canonical Recommended Action content and code-owned Approve/Deny options. The
-   * worker scrubs these human-visible values before deriving the idempotency key and persisting the
-   * existing approval row plus linked Hub message. Approval records consent only; a human executes the
+   * worker derives the idempotency key from these human-visible values and persists the existing
+   * approval row plus linked Hub message. Approval records consent only; a human executes the
    * recommendation. See worker.ts + engine/approval-id.ts. */
   approval?: { prompt: string; options: { id: string; label: string }[] };
   recovery?: {
@@ -192,8 +210,10 @@ export interface TriageResult {
   causeTagSuggestions?: Array<{ tag: string; evidenceIds: string[] }>;
   /** Safest next diagnostic step or the exact context needed from a responder. */
   nextStep?: string | null;
-  /** Open checks named by the evidence reviewer when it rejected this result, already scrubbed. */
+  /** Open checks named by the evidence reviewer when it rejected this result. */
   reviewGaps?: string[];
+  /** How evidence review decided this result; absent when the result was not reviewed. */
+  review?: EvidenceReviewProvenance;
   /** Provider pages built from admitted evidence for entities a surface may link. */
   links?: FindingLink[];
   /** The provider model that produced the result (e.g. claude-opus-4-8). */

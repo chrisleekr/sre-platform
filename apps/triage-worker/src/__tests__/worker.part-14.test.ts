@@ -95,9 +95,8 @@ describe('terminal investigation-run provenance and recovery', () => {
     const validEvidenceId = await record(incident.id);
     const siblingEvidenceId = await record(sibling.id);
     const summary = 'A connection leak exhausted the checkout pool.';
-    const rawNextStep =
+    const nextStep =
       'Compare pool usage using sk-abcdefghijklmnopqrstuvwxyz1234 with the rollout timeline.';
-    const persistedNextStep = 'Compare pool usage using [REDACTED] with the rollout timeline.';
     const result = terminalResult(incident.id, 'conclusive', {
       disposition: 'rca',
       evidenceReceipts: [
@@ -125,7 +124,7 @@ describe('terminal investigation-run provenance and recovery', () => {
           attemptedEvidenceIds: [validEvidenceId],
         },
       ],
-      nextStep: rawNextStep,
+      nextStep,
     });
 
     await __fixture.workerWithEngine(engineFor(result)).handle(
@@ -193,7 +192,7 @@ describe('terminal investigation-run provenance and recovery', () => {
             attemptedEvidenceIds: [validEvidenceId],
           },
         ],
-        nextStep: persistedNextStep,
+        nextStep,
       },
     });
     expect(await getIncident(__fixture.app.db, __fixture.tenantId, incident.id)).toMatchObject({
@@ -202,7 +201,7 @@ describe('terminal investigation-run provenance and recovery', () => {
       assessmentEvidenceIds: [validEvidenceId],
       rankedHypotheses: [expect.objectContaining({ supportingEvidenceIds: [validEvidenceId] })],
       unknowns: [expect.objectContaining({ attemptedEvidenceIds: [validEvidenceId] })],
-      nextStep: persistedNextStep,
+      nextStep,
     });
     await expect(
       completeInvestigationRun(__fixture.app.db, __fixture.tenantId, incident.id, {
@@ -235,7 +234,7 @@ describe('terminal investigation-run provenance and recovery', () => {
             evidence: 'Active connections rose without falling.',
           },
         ],
-        nextStep: persistedNextStep,
+        nextStep,
       },
       evidenceIds: [validEvidenceId],
     });

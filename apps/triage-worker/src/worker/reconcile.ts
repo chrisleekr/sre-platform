@@ -1,5 +1,4 @@
 import { humanMessagesSince } from '@sre/db';
-import { scrubSecrets } from '@sre/agent-tools';
 import * as z from 'zod';
 import { ProviderRateLimitError, type TriageResult } from '../engine/types';
 import type { WorkerRuntime } from './runtime';
@@ -43,15 +42,13 @@ export async function reconcileAssessmentInput(
       signal,
       (generator) =>
         generator.generate(
-          scrubSecrets(
-            JSON.stringify({ candidate: result, newer: newer.map((message) => message.content) }),
-          ),
+          JSON.stringify({ candidate: result, newer: newer.map((message) => message.content) }),
           correctionReviewSchema,
           { system: CORRECTION_REVIEW_INSTRUCTION, signal },
         ),
     );
     material = review.material;
-    reason = scrubSecrets(review.reason);
+    reason = review.reason;
   } catch (error) {
     if (signal.aborted) throw signal.reason;
     if (error instanceof ProviderRateLimitError) throw error;

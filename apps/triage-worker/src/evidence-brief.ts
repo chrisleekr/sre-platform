@@ -1,4 +1,4 @@
-import { redactInput, type ToolContext } from '@sre/agent-tools';
+import type { ToolContext } from '@sre/agent-tools';
 
 // The connectors (GitLab, k8s) are separate services, unaffected by an LLM-provider outage, so a
 // degraded brief can still carry real signal. Bounds mirror the loop's per-result cap.
@@ -12,12 +12,6 @@ const NO_DATA = 'No live connector data available.';
  * pull the opener seed uses). Runs them concurrently; a connector that throws (e.g. an alert-only
  * stub whose `fetchTriageContext` is unimplemented) is skipped, never rejecting the brief (CWE-209).
  * Returns a marker when nothing is live.
- *
- * The connector `data` is redacted here, before it reaches the durable finding, the hub, and Slack.
- * The degrade path does NOT pass through the onStep scrub choke point (`degradeIncidentWithMessages`
- * inserts finding content verbatim), so this is the redaction point. It matches `seedFirstPass`, which
- * redacts the same `fetchTriageContext` output before Postgres (CWE-532). The brief used to inherit
- * the identical redaction via `runTool`, which it no longer calls.
  */
 export async function buildEvidenceBrief(
   ctx: ToolContext,
@@ -37,7 +31,7 @@ export async function buildEvidenceBrief(
       connectors.map(async (c) => {
         try {
           const tc = await c.fetchTriageContext({ service, windowMinutes });
-          const json = JSON.stringify(redactInput(tc.data)) ?? 'null';
+          const json = JSON.stringify(tc.data) ?? 'null';
           return `- ${c.type}: ${json.slice(0, BRIEF_ITEM_MAX)}`;
         } catch {
           // Alert-only / unavailable connector: skip it, never reject the whole brief (CWE-209).

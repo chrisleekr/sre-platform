@@ -12,11 +12,8 @@ import { createHash } from 'node:crypto';
  * row), different content -> different key (nobody approves an action they were not shown). A random uuid
  * would satisfy uniqueness but break exactly the idempotency this key exists for.
  *
- * Hashed on the SCRUBBED proposal, at the point of persistence. The worker scrubs prompt/labels on the way
- * into Postgres and derives the key from those same scrubbed values (worker.ts), so the key addresses the
- * content the row actually holds and never encodes the pre-scrub secret's shape. Because scrubbing is pure
- * and deterministic, a redelivery re-scrubs identically and lands on the identical key. Option ORDER is part
- * of the identity — the buttons a human sees differ.
+ * Hashed on the proposal at the point of persistence, from the same prompt/labels the row holds
+ * (worker.ts), so a redelivery lands on the identical key. Option ORDER is part of the identity — the buttons a human sees differ.
  *
  * `salt` re-opens a proposal whose consent is SPENT. Content alone cannot distinguish "the same proposal,
  * redelivered" from "the same action, proposed again after a human denied it" — and collapsing the second

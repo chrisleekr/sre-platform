@@ -1,7 +1,7 @@
 // Phase A RED for the first-pass snapshot fold + resume reuse. Live-PG +
 // Valkey, mirroring worker.test.ts. Covers:
 //   C6: an incident whose alertSource matches a connector type → that connector's fetchTriageContext
-//       is pulled, redacted, persisted as the FIRST `fetch_triage_context` evidence row, and a TOON
+//       is pulled, persisted unredacted as the FIRST `fetch_triage_context` evidence row, and a TOON
 //       evidence is supplied to the investigate request.
 //   C7: an incident with no connector origin (alertSource='slack') → no first-pass pull, no snapshot.
 //   C8: resume of an incident that already has a `fetch_triage_context` evidence row → the row is
@@ -107,7 +107,7 @@ function makeCapturingEngine(): TriageEngine & {
 }
 
 // A datadog data-source connector whose fetchTriageContext returns secret-bearing data. The
-// first-pass seed must redact it before both persist and the model-facing snapshot.
+// first-pass seed passes it unredacted to both persist and the model-facing snapshot.
 function firstPassConnector(): IDataSourceConnector {
   return {
     id: '00000000-0000-4000-8000-000000000001',
@@ -187,7 +187,7 @@ afterAll(async () => {
 });
 
 describe('first-pass snapshot seed', () => {
-  test('C6 pulls the alertSource connector, persists a redacted first evidence row, appends a TOON snapshot', async () => {
+  test('C6 pulls the alertSource connector, persists the first evidence row, appends a TOON snapshot', async () => {
     const { id: incidentId } = await createIncident(app.db, tenantId, {
       fingerprint: `fp-${randomUUID()}`,
       alertSource: 'datadog',
@@ -201,22 +201,21 @@ describe('first-pass snapshot seed', () => {
     expect(await worker.tick('c6')).toBe(1);
 
     // A `fetch_triage_context` evidence row exists, is the ONLY tool row (the capturing engine ran no
-    // tools), and carries a redacted output: the non-secret marker survives, the secret does not.
+    // tools), and carries the connector output unredacted.
     const rows = await evidenceRows(incidentId);
     const seed = rows.find((r) => r.tool === 'fetch_triage_context')!;
     expect(seed).toBeDefined();
     expect(seed.output).toBeDefined();
     const outputJson = JSON.stringify(seed.output);
     expect(outputJson).toContain(NON_SECRET_MARKER);
-    expect(outputJson).not.toContain(RAW_SECRET);
+    expect(outputJson).toContain(RAW_SECRET);
     // First evidence row: earliest createdAt among the incident's tool calls.
     const earliest = rows.slice().sort((a, b) => +a.createdAt - +b.createdAt)[0]!;
     expect(earliest.tool).toBe('fetch_triage_context');
 
-    // The redacted snapshot reached the model through the durable evidence channel.
+    // The snapshot reached the model through the durable evidence channel.
     const modelEvidence = JSON.stringify(engine.lastInvestigate?.evidence ?? []);
     expect(modelEvidence).toContain(NON_SECRET_MARKER);
-    expect(modelEvidence).not.toContain(RAW_SECRET);
   });
 
   test('C7 skips the first-pass pull for a connector-less origin (alertSource=slack)', async () => {
@@ -311,7 +310,6 @@ describe('first-pass seed is idempotent across redelivery', () => {
     ]);
     const modelEvidence = JSON.stringify(engine.lastInvestigate?.evidence ?? []);
     expect(modelEvidence).toContain(NON_SECRET_MARKER);
-    expect(modelEvidence).not.toContain(RAW_SECRET);
   });
 
   test('a triage job whose seed row is older than the context window RE-SEEDS with fresh data', async () => {
