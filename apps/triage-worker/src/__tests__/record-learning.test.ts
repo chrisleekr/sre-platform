@@ -289,4 +289,18 @@ describe('record_learning', () => {
     ).toMatchObject({ data: { recorded: true } });
     expect(await factTitled('etcd@node1.service')).toBeDefined();
   });
+
+  test('refuses a learning that carries credential material in its statement or topic', async () => {
+    const incidentId = await incident();
+    const id = await evidence(incidentId);
+    const observed = { basis: 'observed', evidenceIds: [id] };
+    for (const fact of [
+      { topic: 'payments db url', statement: 'payments uses postgres://app:pw@db/payments' },
+      { topic: 'token=abc123 rotation', statement: 'the deploy token rotates weekly' },
+    ])
+      expect(await runTool(newRun(), ctx(incidentId), { ...observed, ...fact })).toMatchObject({
+        data: { recorded: false, reason: 'a learning must not contain credential material' },
+      });
+    expect(await factTitled('payments db url')).toBeUndefined();
+  });
 });

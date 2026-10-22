@@ -30,6 +30,7 @@ import {
   topicNamesPerson,
 } from './blameless';
 import { noteContent } from './runbook-note';
+import { requestFence, type RunbookRequestPayload } from './runbook-request';
 import { ProviderUnavailableError, type StructuredGenerator } from './engine/types';
 import type { LlmRuntimeManager } from './llm-runtime';
 
@@ -315,10 +316,7 @@ export function makeRunbookHandler(
       automatic?: boolean;
     };
     const auto = automatic === true;
-    const captureFence =
-      requestedMessageId && requestedBy
-        ? { messageId: requestedMessageId, userId: requestedBy }
-        : undefined;
+    let captureFence = requestFence({ requestedMessageId, requestedBy });
     const tenantId = job.tenantId;
     const { signal } = ctx;
 
@@ -336,8 +334,13 @@ export function makeRunbookHandler(
 
     const transcript = hub.history ? await hub.history(tenantId, incidentId) : [];
     const evidence = await listEvidence(tenantId, incidentId);
-    // A responder request adopted after the pass started is not steered toward producing nothing.
-    const automaticNow = auto && (await stillAutomatic(job));
+    // A responder request adopted after the pass started is not steered toward producing nothing,
+    // and its document saves under that requester's capture fence.
+    const current = auto
+      ? ((await readPayload(job)) as RunbookRequestPayload | undefined)
+      : undefined;
+    const automaticNow = auto && current?.automatic === true;
+    if (auto && !automaticNow) captureFence = requestFence(current);
     const prompt = buildDistilPrompt(incident, transcript, evidence, automaticNow);
     const emails = await listEmails(tenantId);
     const identifiers = collectHumanIdentifiers(emails, prompt);

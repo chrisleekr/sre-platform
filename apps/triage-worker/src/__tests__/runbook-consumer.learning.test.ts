@@ -62,6 +62,14 @@ describe('automatic learning pass', () => {
     });
   });
 
+  test('saves an adopted request under the requester capture fence', async () => {
+    const { handler, upsertRunbook } = setup({ distil: investigationDistil, jobPayload: adopted });
+    await handler(automaticJob());
+    expect(upsertRunbook.mock.calls[0]![1]).toMatchObject({
+      captureFence: { messageId: 'm-1', userId: 'u1' },
+    });
+  });
+
   test('stays silent while the row is still automatic', async () => {
     const { handler, append } = setup({ distil: nothingDistil });
     await expect(handler(automaticJob())).resolves.toBeUndefined();

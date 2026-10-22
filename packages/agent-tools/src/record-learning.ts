@@ -1,3 +1,4 @@
+import { hasKnownCredential } from '@sre/contracts';
 import {
   filterIncidentDataEvidenceIds,
   filterIncidentMemberMessageIds,
@@ -45,7 +46,7 @@ export type LearningProvenance = { ok: true; source?: string } | { ok: false; re
  * @param db - RLS-scoped connection.
  * @param tenantId - Workspace that owns the incident.
  * @param incidentId - Incident the learning comes from; cited ids must belong to it.
- * @param fact - Basis, statement and the ids it cites.
+ * @param fact - Basis, topic, statement and the ids it cites.
  * @returns The verified source to store, or why the learning is refused.
  */
 export async function validateLearningProvenance(
@@ -54,11 +55,16 @@ export async function validateLearningProvenance(
   incidentId: string,
   fact: {
     basis: 'observed' | 'responder' | 'hypothesis';
+    topic: string;
     statement: string;
     evidenceIds?: string[];
     messageIds?: string[];
   },
 ): Promise<LearningProvenance> {
+  // Evidence stays inside the incident that read it; a learning reaches every later brief and every
+  // member, so a credential it carries is refused rather than spread.
+  if (hasKnownCredential(fact.topic) || hasKnownCredential(fact.statement))
+    return { ok: false, reason: 'a learning must not contain credential material' };
   if (fact.basis === 'hypothesis')
     return HEDGED.test(fact.statement)
       ? { ok: true }
