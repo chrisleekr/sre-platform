@@ -84,7 +84,14 @@ export function episodeGroupingPolicy(settings: Record<string, unknown>): {
 }
 
 function scrubKnownSecret(value: string, secret: string): string {
-  return secret ? value.split(secret).join('[REDACTED]') : value;
+  if (!secret) return value;
+  const encoded = encodeURIComponent(secret);
+  // A URL usually carries the token percent-encoded, as a path or query value or a form value with
+  // '+' for space; producers may write the hex in either case.
+  const pattern = [...new Set([encoded, encoded.replace(/%20/g, '+')])]
+    .map((form) => form.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
+  return value.split(secret).join('[REDACTED]').replace(new RegExp(pattern, 'gi'), '[REDACTED]');
 }
 
 /** Removes this platform's own webhook token from a provider URL; provider content passes through.
