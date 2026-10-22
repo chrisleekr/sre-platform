@@ -166,6 +166,9 @@ test('running images declare registry paths as application source, never a Helm 
               'valkey/valkey:8',
             ]),
             pod('worker-pod', ['registry.example/team/worker:2']),
+            // Replicas, one on a newer tag, add no relations: refs are emitted once per application.
+            pod('proxy-pod-2', ['registry.example/team/proxy/proxy:1.2.4', 'valkey/valkey:8']),
+            pod('worker-pod-2', ['registry.example/team/worker:2']),
           ],
         }
       : {

@@ -18,6 +18,8 @@ import { safeHttpUrl } from './projection';
 // GitLab nests subgroups up to 20 levels under a top-level group, and a registry image adds up to
 // three name segments beneath its project, so no claimable image path is longer than this.
 const MAX_IMAGE_PATH_SEGMENTS = 24;
+// A Pod reports one image per container; more than this is not a real workload shape.
+const MAX_IMAGES_PER_NODE = 20;
 
 /** Registry repository paths an image could belong to, from shortest to longest.
  * @param image - Image reference reported on an Argo CD resource-tree node.
@@ -193,6 +195,9 @@ export function argoTopology(
             collection.completeness = 'partial';
             collection.issue = 'limit';
           }
+          // One image relation per application: replicas repeat the same refs, and every fact counts
+          // toward the per-page topology persistence limit.
+          const imageRefKeys = new Set<string>();
           for (const rawNode of tree.nodes.slice(0, 200)) {
             const node = obj(rawNode);
             const kind = str(node.kind),
@@ -234,9 +239,14 @@ export function argoTopology(
               description: 'Argo CD application resource tree',
             });
             // Per node, because the application summary mixes every workload's images together.
-            const images = Array.isArray(node.images) ? node.images : [];
+            const images = Array.isArray(node.images)
+              ? node.images.slice(0, MAX_IMAGES_PER_NODE)
+              : [];
             for (const image of images)
-              for (const to of imageRepositoryRefs(str(image) ?? ''))
+              for (const to of imageRepositoryRefs(str(image) ?? '')) {
+                const key = topologyRefKey(to);
+                if (imageRefKeys.has(key)) continue;
+                imageRefKeys.add(key);
                 collection.relations.push({
                   from: ref,
                   to,
@@ -245,6 +255,7 @@ export function argoTopology(
                   attributes: { role: 'application_source', provenance: 'image_path' },
                   description: 'Running image registry path, not verified image provenance',
                 });
+              }
           }
         } catch (error) {
           collection.completeness = 'partial';
