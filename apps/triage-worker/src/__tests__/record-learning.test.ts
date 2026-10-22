@@ -45,10 +45,14 @@ async function incident(): Promise<string> {
   return rows[0]!.id;
 }
 
-async function evidence(incidentId: string, outcome = 'data'): Promise<string> {
+async function evidence(
+  incidentId: string,
+  outcome = 'data',
+  tool = 'query_logs',
+): Promise<string> {
   const rows = (await admin.db.execute(sql`
     insert into agent_tool_calls (tenant_id, incident_id, tool, input, latency_ms, outcome, output)
-    values (${tenantId}, ${incidentId}, 'query_logs', '{}'::jsonb, 1, ${outcome}, '{}'::jsonb)
+    values (${tenantId}, ${incidentId}, ${tool}, '{}'::jsonb, 1, ${outcome}, '{}'::jsonb)
     returning id`)) as unknown as Array<{ id: string }>;
   return rows[0]!.id;
 }
@@ -163,6 +167,10 @@ describe('record_learning', () => {
     const own = await evidence(incidentId);
     const failed = await evidence(incidentId, 'error');
     const foreign = await evidence(await incident());
+    // The run's own refused call and stored-knowledge reads are audited as data, never observations.
+    const selfCited = await evidence(incidentId, 'data', 'record_learning');
+    const runbooks = await evidence(incidentId, 'data', 'search_runbooks');
+    const ledger = await evidence(incidentId, 'data', 'search_incident_evidence');
     const fact = {
       topic: 'etcd wal disk',
       statement: 'the etcd WAL is on /dev/nvme1n1',
@@ -174,6 +182,9 @@ describe('record_learning', () => {
       [foreign],
       [randomUUID()],
       [failed],
+      [selfCited],
+      [runbooks],
+      [own, ledger],
       // One valid id must not vouch for a statement drawn from another incident's evidence.
       [foreign, own],
     ])

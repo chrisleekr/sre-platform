@@ -23,7 +23,13 @@ import {
 import { RetryableError, type Job, type JobContext } from '@sre/queue';
 import { and, eq } from 'drizzle-orm';
 import type { NewMessage } from '@sre/hub';
-import { collectHumanIdentifiers, stripHumanIdentifiers, tenantMemberEmails } from './blameless';
+import {
+  collectHumanIdentifiers,
+  stripHumanIdentifiers,
+  tenantMemberEmails,
+  topicNamesPerson,
+} from './blameless';
+import { noteContent } from './runbook-note';
 import { ProviderUnavailableError, type StructuredGenerator } from './engine/types';
 import type { LlmRuntimeManager } from './llm-runtime';
 
@@ -71,7 +77,6 @@ export const DistilSchema = z.discriminatedUnion('outcome', [
   }),
   z.object({ outcome: z.literal('nothing'), reason: z.string() }),
 ]);
-type Distil = z.infer<typeof DistilSchema>;
 
 // Call 2: the model decides whether to refine an existing document (by id) or write a new one, and
 // returns the final text.
@@ -226,17 +231,6 @@ function buildDecidePrompt(
   ].join('\n\n');
 }
 
-function noteContent(distil: Extract<Distil, { outcome: 'investigation_worthwhile' }>): string {
-  return [
-    `Checked: ${distil.checked}`,
-    `Ruled out: ${distil.ruledOut}`,
-    `Open questions: ${distil.openQuestions}`,
-    ...(distil.diagnosticGuide
-      ? [`\nDiagnostic guide (unverified remediation):\n${distil.diagnosticGuide}`]
-      : []),
-  ].join('\n');
-}
-
 /**
  * Knowledge-capture consumer for the `sre:runbook` stream. A responder's request, or the resolve
  * sweep (`automatic`), triggers it. It distils ONLY the triggered incident via the deployment's single
@@ -342,8 +336,11 @@ export function makeRunbookHandler(
 
     const transcript = hub.history ? await hub.history(tenantId, incidentId) : [];
     const evidence = await listEvidence(tenantId, incidentId);
-    const prompt = buildDistilPrompt(incident, transcript, evidence, auto);
-    const identifiers = collectHumanIdentifiers(await listEmails(tenantId), prompt);
+    // A responder request adopted after the pass started is not steered toward producing nothing.
+    const automaticNow = auto && (await stillAutomatic(job));
+    const prompt = buildDistilPrompt(incident, transcript, evidence, automaticNow);
+    const emails = await listEmails(tenantId);
+    const identifiers = collectHumanIdentifiers(emails, prompt);
     // Shared knowledge never names a person.
     const clean = (text: string): string => stripHumanIdentifiers(text, identifiers);
 
@@ -434,8 +431,11 @@ export function makeRunbookHandler(
       }
 
       for (const fact of distil.environmentFacts ?? []) {
-        // Same gate as record_learning: an unproven fact is dropped, never saved under a weaker basis.
-        const provenance = await validate(tenantId, incidentId, fact);
+        // Same gate as record_learning: a topic naming a person is refused, not rewritten, and an
+        // unproven fact is dropped, never saved under a weaker basis.
+        const provenance = topicNamesPerson(emails, fact.topic)
+          ? { ok: false as const, reason: 'topic names a person' }
+          : await validate(tenantId, incidentId, fact);
         if (!provenance.ok) {
           console.info(
             JSON.stringify({
@@ -445,12 +445,13 @@ export function makeRunbookHandler(
               tenantId,
               incidentId,
               basis: fact.basis,
+              reason: provenance.reason,
             }),
           );
           continue;
         }
         await learn(tenantId, {
-          topic: clean(fact.topic),
+          topic: fact.topic,
           statement: clean(fact.statement),
           basis: fact.basis,
           ...(provenance.source ? { source: provenance.source } : {}),

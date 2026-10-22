@@ -13,6 +13,10 @@ export const MAX_LEARNINGS_PER_RUN = 3;
 
 export const RECORD_LEARNING_NAME = 'record_learning';
 
+// Rows that echo the run's own statements or stored knowledge, hypotheses included. Citing one
+// would let a statement vouch for itself, so an observed fact must rest on a read of the system.
+const NOT_OBSERVATIONS = [RECORD_LEARNING_NAME, 'search_runbooks', 'search_incident_evidence'];
+
 const recordLearningInput = z.object({
   topic: z.string().trim().min(3).max(120),
   statement: z.string().trim().min(10).max(500),
@@ -67,7 +71,9 @@ export async function validateLearningProvenance(
     // valid id must not vouch for a statement that came from somewhere else.
     const cited = [...new Set(fact.evidenceIds ?? [])];
     const ids =
-      cited.length > 0 ? await filterIncidentDataEvidenceIds(db, tenantId, incidentId, cited) : [];
+      cited.length > 0
+        ? await filterIncidentDataEvidenceIds(db, tenantId, incidentId, cited, NOT_OBSERVATIONS)
+        : [];
     return ids.length > 0 && ids.length === cited.length
       ? { ok: true, source: `evidence ${ids.join(', ')}` }
       : { ok: false, reason: 'observed needs evidence ids of successful reads from this incident' };

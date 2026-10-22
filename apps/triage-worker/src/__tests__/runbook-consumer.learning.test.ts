@@ -34,6 +34,30 @@ describe('automatic learning pass', () => {
     expect(String(append.mock.calls[0]![2].content)).toContain('generation failed');
   });
 
+  test('distils an adopted request with the request prompt, not the automatic one', async () => {
+    const { handler, generate } = setup({ distil: nothingDistil, jobPayload: adopted });
+    await handler(automaticJob());
+    expect(String(generate.mock.calls[0]![0])).not.toContain('nobody asked for it');
+  });
+
+  test('keeps a unit-name topic as given and drops a topic that names a member', async () => {
+    const fact = { statement: 'the WAL is on nvme1n1', basis: 'observed', evidenceIds: ['ev-1'] };
+    const { handler, recordLearning } = setup({
+      distil: {
+        ...investigationDistil,
+        environmentFacts: [
+          { ...fact, topic: 'etcd@node1.service wal disk' },
+          { ...fact, topic: 'alice.ops pager rota' },
+        ],
+      },
+    });
+    await handler(makeJob());
+    expect(recordLearning).toHaveBeenCalledTimes(1);
+    expect(recordLearning.mock.calls[0]![1]).toMatchObject({
+      topic: 'etcd@node1.service wal disk',
+    });
+  });
+
   test('stays silent while the row is still automatic', async () => {
     const { handler, append } = setup({ distil: nothingDistil });
     await expect(handler(automaticJob())).resolves.toBeUndefined();

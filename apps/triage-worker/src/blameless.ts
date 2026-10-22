@@ -112,3 +112,14 @@ export function makeBlamelessCleaner(
       anyEmail,
     );
 }
+
+/**
+ * True when cleaning would change a learning topic. A topic is its merge key, so one that names a
+ * member is refused rather than rewritten; a unit name such as `etcd@node1.service` is kept.
+ *
+ * @param emails - Emails of the tenant's members.
+ * @param topic - Proposed learning topic.
+ */
+export function topicNamesPerson(emails: string[], topic: string): boolean {
+  return stripHumanIdentifiers(topic, collectHumanIdentifiers(emails, topic), false) !== topic;
+}
