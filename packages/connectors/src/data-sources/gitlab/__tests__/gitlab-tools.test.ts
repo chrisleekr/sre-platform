@@ -104,6 +104,25 @@ describe('makeGitLabTools', () => {
     expect(fetches).toBe(0);
   });
 
+  it.each([
+    'projects/42/repository/files/hooks.py',
+    'projects/42/repository/files/hooks',
+    'projects/42/repository/branches/hooks',
+    'projects/42/repository/tree?path=hooks',
+  ])('api_get still reads non-webhook path %s', async (path) => {
+    let fetches = 0;
+    const c = makeGitLabConnector(
+      cfg({ settings: { projectId: 42 } }),
+      fakeToolFetch(() => {
+        fetches += 1;
+        return jsonRes(200, {});
+      }),
+      publicLookup,
+    );
+    await toolByName(c, 'api_get').run({ path });
+    expect(fetches).toBeGreaterThan(0);
+  });
+
   it('api_get rejects a host-escaping path', async () => {
     const c = makeGitLabConnector(
       cfg({ settings: { projectId: 42 } }),

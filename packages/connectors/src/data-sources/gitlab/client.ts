@@ -190,19 +190,28 @@ export async function getBootstrapArray(
 }
 
 /**
- * True when any path segment is `hooks` (project, group and system webhooks). A hook's URL includes
- * the platform's own relay channel URL, which is stored encrypted and must not reach tool output.
- * Segments are decoded first so `%68ooks` cannot slip past; an undecodable segment is refused. A
- * format suffix is matched too, because GitLab's Grape routes also serve `hooks.json`.
+ * True when the path addresses GitLab webhooks: `/api/v4/hooks` (system), or `hooks` directly after
+ * `projects/:id` or `groups/:id`. A hook's URL includes the platform's own relay channel URL, which is
+ * stored encrypted and must not reach tool output. Only those positions are checked, so a repository
+ * file or ref named `hooks` stays readable. Segments are decoded first so `%68ooks` cannot slip past,
+ * a format suffix is matched because Grape also serves `hooks.json`, and an undecodable segment is
+ * refused.
  */
 export function isDeniedGitLabPath(pathname: string): boolean {
-  return pathname.split('/').some((segment) => {
+  const segments: string[] = [];
+  for (const raw of pathname.replace(/^\/api\/v4\/?/, '').split('/')) {
     try {
-      return /^hooks(\.[a-z0-9]+)?$/.test(decodeURIComponent(segment).toLowerCase());
+      segments.push(decodeURIComponent(raw).toLowerCase());
     } catch {
       return true;
     }
-  });
+  }
+  const isHooks = (segment: string | undefined) =>
+    segment !== undefined && /^hooks(\.[a-z0-9]+)?$/.test(segment);
+  return (
+    isHooks(segments[0]) ||
+    ((segments[0] === 'projects' || segments[0] === 'groups') && isHooks(segments[2]))
+  );
 }
 
 /**
