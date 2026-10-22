@@ -190,28 +190,30 @@ export async function getBootstrapArray(
 }
 
 /**
- * True when the path addresses GitLab webhooks: `/api/v4/hooks` (system), or `hooks` directly after
- * `projects/:id` or `groups/:id`. A hook's URL includes the platform's own relay channel URL, which is
- * stored encrypted and must not reach tool output. Only those positions are checked, so a repository
- * file or ref named `hooks` stays readable. Segments are decoded first so `%68ooks` cannot slip past,
- * a format suffix is matched because Grape also serves `hooks.json`, and an undecodable segment is
- * refused.
+ * True when the path can address GitLab webhooks: system hooks at `/api/v4/hooks`, or any `hooks`
+ * segment under `projects/:id` or `groups/:id` outside the `repository/` subtree. A hook's URL
+ * includes the platform's own relay channel URL, which is stored encrypted and must not reach tool
+ * output. The `repository/` exception keeps files and refs named `hooks` readable. Empty segments are
+ * dropped because GitLab's nginx merges `//`, segments are decoded so `%68ooks` and `%2F` cannot slip
+ * past, a format suffix is matched because Grape also serves `hooks.json`, and an undecodable segment
+ * is refused.
  */
 export function isDeniedGitLabPath(pathname: string): boolean {
   const segments: string[] = [];
-  for (const raw of pathname.replace(/^\/api\/v4\/?/, '').split('/')) {
+  for (const raw of pathname.replace(/^\/api\/v4\//, '').split('/')) {
+    if (raw === '') continue;
     try {
       segments.push(decodeURIComponent(raw).toLowerCase());
     } catch {
       return true;
     }
   }
-  const isHooks = (segment: string | undefined) =>
-    segment !== undefined && /^hooks(\.[a-z0-9]+)?$/.test(segment);
-  return (
-    isHooks(segments[0]) ||
-    ((segments[0] === 'projects' || segments[0] === 'groups') && isHooks(segments[2]))
-  );
+  const isHooks = (segment: string) =>
+    segment.split('/').some((part) => /^hooks(\.[a-z0-9]+)?$/.test(part));
+  if (segments[0] !== undefined && isHooks(segments[0])) return true;
+  if (segments[0] !== 'projects' && segments[0] !== 'groups') return false;
+  const rest = segments.slice(2);
+  return rest[0] !== 'repository' && rest.some(isHooks);
 }
 
 /**
