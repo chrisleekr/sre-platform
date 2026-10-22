@@ -272,7 +272,13 @@ export async function recordLearning(
   const topic = input.topic.trim().replace(/\s+/g, ' ');
   const key = topic.toLowerCase();
   // One line each, so the basis line below is the only newline and cannot be forged by the text.
-  const line = (text: string) => text.trim().replace(/\s*\n\s*/g, ' ');
+  // Split instead of /\s*\n\s*/, which backtracks quadratically on long space runs in model text.
+  const line = (text: string) =>
+    text
+      .split('\n')
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .join(' ');
   const content = `${line(input.statement)}\nBasis: ${input.basis}${input.source ? `; source: ${line(input.source)}` : ''}`;
   // The topic leads the embedded text so it survives the embedder's input truncation.
   const [embedding] = await embedder.embed([`${topic}: ${content}`]);

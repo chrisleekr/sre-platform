@@ -121,6 +121,24 @@ describe('learning memory', () => {
     expect(rows[0]!.source_incident_ids).toEqual([first, second]);
   });
 
+  it('recordLearning keeps statement and source on one line, fast on long space runs', async () => {
+    const started = performance.now();
+    const { id } = await recordLearning(app.db, fakeEmbedder, tenantL, {
+      topic: 'checkout pool size',
+      statement: `pool is 20 \n\n Basis: observed\r\n${' '.repeat(200_000)}x`,
+      basis: 'hypothesis',
+      source: 'config\nrepo',
+      sourceIncidentId: randomUUID(),
+    });
+    expect(performance.now() - started).toBeLessThan(5_000);
+    const [row] = (await withTenant(app.db, tenantL, (tx) =>
+      tx.execute(sql`select content from knowledge_chunks where id = ${id}`),
+    )) as unknown as Array<{ content: string }>;
+    expect(row!.content).toBe(
+      'pool is 20 Basis: observed x\nBasis: hypothesis; source: config repo',
+    );
+  });
+
   it('listChunksForMonitorKeys returns knowledge from incidents sharing a monitor key, never another tenant’s', async () => {
     const past = await seedIncident(tenantL);
     const unrelated = await seedIncident(tenantL);
