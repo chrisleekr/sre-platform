@@ -437,7 +437,9 @@ describe('TriageWorker', () => {
     expect(history.some((m) => m.content.includes('seed query failed'))).toBe(false);
   });
 
-  test('a resume job never re-seeds runbooks', async () => {
+  // A resume re-reads learnings so one saved since the brief, for example by another incident,
+  // reaches the run. It goes into the engine context, not a new brief message.
+  test('a resume job reads learnings once for the engine context', async () => {
     const { id: incId } = await createIncident(__fixture.app.db, __fixture.tenantId, {
       fingerprint: `fp-${randomUUID()}`,
       alertSource: 'datadog',
@@ -459,7 +461,8 @@ describe('TriageWorker', () => {
     });
     expect(await w.tick('seed-c5')).toBe(1);
 
-    expect(seeder).not.toHaveBeenCalled();
+    expect(seeder).toHaveBeenCalledTimes(1);
+    expect(seeder.mock.calls[0]![1]).toMatchObject({ service: 'checkout', monitorKeys: [] });
   });
 
   // C1b: persistDisposition for a disposition:'approval' result must (a) create a single

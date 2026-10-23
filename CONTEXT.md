@@ -53,7 +53,7 @@ One durable model-backed unit of work, such as classify, investigate, resume, re
 _Avoid_: Chat message, provider log, invoice
 
 **Provider Telemetry**:
-Claude Agent SDK native OTLP log records linked to one LLM Invocation. Each run owns an authenticated receiver bound to loopback. Standard log attributes are recursively secret-redacted before tenant-scoped persistence; raw API request and response bodies stay disabled because arbitrary prompts and tool results cannot be made safe by best-effort scrubbing. A capture failure is a durable trace gap and marks the invocation telemetry incomplete. This is an operational trace, not an attested audit trail.
+Claude Agent SDK native OTLP log records linked to one LLM Invocation. Each run owns an authenticated receiver bound to loopback. Standard log attributes are persisted tenant-scoped without redaction; raw API request and response bodies stay disabled. A capture failure is a durable trace gap and marks the invocation telemetry incomplete. This is an operational trace, not an attested audit trail.
 _Avoid_: Cost ledger, tool-call audit, billing record
 
 **Conversation Hub**:
@@ -121,11 +121,11 @@ A Triage Engine run started after all known Incident Signals clear. It checks cu
 _Avoid_: Auto-resolve, alert clear, close
 
 **Triage Tool**:
-A function the Triage Engine calls during an investigation. Three kinds. Each Data Source exposes its own **granular** tools via `tools()`, namespaced by Connector type and immutable Data Source identity, and bound per tenant, so multiple sources of the same type remain distinct. Eleven **platform** tools are fixed and bound for every tenant because they read platform-owned stores or compose tenant-owned connector capabilities: `fetch_blast_radius`, `search_runbooks`, `fetch_recent_deploys`, `search_incident_evidence`, `investigate_code`, `resolve_entity_context`, `fetch_slo_status`, `read_topology_runtime`, `read_topology_sources`, `read_topology_endpoint_evidence`, and `read_topology_source_file`. The topology tools read attributed runtime, repository, and audited endpoint evidence; source-file reads require admitted repositories and pinned revisions. A third kind, the **terminal** tools (`report_findings`, `report_recovery`, `respond`, `stay_silent`, `suggest_action`), is bound by the loop itself and ends the run rather than returning context; `runLoop` intercepts the call instead of dispatching it. Engine-agnostic by design: the layer carries no provider SDK, so the same tenant tools and terminal sets bind through the Claude and OpenAI adapters.
+A function the Triage Engine calls during an investigation. Three kinds. Each Data Source exposes its own **granular** tools via `tools()`, namespaced by Connector type and immutable Data Source identity, and bound per tenant, so multiple sources of the same type remain distinct. Eleven **platform** tools are fixed and bound for every tenant because they read platform-owned stores or compose tenant-owned connector capabilities: `fetch_blast_radius`, `search_runbooks`, `fetch_recent_deploys`, `search_incident_evidence`, `investigate_code`, `resolve_entity_context`, `fetch_slo_status`, `read_topology_runtime`, `read_topology_sources`, `read_topology_endpoint_evidence`, and `read_topology_source_file`. The topology tools read attributed runtime, repository, and audited endpoint evidence; source-file reads require admitted repositories and pinned revisions. `record_learning`, which saves a **Learning**, is bound alongside them as a fresh instance per run so its per-run cap resets. A third kind, the **terminal** tools (`report_findings`, `report_recovery`, `respond`, `stay_silent`, `suggest_action`), is bound by the loop itself and ends the run rather than returning context; `runLoop` intercepts the call instead of dispatching it. Engine-agnostic by design: the layer carries no provider SDK, so the same tenant tools and terminal sets bind through the Claude and OpenAI adapters.
 _Avoid_: Function call, plugin, skill, action
 
 **Recommended Action**:
-An advisory L2 or L3 recommendation emitted by the resume-only `suggest_action` terminal after an RCA exists. It contains an explanation and the exact command or rollback reference; code supplies fixed Approve and Deny decisions. The worker secret-scrubs the human-visible content, then the existing Approval row and linked Conversation Hub messages preserve that exact post-scrub recommendation and its first decision across Slack and the dashboard. Approval records consent only: a human executes the recommendation, and the platform acquires no write credential and performs no tenant-infrastructure mutation. These approval records and append-only Hub messages are the business audit; Tool-Call Audit remains for dispatched read tools.
+An advisory L2 or L3 recommendation emitted by the resume-only `suggest_action` terminal after an RCA exists. It contains an explanation and the exact command or rollback reference; code supplies fixed Approve and Deny decisions. The existing Approval row and linked Conversation Hub messages preserve that exact recommendation, unredacted, and its first decision across Slack and the dashboard. Approval records consent only: a human executes the recommendation, and the platform acquires no write credential and performs no tenant-infrastructure mutation. These approval records and append-only Hub messages are the business audit; Tool-Call Audit remains for dispatched read tools.
 _Avoid_: Automated action, execution request, remediation job
 
 **Tool Availability**:
@@ -137,7 +137,7 @@ The port that records one entry per tool run — tool, tenant, incident, input, 
 _Avoid_: Logger, tracer, telemetry
 
 **Tool-Call Audit**:
-The durable record of triage tool runs — one `agent_tool_calls` row per run (tool, tenant, incident, redacted input, latency, outcome) written by the Postgres-backed Audit Sink under Row-Level Security. The input is redacted before storage so connector credentials never persist (CWE-532).
+The durable record of triage tool runs — one `agent_tool_calls` row per run (tool, tenant, incident, input, output, latency, outcome) written by the Postgres-backed Audit Sink under Row-Level Security. Input and output are stored unredacted, so any credential a connector returns persists here, reaches the LLM provider, and can reach Slack; connector credentials should be scoped read-only. An `error` run stores only its code-owned failure class, never provider error text.
 _Avoid_: Tool log, call history, trace, telemetry
 
 **Runbook**:
@@ -145,8 +145,12 @@ A tenant's operational documentation — incident-response procedures and remedi
 _Avoid_: Playbook, wiki page, doc
 
 **Knowledge Chunk**:
-One embedded passage of a tenant's runbook corpus — `source`, optional `title`, `content`, and a local-model embedding — stored in `knowledge_chunks` under Row-Level Security. `search_runbooks` ranks a tenant's chunks by cosine similarity to a query (pgvector RAG).
+One embedded passage of a tenant's runbook corpus — `source`, optional `title`, `content`, and a local-model embedding — stored in `knowledge_chunks` under Row-Level Security. `search_runbooks` ranks a tenant's chunks by cosine similarity to a query (pgvector RAG). `category` separates runbooks, investigation notes and **Learnings**.
 _Avoid_: Document, vector row, embedding record
+
+**Learning**:
+One durable fact or lesson from an incident or its conversation, such as which device backs a mount, a confirmed cause, or a ruled-out cause. Stored as a `fact` Knowledge Chunk, one per topic; a newer statement for the same topic replaces the older one. The Triage Engine saves one with the run-scoped `record_learning` tool only when it judges a future incident would otherwise re-investigate it, and the automatic pass after an incident resolves may save more. A new incident's brief lists learnings from past incidents that fired the same monitor before similar ones, as data rather than instructions. An observed learning cites evidence recorded for its incident; a responder learning cites one to five messages in its incident, each from a linked, active workspace member; a hypothesis never replaces either. The cited ids become its source. The same check gates `record_learning` and the automatic pass, which drops a fact that fails it. `record_learning` is a side effect, not evidence: it does not oblige a reply and cannot close an evidence gap. Members review learnings at `GET /knowledge/facts` and remove one at `DELETE /knowledge/facts/:id`. Never names a person.
+_Avoid_: Memory entry, note, insight
 
 **Postmortem** _(planned)_:
 The blameless record of a resolved Incident: summary, impact, contributing causes, trigger, resolution, detection, lessons learned, timeline, and Action Items. Distinct from a **Runbook** — a runbook says how to fix the problem next time, a postmortem says what will be changed so it does not recur. Generated from the incident's hub transcript and evidence store, then human-edited. Never names an individual as a cause (Google SRE Ch 15). Written when a tenant's configured trigger fires, not on every incident.

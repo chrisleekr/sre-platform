@@ -19,6 +19,7 @@ import {
 } from './responder-progress';
 import type { WorkerDisposition } from './disposition';
 import { reloadIncidentEvidence, type WorkerEvidence } from './evidence';
+import { renderRunbookSeeds } from './presentation';
 import type { EngineToolRuntime, WorkerRuntime } from './runtime';
 import { TRANSCRIPT_MAX_ROWS, splitResumeInput } from './transcript';
 
@@ -164,6 +165,19 @@ export class ResumeHandler {
           ctx.signal,
         );
         const signals = await listIncidentSignals(deps.appDb, job.tenantId, incidentId);
+        // Learnings saved since the opening brief, for example by another incident, reach this run.
+        const learnings = deps.runbookSeeder
+          ? await deps
+              .runbookSeeder(job.tenantId, {
+                title: current.title ?? undefined,
+                service: current.service,
+                severity: current.severity,
+                monitorKeys: signals.flatMap((signal) =>
+                  signal.monitorKey ? [signal.monitorKey] : [],
+                ),
+              })
+              .then(renderRunbookSeeds, () => '')
+          : '';
         const responseSignals = await listResponseGroupSignals(
           deps.appDb,
           job.tenantId,
@@ -211,8 +225,9 @@ export class ResumeHandler {
                     ...input,
                     evidence,
                     context:
-                      [screenshots, runtime.platformIdentity].filter(Boolean).join('\n\n') ||
-                      undefined,
+                      [learnings, screenshots, runtime.platformIdentity]
+                        .filter(Boolean)
+                        .join('\n\n') || undefined,
                     ...(canVerifyRecovery
                       ? {
                           recoveryContext: {

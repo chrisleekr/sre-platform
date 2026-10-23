@@ -5,7 +5,7 @@ export * from './signal-control';
 export * from './investigation';
 export * from './correlation';
 export * from './entities';
-export * from './redact';
+export * from './credential-detect';
 export * from './incident-title';
 export * from './slo';
 export * from './postmortem';

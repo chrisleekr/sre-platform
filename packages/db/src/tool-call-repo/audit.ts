@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNotNull } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, notInArray } from 'drizzle-orm';
 import type { Db } from '../client';
 import type { Tx } from '../rls';
 import { withTenant } from '../rls';
@@ -70,11 +70,13 @@ export async function filterIncidentEvidenceIdsTx(
  * @param tx - Existing transaction that already carries tenant scope.
  * @param incidentId - Incident targeted by the operation.
  * @param proposed - Candidate factual evidence identifiers to validate.
+ * @param excludeTools - Tools whose rows never count, such as ones that only echo stored knowledge.
  */
 export async function filterIncidentDataEvidenceIdsTx(
   tx: Tx,
   incidentId: string,
   proposed: string[],
+  excludeTools: readonly string[] = [],
 ): Promise<string[]> {
   const unique = normalizedEvidenceIds(proposed);
   if (unique.length === 0) return [];
@@ -87,6 +89,7 @@ export async function filterIncidentDataEvidenceIdsTx(
         inArray(agentToolCalls.id, unique),
         eq(agentToolCalls.outcome, 'data'),
         isNotNull(agentToolCalls.output),
+        excludeTools.length > 0 ? notInArray(agentToolCalls.tool, [...excludeTools]) : undefined,
       ),
     );
   const allowed = new Set(rows.map((row) => row.id));
@@ -117,15 +120,17 @@ export async function filterIncidentEvidenceIds(
  * @param tenantId - Tenant whose records are read or changed.
  * @param incidentId - Incident targeted by the operation.
  * @param proposed - Candidate factual evidence identifiers to validate.
+ * @param excludeTools - Tools whose rows never count as evidence.
  */
 export async function filterIncidentDataEvidenceIds(
   db: Db,
   tenantId: string,
   incidentId: string,
   proposed: string[],
+  excludeTools: readonly string[] = [],
 ): Promise<string[]> {
   return withTenant(db, tenantId, (tx) =>
-    filterIncidentDataEvidenceIdsTx(tx, incidentId, proposed),
+    filterIncidentDataEvidenceIdsTx(tx, incidentId, proposed, excludeTools),
   );
 }
 

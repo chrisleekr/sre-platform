@@ -1,24 +1,30 @@
 import * as z from 'zod';
 import {
-  getIncident,
-  findChunkLinkingIncident,
   getCapturedKnowledge,
+  getIncident,
+  jobs,
+  listIncidentEvidencePage,
   KnowledgeCaptureChangedError,
+  recordLearning,
   searchChunks,
   upsertRunbook,
-  insertInvestigationNote,
   type Db,
   type Embedder,
   type KnowledgeSearchResult,
+  type LearningInput,
   type SearchChunksParams,
   type UpsertRunbookInput,
-  type InvestigationNoteInput,
 } from '@sre/db';
+import { validateLearningProvenance, type LearningProvenance } from '@sre/agent-tools';
 import { RetryableError, type Job, type JobContext } from '@sre/queue';
+import { and, eq, sql } from 'drizzle-orm';
 import type { NewMessage } from '@sre/hub';
+import { collectHumanIdentifiers, stripHumanIdentifiers, tenantMemberEmails } from './blameless';
+import { EnvironmentFactsSchema, recordDistilFacts, type DistilFact } from './runbook-learning';
+import { noteContent } from './runbook-note';
+import { requestFence, type RunbookRequestPayload } from './runbook-request';
 import { ProviderUnavailableError, type StructuredGenerator } from './engine/types';
 import type { LlmRuntimeManager } from './llm-runtime';
-import { publicModelText } from './public-output';
 
 // Redelivery ceiling for a provider outage: well below the queue's retryableMaxAttempts (50) so a
 // sustained outage posts "generation failed" and ACKS before the queue dead-letters — and this path
@@ -30,14 +36,16 @@ const FAIL_MAX = 5;
 const SHORTLIST_K = 5;
 
 // --- Domain schemas (kept in the consumer, not the generic provider) -------------------------
+
 // Call 1: distil the incident into one of three mutually exclusive outcomes.
-const DistilSchema = z.discriminatedUnion('outcome', [
+export const DistilSchema = z.discriminatedUnion('outcome', [
   z.object({
     outcome: z.literal('resolution_found'),
     title: z.string(),
     symptoms: z.string(),
     diagnosis: z.string(),
     remediation: z.string(),
+    environmentFacts: EnvironmentFactsSchema,
   }),
   z.object({
     outcome: z.literal('investigation_worthwhile'),
@@ -46,18 +54,23 @@ const DistilSchema = z.discriminatedUnion('outcome', [
     ruledOut: z.string(),
     openQuestions: z.string(),
     diagnosticGuide: z.string().optional(),
+    environmentFacts: EnvironmentFactsSchema,
   }),
-  z.object({ outcome: z.literal('nothing'), reason: z.string() }),
+  z.object({
+    outcome: z.literal('nothing'),
+    reason: z.string(),
+    environmentFacts: EnvironmentFactsSchema,
+  }),
 ]);
-type Distil = z.infer<typeof DistilSchema>;
 
-// Call 2 (resolution only): the model decides whether to refine an existing runbook (by id) or write
-// a new one, and returns the final runbook text.
+// Call 2: the model decides whether to refine an existing document (by id) or write a new one, and
+// returns the final text.
 const RunbookDraftSchema = z.object({ title: z.string(), content: z.string() });
 const DecideSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('new'), runbook: RunbookDraftSchema }),
   z.object({ action: z.literal('refine'), targetId: z.string(), runbook: RunbookDraftSchema }),
 ]);
+type Decide = z.infer<typeof DecideSchema>;
 
 interface IncidentForDistil {
   service: string;
@@ -66,19 +79,29 @@ interface IncidentForDistil {
   rcaSummary: string | null;
   rankedHypotheses: unknown;
   archivedAt: Date | null;
+  currentState?: string | null;
+  unknowns?: unknown;
+  nextStep?: string | null;
+  recoverySummary?: string | null;
 }
 
-type Transcript = { author: string; kind: string; content: string }[];
+type Transcript = {
+  id: string;
+  author: string;
+  kind: string;
+  content: string;
+  authorUserId?: string | null;
+}[];
 
 // Injectable collaborators (behavior tests pass spies; production defaults to the @sre/db functions).
 type GetIncidentFn = (tenantId: string, id: string) => Promise<IncidentForDistil | null>;
-type FindLinkFn = (tenantId: string, incidentId: string) => Promise<boolean>;
 type SearchChunksFn = (
   tenantId: string,
   params: SearchChunksParams,
 ) => Promise<KnowledgeSearchResult[]>;
 type UpsertRunbookFn = (tenantId: string, input: UpsertRunbookInput) => Promise<{ id: string }>;
-type InsertNoteFn = (tenantId: string, input: InvestigationNoteInput) => Promise<{ id: string }>;
+type RecordLearningFn = (tenantId: string, input: LearningInput) => Promise<unknown>;
+type EvidenceRef = { id: string; tool: string; summary?: string | null };
 
 interface HubLike {
   append(tenantId: string, incidentId: string, msg: NewMessage): Promise<unknown>;
@@ -93,14 +116,26 @@ export interface RunbookHandlerDeps {
   embedder: Embedder;
   // Injectable, default to @sre/db bound to appDb/embedder. Tests inject spies to stay hermetic.
   getIncident?: GetIncidentFn;
-  findChunkLinkingIncident?: FindLinkFn;
   searchChunks?: SearchChunksFn;
   upsertRunbook?: UpsertRunbookFn;
-  insertInvestigationNote?: InsertNoteFn;
+  recordLearning?: RecordLearningFn;
+  /** Recent evidence the distil may cite for an observed fact. */
+  listEvidence?: (tenantId: string, incidentId: string) => Promise<EvidenceRef[]>;
+  validateProvenance?: (
+    tenantId: string,
+    incidentId: string,
+    fact: DistilFact,
+  ) => Promise<LearningProvenance>;
+  listMemberEmails?: (tenantId: string) => Promise<string[]>;
   getCapturedKnowledge?: (
     tenantId: string,
     incidentId: string,
+    since?: Date,
   ) => ReturnType<typeof getCapturedKnowledge>;
+  /** Reads the job row's current payload; a responder request can adopt a running automatic pass. */
+  readJobPayload?: (job: Job) => Promise<unknown>;
+  /** Marks a still-automatic job silenced and reports whether it was; adoption skips such a row. */
+  silenceJob?: (job: Job) => Promise<boolean>;
 }
 
 // Internal marker: a generator failure the handler has decided is TERMINAL (sustained outage at the
@@ -110,11 +145,27 @@ class TerminalGenerationError extends Error {}
 
 function renderTranscript(transcript: Transcript): string {
   if (transcript.length === 0) return '';
-  const lines = transcript.map((m) => `[${m.author}/${m.kind}] ${m.content}`);
+  const lines = transcript.map((m) => {
+    const author = m.author === 'human' && !m.authorUserId ? 'unlinked human' : m.author;
+    return `[${author}/${m.kind}] ${m.content}`;
+  });
   return `Investigation transcript:\n${lines.join('\n')}`;
 }
 
-function buildDistilPrompt(incident: IncidentForDistil, transcript: Transcript): string {
+function buildDistilPrompt(
+  incident: IncidentForDistil,
+  transcript: Transcript,
+  evidence: EvidenceRef[],
+  automatic: boolean,
+): string {
+  // Only a line attributed to a resolved workspace member counts as a responder. Anyone else who can
+  // post in the thread could otherwise plant a "responder" fact in shared memory.
+  const responders = transcript
+    .filter((m) => m.author === 'human' && !!m.authorUserId)
+    .map((m) => `- [message ${m.id}] ${m.content}`);
+  const evidenceLines = evidence.map(
+    (e) => `- [evidence ${e.id}] ${e.tool}${e.summary ? `: ${e.summary}` : ''}`,
+  );
   return [
     'Distil this incident into reusable operational knowledge. Choose exactly ONE outcome:',
     '- resolution_found: a confirmed remediation was applied — produce a runbook (symptoms, diagnosis, remediation).',
@@ -122,11 +173,23 @@ function buildDistilPrompt(incident: IncidentForDistil, transcript: Transcript):
     'For an explicit runbook request without a verified fix, include diagnosticGuide: reusable, numbered diagnostic checks, decision branches, escalation and recovery validation. Label hypotheses and unknowns. Do not invent remediation, resource identities, metric availability or facts absent from the recorded conversation.',
     'An unverified diagnostic guide is read-only: include evidence collection and escalation, not speculative restart, scaling, throttling or rollback recipes. Use configured alert/SLO criteria rather than inventing numeric recovery thresholds.',
     'Statements in the conversation may be drafts or rejected findings, not verified facts. Preserve observation times. Missing search results are not proof that evidence does not exist. Never recommend a mutation as an already verified remedy.',
-    '- nothing: no reusable knowledge.',
+    '- nothing: no reusable runbook or note. environmentFacts may still accompany it.',
+    'environmentFacts: durable facts a future incident would otherwise have to ask or look up again, such as which device, mount, node, volume, limit or owner backs a component. Give each a short topic naming its subject, the complete statement, and its basis: "observed" (seen in tool evidence; cite the ids from the Evidence section in evidenceIds) or "responder" (stated in the Responder messages section; cite those message ids in messageIds; nothing else in the transcript qualifies). A fact without a matching citation is discarded. Leave out transient readings, this incident’s status, guesses and people.',
+    ...(automatic
+      ? [
+          'This pass ran automatically because the incident resolved; nobody asked for it. Choose nothing unless a future incident would otherwise re-investigate something recorded here. Most incidents produce nothing. Durable environment facts are worth keeping on their own: give them in environmentFacts even when the outcome is nothing.',
+        ]
+      : []),
     '',
     `Service: ${incident.service} (severity ${incident.severity}, status ${incident.status}).`,
     `Root-cause summary: ${incident.rcaSummary ?? '(none recorded)'}.`,
     `Ranked hypotheses: ${JSON.stringify(incident.rankedHypotheses ?? [])}.`,
+    `Current state: ${incident.currentState ?? '(none recorded)'}.`,
+    `Open unknowns: ${JSON.stringify(incident.unknowns ?? [])}.`,
+    `Next step: ${incident.nextStep ?? '(none recorded)'}.`,
+    `Recovery: ${incident.recoverySummary ?? '(none recorded)'}.`,
+    responders.length > 0 ? `Responder messages:\n${responders.join('\n')}` : '',
+    evidenceLines.length > 0 ? `Evidence:\n${evidenceLines.join('\n')}` : '',
     renderTranscript(transcript),
   ]
     .filter(Boolean)
@@ -134,7 +197,8 @@ function buildDistilPrompt(incident: IncidentForDistil, transcript: Transcript):
 }
 
 function buildDecidePrompt(
-  draft: Extract<Distil, { outcome: 'resolution_found' }>,
+  kind: 'runbook' | 'investigation note',
+  draft: Record<string, unknown>,
   candidates: KnowledgeSearchResult[],
 ): string {
   const candidateList = candidates.map((c) => ({
@@ -144,33 +208,23 @@ function buildDecidePrompt(
     similarity: Number(c.score.toFixed(3)),
   }));
   return [
-    'A new runbook has been distilled from an incident. Decide whether to REFINE an existing runbook',
+    `A new ${kind} has been distilled from an incident. Decide whether to REFINE an existing ${kind}`,
     '(when one covers the same root cause — return its targetId) or write a NEW one. Base the decision',
-    'on root-cause equivalence, not surface similarity. Return the final runbook text either way.',
+    'on root-cause equivalence, not surface similarity. When refining, keep what the existing one says',
+    'unless the new draft contradicts it; the new draft is the newer observation. Return the final text either way.',
     '',
-    `New runbook draft: ${JSON.stringify({ title: draft.title, symptoms: draft.symptoms, diagnosis: draft.diagnosis, remediation: draft.remediation })}`,
-    `Existing candidate runbooks: ${JSON.stringify(candidateList)}`,
+    `New ${kind} draft: ${JSON.stringify(draft)}`,
+    `Existing candidates: ${JSON.stringify(candidateList)}`,
   ].join('\n\n');
 }
 
-function noteContent(distil: Extract<Distil, { outcome: 'investigation_worthwhile' }>): string {
-  return [
-    `Checked: ${distil.checked}`,
-    `Ruled out: ${distil.ruledOut}`,
-    `Open questions: ${distil.openQuestions}`,
-    ...(distil.diagnosticGuide
-      ? [`\nDiagnostic guide (unverified remediation):\n${distil.diagnosticGuide}`]
-      : []),
-  ].join('\n');
-}
-
 /**
- * Runbook-generation consumer for the `sre:runbook` stream, invoked by a human command
- * (POST /incidents/:id/generate-runbook). It distils ONLY the triggered incident via the deployment's
- * single StructuredGenerator, then produces a runbook, an investigation note, or nothing —
- * always posting a system message to the incident's hub. Idempotent: an incident already
- * captured no-ops before any LLM call. A provider outage redelivers a bounded number of times,
- * then posts "generation failed" and acks — it NEVER fails the incident.
+ * Knowledge-capture consumer for the `sre:runbook` stream. A responder's request, or the resolve
+ * sweep (`automatic`), triggers it. It distils ONLY the triggered incident via the deployment's single
+ * StructuredGenerator into a runbook, an investigation note, or nothing, saves any durable
+ * environment facts as per-topic records, and refines an existing document when the model judges it
+ * covers the same cause. An automatic pass that finds nothing saves and posts nothing. A provider
+ * outage redelivers a bounded number of times, then gives up; it NEVER fails the incident.
  */
 export function makeRunbookHandler(
   deps: RunbookHandlerDeps,
@@ -178,32 +232,71 @@ export function makeRunbookHandler(
   const { appDb, embedder, generator, hub } = deps;
   const getInc: GetIncidentFn =
     deps.getIncident ?? ((tenantId, id) => getIncident(appDb, tenantId, id));
-  const findLink: FindLinkFn =
-    deps.findChunkLinkingIncident ??
-    ((tenantId, incidentId) => findChunkLinkingIncident(appDb, tenantId, incidentId));
   const search: SearchChunksFn =
     deps.searchChunks ?? ((tenantId, params) => searchChunks(appDb, embedder, tenantId, params));
   const upsert: UpsertRunbookFn =
     deps.upsertRunbook ?? ((tenantId, input) => upsertRunbook(appDb, embedder, tenantId, input));
-  const insertNote: InsertNoteFn =
-    deps.insertInvestigationNote ??
-    ((tenantId, input) => insertInvestigationNote(appDb, embedder, tenantId, input));
+  const learn: RecordLearningFn =
+    deps.recordLearning ?? ((tenantId, input) => recordLearning(appDb, embedder, tenantId, input));
+  const listEvidence =
+    deps.listEvidence ??
+    (async (tenantId: string, incidentId: string) =>
+      (await listIncidentEvidencePage(appDb, tenantId, incidentId, { limit: 100 })).evidence);
+  const validate =
+    deps.validateProvenance ??
+    ((tenantId: string, incidentId: string, fact: DistilFact) =>
+      validateLearningProvenance(appDb, tenantId, incidentId, fact));
+  const listEmails =
+    deps.listMemberEmails ?? ((tenantId: string) => tenantMemberEmails(appDb, tenantId));
   const readCaptured =
     deps.getCapturedKnowledge ??
-    ((tenantId: string, incidentId: string) => getCapturedKnowledge(appDb, tenantId, incidentId));
+    ((tenantId: string, incidentId: string, since?: Date) =>
+      getCapturedKnowledge(appDb, tenantId, incidentId, since));
+
+  const readPayload =
+    deps.readJobPayload ??
+    (async (job: Job) => {
+      const [row] = await appDb
+        .select({ payload: jobs.payload })
+        .from(jobs)
+        .where(and(eq(jobs.tenantId, job.tenantId), eq(jobs.id, job.id)))
+        .limit(1);
+      return row?.payload;
+    });
+  // Silence is for a pass nobody asked for. Choosing it is a conditional write, not a read, so a
+  // request adopted in the gap before the job is marked done is answered by its own retry instead.
+  const silence =
+    deps.silenceJob ??
+    (async (job: Job) =>
+      (
+        await appDb
+          .update(jobs)
+          .set({ payload: sql`${jobs.payload} || '{"silenced":true}'::jsonb` })
+          .where(
+            and(
+              eq(jobs.tenantId, job.tenantId),
+              eq(jobs.id, job.id),
+              sql`${jobs.payload}->>'automatic' = 'true'`,
+            ),
+          )
+          .returning({ id: jobs.id })
+      ).length > 0);
 
   const post = (tenantId: string, incidentId: string, content: string): Promise<unknown> =>
     hub.append(tenantId, incidentId, { author: 'system', kind: 'text', content });
   const publishDocument = (
     tenantId: string,
     incidentId: string,
+    jobId: string,
     saved: { id: string; title: string | null; content: string; category: string },
     action = 'saved',
   ) =>
     hub.append(tenantId, incidentId, {
       author: 'system',
       kind: 'reply',
-      originMessageId: `knowledge-document:${incidentId}:${saved.id}`,
+      // Keyed per job: a later job refining the same document posts its own revision, while a
+      // redelivery of this job stays one message.
+      originMessageId: `knowledge-document:${incidentId}:${saved.id}:${jobId}`,
       summary:
         saved.category === 'runbook'
           ? `Runbook ${action}: ${saved.title ?? 'Incident guide'}. Saved in this workspace; no repository changed.`
@@ -216,49 +309,61 @@ export function makeRunbookHandler(
     ctx: JobContext = { signal: new AbortController().signal },
   ): Promise<void> => {
     if (job.type !== 'runbook.generate') return;
-    const { incidentId, requestedMessageId, requestedBy } = job.payload as {
+    const { incidentId, requestedMessageId, requestedBy, automatic } = job.payload as {
       incidentId: string;
       requestedMessageId?: string;
       requestedBy?: string;
+      automatic?: boolean;
     };
-    const captureFence =
-      requestedMessageId && requestedBy
-        ? { messageId: requestedMessageId, userId: requestedBy }
-        : undefined;
+    const auto = automatic === true;
+    let captureFence = requestFence({ requestedMessageId, requestedBy });
     const tenantId = job.tenantId;
     const { signal } = ctx;
 
     const incident = await getInc(tenantId, incidentId);
     if (!incident || incident.archivedAt) return;
 
-    // Idempotency: an incident already linked to a chunk (double-click / redelivery) no-ops BEFORE any
-    // LLM call, so a re-run never re-spends the provider or writes a duplicate.
-    if (await findLink(tenantId, incidentId)) {
-      const saved = await readCaptured(tenantId, incidentId);
-      if (saved) await publishDocument(tenantId, incidentId, saved);
-      else await post(tenantId, incidentId, 'This incident’s runbook was already captured.');
+    // Idempotent redelivery: a document this job already saved is republished before any LLM call.
+    // Only saves since the job was created count, so a later job (a resolve after a reopen, or a
+    // request after the automatic pass) refines through the decide step instead.
+    const captured = await readCaptured(tenantId, incidentId, job.createdAt);
+    if (captured) {
+      await publishDocument(tenantId, incidentId, job.id, captured);
       return;
     }
 
     const transcript = hub.history ? await hub.history(tenantId, incidentId) : [];
+    const evidence = await listEvidence(tenantId, incidentId);
+    // A responder request adopted after the pass started is not steered toward producing nothing,
+    // and its document saves under that requester's capture fence.
+    const reread = auto
+      ? ((await readPayload(job)) as RunbookRequestPayload | undefined)
+      : undefined;
+    const automaticNow = auto && reread?.automatic === true;
+    if (auto && !automaticNow) captureFence = requestFence(reread);
+    const prompt = buildDistilPrompt(incident, transcript, evidence, automaticNow);
+    const emails = await listEmails(tenantId);
+    const identifiers = collectHumanIdentifiers(emails, prompt);
+    // Shared knowledge never names a person.
+    const clean = (text: string): string => stripHumanIdentifiers(text, identifiers);
 
     // A generator call that maps a transient outage to redelivery and any other failure to a terminal
     // give-up (never a raw provider error escaping — CWE-209). DB errors are NOT caught here, so they
     // propagate and the queue retries.
     const gen = async <T>(
       operation: 'runbook-distill' | 'runbook-decide',
-      prompt: string,
+      text: string,
       schema: z.ZodType<T>,
     ): Promise<T> => {
       try {
         if (deps.llm) {
           return await deps.llm.execute(
             { tenantId, incidentId, jobId: job.id, operation, signal },
-            ({ generator: current }) => current.generate(prompt, schema, { signal }),
+            ({ generator: current }) => current.generate(text, schema, { signal }),
           );
         }
         if (!generator) throw new Error('runbook generator is not configured');
-        return await generator.generate(prompt, schema, { signal });
+        return await generator.generate(text, schema, { signal });
       } catch (err) {
         if (signal.aborted) throw signal.reason;
         if (err instanceof ProviderUnavailableError && job.attempts < FAIL_MAX) {
@@ -268,77 +373,89 @@ export function makeRunbookHandler(
       }
     };
 
+    // Refine-or-new: shortlist the same category, then let the model decide. Only a targetId that
+    // is one of the shortlisted candidates is honored; a hallucinated id would otherwise be reported
+    // as "refined" while upsertRunbook's not-found path inserted a new row.
+    const save = async (
+      category: 'runbook' | 'investigation',
+      query: string,
+      draft: Record<string, unknown>,
+      fallback?: { title: string; content: string },
+    ) => {
+      const candidates = await search(tenantId, { category, query, k: SHORTLIST_K });
+      const decision: Decide =
+        fallback && candidates.length === 0
+          ? { action: 'new', runbook: fallback }
+          : await gen(
+              'runbook-decide',
+              buildDecidePrompt(
+                category === 'runbook' ? 'runbook' : 'investigation note',
+                draft,
+                candidates,
+              ),
+              DecideSchema,
+            );
+      const targetId =
+        decision.action === 'refine' && candidates.some((c) => c.id === decision.targetId)
+          ? decision.targetId
+          : undefined;
+      const title = clean(decision.runbook.title);
+      const content = clean(decision.runbook.content);
+      const saved = await upsert(tenantId, {
+        id: targetId,
+        title,
+        content,
+        sourceIncidentId: incidentId,
+        category,
+        ...(captureFence ? { captureFence } : {}),
+      });
+      await publishDocument(
+        tenantId,
+        incidentId,
+        job.id,
+        { ...saved, title, content, category },
+        targetId ? 'refined' : 'created',
+      );
+    };
+
     try {
       // Distils ONLY this incident, with no status/rcaSummary precondition — an empty incident
       // simply yields the 'nothing' outcome from the model.
-      const distil = await gen(
-        'runbook-distill',
-        buildDistilPrompt(incident, transcript),
-        DistilSchema,
-      );
+      const distil = await gen('runbook-distill', prompt, DistilSchema);
 
-      if (distil.outcome === 'resolution_found') {
-        // Shortlist existing runbooks by root-cause similarity; the model (Call 2) decides refine vs
-        // new — never a cosine threshold.
-        const candidates = await search(tenantId, {
-          category: 'runbook',
-          query: distil.symptoms,
-          k: SHORTLIST_K,
-        });
-        const decision = await gen(
-          'runbook-decide',
-          buildDecidePrompt(distil, candidates),
-          DecideSchema,
-        );
-        // Only honor a refine whose targetId is actually one of the shortlisted candidates. A
-        // hallucinated id would (correctly) insert a NEW runbook via upsertRunbook's not-found path,
-        // so guard the id and the hub label together to avoid reporting "refined" when we created.
-        const targetId =
-          decision.action === 'refine' && candidates.some((c) => c.id === decision.targetId)
-            ? decision.targetId
-            : undefined;
-        const title = publicModelText(decision.runbook.title);
-        const content = publicModelText(decision.runbook.content);
-        const saved = await upsert(tenantId, {
-          id: targetId,
-          title,
-          content,
-          sourceIncidentId: incidentId,
-          ...(captureFence ? { captureFence } : {}),
-        });
-        await publishDocument(
-          tenantId,
-          incidentId,
-          { ...saved, title, content, category: 'runbook' },
-          targetId ? 'refined' : 'created',
-        );
-        return;
-      }
-
-      if (distil.outcome === 'investigation_worthwhile') {
-        const title = publicModelText(distil.title);
-        const content = publicModelText(noteContent(distil));
-        const saved = await insertNote(tenantId, {
-          title,
-          content,
-          sourceIncidentId: incidentId,
-          ...(captureFence ? { captureFence } : {}),
-        });
-        await publishDocument(tenantId, incidentId, {
-          ...saved,
-          title,
-          content,
-          category: 'investigation',
-        });
-        return;
-      }
-
-      // nothing: no write, but still report the outcome to the hub.
-      await post(
+      // Facts are kept on their own, so a pass that finds nothing else to save still records them.
+      await recordDistilFacts({
         tenantId,
         incidentId,
-        `No reusable runbook or note produced: ${publicModelText(distil.reason)}`,
-      );
+        facts: distil.environmentFacts ?? [],
+        emails,
+        material: prompt,
+        clean,
+        validate,
+        learn,
+      });
+      if (distil.outcome === 'nothing') {
+        if (!(await silence(job)))
+          await post(
+            tenantId,
+            incidentId,
+            `No reusable runbook or note produced: ${clean(distil.reason)}`,
+          );
+        return;
+      }
+
+      if (distil.outcome === 'resolution_found') {
+        await save('runbook', distil.symptoms, {
+          title: distil.title,
+          symptoms: distil.symptoms,
+          diagnosis: distil.diagnosis,
+          remediation: distil.remediation,
+        });
+        return;
+      }
+
+      const note = { title: distil.title, content: noteContent(distil) };
+      await save('investigation', `${distil.title}\n${distil.checked}`, note, note);
     } catch (err) {
       if (signal.aborted) throw signal.reason;
       if (err instanceof KnowledgeCaptureChangedError) {
@@ -350,12 +467,13 @@ export function makeRunbookHandler(
         return;
       }
       if (err instanceof TerminalGenerationError) {
-        // Terminal generator failure: post + ack, NEVER fail the incident.
-        await post(
-          tenantId,
-          incidentId,
-          'Runbook generation failed after repeated attempts; please try again later.',
-        );
+        // Terminal generator failure: ack, NEVER fail the incident. Only a requester is told.
+        if (!(await silence(job)))
+          await post(
+            tenantId,
+            incidentId,
+            'Runbook generation failed after repeated attempts; please try again later.',
+          );
         return;
       }
       throw err; // RetryableError (redeliver) or a DB error (queue retries) propagate.

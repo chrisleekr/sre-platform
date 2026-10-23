@@ -16,6 +16,7 @@ export {
   DEFAULT_MAX_PROCESSING_MS,
   DEFAULT_STUCK_GRACE_MS,
   DeadlineExceededError,
+  AutomaticPassFinishingError,
   IncidentMovedError,
   IncidentUnavailableError,
   LockContentionError,
@@ -32,6 +33,7 @@ export {
   type QueueOptions,
   type StuckJobInfo,
 } from './queue/contracts';
+export { adoptCoalescedRunbookRequest } from './queue/coalescing';
 export {
   mergeReassessmentSignalChanges,
   reassessmentSignalChanges,

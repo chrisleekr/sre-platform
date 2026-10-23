@@ -1,179 +1,23 @@
 import { describe, expect, test, vi } from 'vitest';
-import { makeRunbookHandler } from '../runbook-consumer';
-import { ProviderUnavailableError, type StructuredGenerator } from '../engine/types';
-import { RetryableError, type Job } from '@sre/queue';
+import { ProviderUnavailableError } from '../engine/types';
+import { RetryableError } from '@sre/queue';
 import type { LlmRuntimeManager } from '../llm-runtime';
-import type {
-  Db,
-  Embedder,
-  InvestigationNoteInput,
-  KnowledgeSearchResult,
-  SearchChunksParams,
-  UpsertRunbookInput,
-} from '@sre/db';
-import type { NewMessage } from '@sre/hub';
 import { INTERNAL_REFERENCE } from './internal-reference.fixture';
+import {
+  FAIL_MAX,
+  investigationDistil,
+  makeCandidate,
+  makeIncident,
+  makeJob,
+  nothingDistil,
+  resolutionDistil,
+  setup,
+} from './runbook-consumer.fixture';
 
-// the runbook-generation consumer on the `sre:runbook` stream, invoked by a human
-// command (POST /incidents/:id/generate-runbook). It distils ONLY the triggered incident via the
-// deployment's single StructuredGenerator, then either produces a runbook (Call 2 decides refine vs
-// new), an investigation note, or nothing — always posting a system message to the incident's hub.
-//
-// Hermetic stub-unit (mirrors classify-consumer.test.ts): the generator, hub, and every repo
-// collaborator are injected spies, so these behavior tests need no live Postgres/Valkey. The db
-// functions themselves are covered by knowledge-repo.test.ts. RED now: makeRunbookHandler does not
-// exist, so the module fails to load.
-
-// The redelivery ceiling for provider outages: well below the queue's retryableMaxAttempts (50) so a
-// sustained outage posts "generation failed" and acks BEFORE the queue dead-letters — and NEVER fails
-// the incident (C11). Production must pin the same value.
-const FAIL_MAX = 5;
-
-const stubDb = {} as unknown as Db;
-const stubEmbedder = {} as unknown as Embedder;
-
-type Incident = {
-  id: string;
-  tenantId: string;
-  service: string;
-  severity: string;
-  status: string;
-  alertSource: string;
-  rcaSummary: string | null;
-  rankedHypotheses: unknown;
-  archivedAt: Date | null;
-};
-
-function makeIncident(over: Partial<Incident> = {}): Incident {
-  return {
-    id: 'inc-1',
-    tenantId: 'tenant-1',
-    service: 'checkout',
-    severity: 'sev2',
-    status: 'mitigated',
-    alertSource: 'datadog',
-    rcaSummary: 'the database connection pool was exhausted',
-    rankedHypotheses: [{ hypothesis: 'pool', confidence: 80, evidence: 'metrics' }],
-    archivedAt: null,
-    ...over,
-  };
-}
-
-function makeJob(over: Partial<Job> = {}): Job {
-  return {
-    id: 'job-1',
-    tenantId: 'tenant-1',
-    type: 'runbook.generate',
-    attempts: 1,
-    payload: { incidentId: 'inc-1', requestedBy: 'u1' },
-    ...over,
-  };
-}
-
-// A shortlisted runbook candidate as searchChunks really returns it. Only `id` and `score` drive the
-// assertions below; the rest are filled so the fixture matches the real KnowledgeSearchResult row.
-function makeCandidate(over: Partial<KnowledgeSearchResult> = {}): KnowledgeSearchResult {
-  return {
-    id: 'rb-1',
-    source: 'runbook/a.md',
-    title: 'a runbook',
-    content: 'a',
-    createdAt: new Date('2026-01-01T00:00:00Z'),
-    occurrenceCount: 1,
-    verified: false,
-    score: 0.5,
-    ...over,
-  };
-}
-
-// The distil (Call 1) discriminated union and the decide (Call 2) union. Domain schemas live in the
-// consumer; the fake generator returns scripted objects of these shapes.
-const resolutionDistil = {
-  outcome: 'resolution_found',
-  title: 'DB pool exhaustion',
-  symptoms: 'checkout 500s under load',
-  diagnosis: 'connection pool exhausted',
-  remediation: 'restart pgbouncer; raise pool size',
-};
-const investigationDistil = {
-  outcome: 'investigation_worthwhile',
-  title: 'DB latency inconclusive',
-  checked: 'pool metrics, slow query log',
-  ruledOut: 'the recent deploy',
-  openQuestions: 'is there a connection leak?',
-};
-const nothingDistil = { outcome: 'nothing', reason: 'no reusable knowledge' };
-
-function setup(opts: {
-  distil?: unknown;
-  decide?: unknown;
-  generateThrows?: Error;
-  getIncidentImpl?: (tenantId: string, id: string) => Promise<Incident | null>;
-  linkImpl?: (tenantId: string, incidentId: string) => Promise<boolean>;
-  searchImpl?: (tenantId: string, params: SearchChunksParams) => Promise<KnowledgeSearchResult[]>;
-  llm?: LlmRuntimeManager;
-}) {
-  // Typed signatures so `.mock.calls[i][n]` indexing is well-typed for the assertions below.
-  const generate = vi.fn<(prompt: string, schema: unknown) => Promise<unknown>>();
-  if (opts.generateThrows) {
-    generate.mockRejectedValue(opts.generateThrows);
-  } else {
-    if (opts.distil !== undefined) generate.mockResolvedValueOnce(opts.distil);
-    if (opts.decide !== undefined) generate.mockResolvedValueOnce(opts.decide);
-  }
-  // The only cast left, and it is confined to this one spy (precedent: classify-consumer.test.ts).
-  // `generate<T>(prompt, schema: ZodType<T>): Promise<T>` is parametric: it promises to return
-  // whatever the caller's schema parses. A spy returning scripted values cannot honor that for every
-  // T, so no non-generic signature is assignable to it. Every other dep below is checked normally.
-  const generator = { generate } as unknown as StructuredGenerator;
-
-  const getIncident = vi.fn<(tenantId: string, id: string) => Promise<Incident | null>>(
-    opts.getIncidentImpl ?? (async () => makeIncident()),
-  );
-  const findChunkLinkingIncident = vi.fn<
-    (tenantId: string, incidentId: string) => Promise<boolean>
-  >(opts.linkImpl ?? (async () => false));
-  const searchChunks = vi.fn<
-    (tenantId: string, params: SearchChunksParams) => Promise<KnowledgeSearchResult[]>
-  >(opts.searchImpl ?? (async () => []));
-  // Pre-bound like every other collaborator: db/embedder are closed over by the consumer's
-  // default, so a spy only ever sees (tenantId, input).
-  const upsertRunbook = vi.fn<
-    (tenantId: string, input: UpsertRunbookInput) => Promise<{ id: string }>
-  >(async () => ({ id: 'rb-new' }));
-  const insertInvestigationNote = vi.fn<
-    (tenantId: string, input: InvestigationNoteInput) => Promise<{ id: string }>
-  >(async () => ({ id: 'note-1' }));
-  const append = vi.fn<
-    (tenantId: string, incidentId: string, msg: NewMessage) => Promise<{ id: string }>
-  >(async () => ({ id: 'm1' }));
-  const hub = { append };
-
-  const handler = makeRunbookHandler({
-    llm: opts.llm,
-    generator,
-    hub,
-    appDb: stubDb,
-    embedder: stubEmbedder,
-    getIncident,
-    findChunkLinkingIncident,
-    searchChunks,
-    upsertRunbook,
-    insertInvestigationNote,
-    getCapturedKnowledge: async () => null,
-  });
-
-  return {
-    handler,
-    generate,
-    getIncident,
-    findChunkLinkingIncident,
-    searchChunks,
-    upsertRunbook,
-    insertInvestigationNote,
-    append,
-  };
-}
+// The knowledge-capture consumer on the `sre:runbook` stream, run on request or automatically after
+// a resolve. It distils ONLY the triggered incident into a runbook or note (Call 2 decides refine vs
+// new), learnings, or nothing. Hermetic: the generator, hub and every repo collaborator are spies;
+// the db functions are covered by knowledge-repo.test.ts and learning-memory.test.ts.
 
 describe('makeRunbookHandler', () => {
   test('passes the attempt signal to the runtime and rethrows an aborted provider call', async () => {
@@ -204,28 +48,27 @@ describe('makeRunbookHandler', () => {
   });
 
   test('a deleted incident is rejected before history, idempotency, model, or hub work', async () => {
-    const { handler, generate, findChunkLinkingIncident, append } = setup({
+    const { handler, generate, searchChunks, append } = setup({
       distil: nothingDistil,
       getIncidentImpl: async () => makeIncident({ archivedAt: new Date() }),
     });
 
     await expect(handler(makeJob())).resolves.toBeUndefined();
 
-    expect(findChunkLinkingIncident).not.toHaveBeenCalled();
+    expect(searchChunks).not.toHaveBeenCalled();
     expect(generate).not.toHaveBeenCalled();
     expect(append).not.toHaveBeenCalled();
   });
 
   test('C3/C6 resolution_found with no candidates → decide "new" → upsertRunbook with no id + hub post', async () => {
-    const { handler, generate, searchChunks, upsertRunbook, insertInvestigationNote, append } =
-      setup({
-        distil: resolutionDistil,
-        decide: {
-          action: 'new',
-          runbook: { title: 'DB pool exhaustion', content: 'restart pgbouncer' },
-        },
-        searchImpl: async () => [],
-      });
+    const { handler, generate, searchChunks, upsertRunbook, append } = setup({
+      distil: resolutionDistil,
+      decide: {
+        action: 'new',
+        runbook: { title: 'DB pool exhaustion', content: 'restart pgbouncer' },
+      },
+      searchImpl: async () => [],
+    });
 
     await expect(handler(makeJob())).resolves.toBeUndefined();
 
@@ -239,7 +82,7 @@ describe('makeRunbookHandler', () => {
     const arg = upsertRunbook.mock.calls[0]![1];
     expect(arg.id).toBeUndefined();
     expect(arg.sourceIncidentId).toBe('inc-1');
-    expect(insertInvestigationNote).not.toHaveBeenCalled();
+    expect(arg.category).toBe('runbook');
     // A system message was posted to the hub for the triggered incident.
     expect(append).toHaveBeenCalledTimes(1);
     expect(append.mock.calls[0]![0]).toBe('tenant-1');
@@ -270,7 +113,7 @@ describe('makeRunbookHandler', () => {
   });
 
   test('normalizes model-authored investigation notes before persistence and posting', async () => {
-    const { handler, insertInvestigationNote, append } = setup({
+    const { handler, upsertRunbook, append } = setup({
       distil: {
         outcome: 'investigation_worthwhile',
         title: `${INTERNAL_REFERENCE} follow-up`,
@@ -282,7 +125,8 @@ describe('makeRunbookHandler', () => {
 
     await expect(handler(makeJob())).resolves.toBeUndefined();
 
-    expect(insertInvestigationNote.mock.calls[0]![1]).toMatchObject({
+    expect(upsertRunbook.mock.calls[0]![1]).toMatchObject({
+      category: 'investigation',
       title: `${INTERNAL_REFERENCE} follow-up`,
       content:
         'Checked: ConversationHub\nRuled out: packages/hub/src/hub.ts\nOpen questions: Can report_findings explain it?',
@@ -366,57 +210,174 @@ describe('makeRunbookHandler', () => {
     expect(String(append.mock.calls[0]![2].content)).not.toMatch(/refined/i);
   });
 
-  test('C4 investigation_worthwhile → insertInvestigationNote, no runbook, no Call 2, hub post', async () => {
-    const { handler, generate, searchChunks, upsertRunbook, insertInvestigationNote, append } =
-      setup({ distil: investigationDistil });
+  test('C4 investigation_worthwhile with no similar note → saved as new without a decide call', async () => {
+    const { handler, generate, searchChunks, upsertRunbook, append } = setup({
+      distil: investigationDistil,
+    });
 
     await expect(handler(makeJob())).resolves.toBeUndefined();
 
-    // A note is a single-call outcome: no shortlist, no decide call.
     expect(generate).toHaveBeenCalledTimes(1);
-    expect(searchChunks).not.toHaveBeenCalled();
-    expect(upsertRunbook).not.toHaveBeenCalled();
-    expect(insertInvestigationNote).toHaveBeenCalledTimes(1);
-    const arg = insertInvestigationNote.mock.calls[0]![1];
-    expect(arg.sourceIncidentId).toBe('inc-1');
+    expect(searchChunks.mock.calls[0]![1]).toMatchObject({ category: 'investigation' });
+    expect(upsertRunbook).toHaveBeenCalledTimes(1);
+    const arg = upsertRunbook.mock.calls[0]![1];
+    expect(arg).toMatchObject({
+      id: undefined,
+      category: 'investigation',
+      sourceIncidentId: 'inc-1',
+    });
     expect(append).toHaveBeenCalledTimes(1);
+  });
+
+  test('an investigation note refines the matching note the model picks, keeping its category', async () => {
+    const { handler, generate, upsertRunbook, append } = setup({
+      distil: investigationDistil,
+      decide: {
+        action: 'refine',
+        targetId: 'note-old',
+        runbook: { title: 'DB latency', content: 'merged note' },
+      },
+      searchImpl: async () => [makeCandidate({ id: 'note-old', category: 'investigation' })],
+    });
+
+    await expect(handler(makeJob())).resolves.toBeUndefined();
+
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(String(generate.mock.calls[1]![0])).toContain('investigation note');
+    expect(upsertRunbook.mock.calls[0]![1]).toMatchObject({
+      id: 'note-old',
+      category: 'investigation',
+      content: 'merged note',
+    });
+    expect(String(append.mock.calls[0]![2].content)).toContain('merged note');
   });
 
   test('C5 nothing → no write of any kind, but still a hub post', async () => {
-    const { handler, generate, upsertRunbook, insertInvestigationNote, searchChunks, append } =
-      setup({ distil: nothingDistil });
+    const { handler, generate, upsertRunbook, recordLearning, searchChunks, append } = setup({
+      distil: nothingDistil,
+    });
 
     await expect(handler(makeJob())).resolves.toBeUndefined();
 
     expect(generate).toHaveBeenCalledTimes(1);
     expect(searchChunks).not.toHaveBeenCalled();
     expect(upsertRunbook).not.toHaveBeenCalled();
-    expect(insertInvestigationNote).not.toHaveBeenCalled();
+    expect(recordLearning).not.toHaveBeenCalled();
     expect(append).toHaveBeenCalledTimes(1);
   });
 
-  test('C7 idempotent redelivery: an incident already linked → generator NEVER called, hub "already captured"', async () => {
-    const {
-      handler,
-      generate,
-      findChunkLinkingIncident,
-      upsertRunbook,
-      insertInvestigationNote,
-      append,
-    } = setup({ distil: resolutionDistil, linkImpl: async () => true });
+  test('an automatic pass that finds nothing saves nothing and posts nothing', async () => {
+    const { handler, generate, upsertRunbook, recordLearning, append } = setup({
+      distil: nothingDistil,
+    });
+
+    await expect(
+      handler(makeJob({ payload: { incidentId: 'inc-1', automatic: true } })),
+    ).resolves.toBeUndefined();
+
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(String(generate.mock.calls[0]![0])).toContain('ran automatically');
+    expect(upsertRunbook).not.toHaveBeenCalled();
+    expect(recordLearning).not.toHaveBeenCalled();
+    expect(append).not.toHaveBeenCalled();
+  });
+
+  test('an automatic pass that fails terminally stays silent', async () => {
+    const { handler, append } = setup({ generateThrows: new Error('malformed output') });
+
+    await expect(
+      handler(makeJob({ payload: { incidentId: 'inc-1', automatic: true } })),
+    ).resolves.toBeUndefined();
+
+    expect(append).not.toHaveBeenCalled();
+  });
+
+  test('environment facts are saved as per-topic learnings, stripped of member identifiers', async () => {
+    const { handler, recordLearning, upsertRunbook } = setup({
+      distil: {
+        ...investigationDistil,
+        environmentFacts: [
+          {
+            topic: 'etcd data disk on 192.168.1.202',
+            statement:
+              'alice.ops confirmed /var/lib/etcd is on /dev/nvme0n1p3; sda is only /mnt/exthdd',
+            basis: 'responder',
+            messageIds: ['msg-0'],
+          },
+        ],
+      },
+    });
+
+    await expect(
+      handler(makeJob({ payload: { incidentId: 'inc-1', automatic: true } })),
+    ).resolves.toBeUndefined();
+
+    expect(recordLearning).toHaveBeenCalledTimes(1);
+    expect(recordLearning.mock.calls[0]![1]).toEqual({
+      topic: 'etcd data disk on 192.168.1.202',
+      statement:
+        'a responder confirmed /var/lib/etcd is on /dev/nvme0n1p3; sda is only /mnt/exthdd',
+      basis: 'responder',
+      source: 'message msg-0',
+      sourceIncidentId: 'inc-1',
+    });
+    // The note is still saved alongside the fact.
+    expect(upsertRunbook).toHaveBeenCalledTimes(1);
+  });
+
+  test('the distil prompt carries the assessment and the responder messages', async () => {
+    const { handler, generate } = setup({
+      distil: nothingDistil,
+      getIncidentImpl: async () => ({
+        ...makeIncident(),
+        currentState: 'etcd healthy after compaction',
+        unknowns: [{ question: 'which device backs /var/lib/etcd?' }],
+        nextStep: 'watch fsync latency',
+        recoverySummary: 'leader stable for 30 minutes',
+      }),
+      history: [
+        { author: 'agent', kind: 'text', content: 'Which device backs /var/lib/etcd?' },
+        {
+          author: 'human',
+          kind: 'text',
+          content: 'It is nvme0n1p3, the / mount.',
+          authorUserId: 'user-1',
+        },
+      ],
+    });
 
     await expect(handler(makeJob())).resolves.toBeUndefined();
 
-    expect(findChunkLinkingIncident).toHaveBeenCalledTimes(1);
-    expect(generate).not.toHaveBeenCalled(); // short-circuit BEFORE any LLM call
-    expect(upsertRunbook).not.toHaveBeenCalled();
-    expect(insertInvestigationNote).not.toHaveBeenCalled();
+    const prompt = String(generate.mock.calls[0]![0]);
+    for (const part of [
+      'etcd healthy after compaction',
+      'which device backs /var/lib/etcd?',
+      'watch fsync latency',
+      'leader stable for 30 minutes',
+      'Responder messages:\n- [message msg-1] It is nvme0n1p3, the / mount.',
+      'environmentFacts',
+    ])
+      expect(prompt).toContain(part);
+    expect(prompt).not.toContain('ran automatically');
+  });
+
+  test('redelivery republishes what this job saved, scoped to the job creation time, before any model call', async () => {
+    const createdAt = new Date('2026-10-21T00:00:00Z');
+    const { handler, generate, getCapturedKnowledge, append } = setup({
+      distil: resolutionDistil,
+      captured: { id: 'rb-1', title: 'RB', content: 'saved', category: 'runbook' },
+    });
+
+    await expect(handler(makeJob({ createdAt }))).resolves.toBeUndefined();
+
+    expect(getCapturedKnowledge.mock.calls[0]).toEqual(['tenant-1', 'inc-1', createdAt]);
+    expect(generate).not.toHaveBeenCalled();
     expect(append).toHaveBeenCalledTimes(1);
-    expect(String(append.mock.calls[0]![2].content)).toMatch(/already captured/i);
+    expect(String(append.mock.calls[0]![2].content)).toContain('saved');
   });
 
   test('C12 empty incident (no rca, no hypotheses) → still distils (no precondition) → nothing outcome', async () => {
-    const { handler, generate, upsertRunbook, insertInvestigationNote } = setup({
+    const { handler, generate, upsertRunbook } = setup({
       distil: nothingDistil,
       getIncidentImpl: async () => makeIncident({ rcaSummary: null, rankedHypotheses: null }),
     });
@@ -426,7 +387,6 @@ describe('makeRunbookHandler', () => {
     // No status='resolved'/rcaSummary gate: the generator is still invoked on an empty incident.
     expect(generate).toHaveBeenCalledTimes(1);
     expect(upsertRunbook).not.toHaveBeenCalled();
-    expect(insertInvestigationNote).not.toHaveBeenCalled();
   });
 
   test('C2 distils ONLY the triggered incident, and its data reaches the distil prompt', async () => {
@@ -448,7 +408,7 @@ describe('makeRunbookHandler', () => {
   });
 
   test('C11 provider outage below the fail-open ceiling → RetryableError, incident untouched', async () => {
-    const { handler, upsertRunbook, insertInvestigationNote, append } = setup({
+    const { handler, upsertRunbook, append } = setup({
       generateThrows: new ProviderUnavailableError('anthropic 529 overloaded'),
     });
 
@@ -458,12 +418,11 @@ describe('makeRunbookHandler', () => {
 
     // Nothing was written and no "failed" message posted yet — the job simply redelivers.
     expect(upsertRunbook).not.toHaveBeenCalled();
-    expect(insertInvestigationNote).not.toHaveBeenCalled();
     expect(append).not.toHaveBeenCalled();
   });
 
   test('C11 terminal provider outage (ceiling reached) → acks with a "generation failed" hub post, never fails the incident', async () => {
-    const { handler, upsertRunbook, insertInvestigationNote, append } = setup({
+    const { handler, upsertRunbook, append } = setup({
       generateThrows: new ProviderUnavailableError('anthropic 529 overloaded'),
     });
 
@@ -472,7 +431,6 @@ describe('makeRunbookHandler', () => {
     await expect(handler(makeJob({ attempts: FAIL_MAX }))).resolves.toBeUndefined();
 
     expect(upsertRunbook).not.toHaveBeenCalled();
-    expect(insertInvestigationNote).not.toHaveBeenCalled();
     expect(append).toHaveBeenCalledTimes(1);
     expect(String(append.mock.calls[0]![2].content)).toMatch(/generation failed/i);
   });
@@ -480,14 +438,13 @@ describe('makeRunbookHandler', () => {
   test('FIX 3: a hard/parse error (non-provider) is terminal at any attempt → acks with "generation failed", incident untouched', async () => {
     // A ZodError / sanitized hard error is not transient: attempt count is irrelevant, so even at
     // attempts=1 (below FAIL_MAX) the handler must ack (not throw) and post "generation failed".
-    const { handler, upsertRunbook, insertInvestigationNote, append } = setup({
+    const { handler, upsertRunbook, append } = setup({
       generateThrows: new Error('malformed output'),
     });
 
     await expect(handler(makeJob({ attempts: 1 }))).resolves.toBeUndefined();
 
     expect(upsertRunbook).not.toHaveBeenCalled();
-    expect(insertInvestigationNote).not.toHaveBeenCalled();
     expect(append).toHaveBeenCalledTimes(1);
     expect(String(append.mock.calls[0]![2].content)).toMatch(/generation failed/i);
   });

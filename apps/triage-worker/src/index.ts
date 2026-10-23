@@ -57,11 +57,12 @@ import {
 import { makeLlmRuntimeManager } from './llm-runtime';
 import { makeSubjectSyncResolver } from './subject-sync';
 import { makeSubjectSyncRecovery } from './subject-sync-recovery';
+import { makeLearningCaptureSweep } from './learning-capture-sweep';
 import { runSignalMaintenance } from './signal-maintenance';
 import { makeSignalEvaluationHandler } from './signal-evaluation';
 import { makeTopologyDiscoveryRuntime, runTopologyDiscoveryConsumer } from './topology-discovery';
 import { drainAndExit, runConsumerLoop, stopOnSignal, superviseConsumer } from './consumer-loop';
-import { makePlatformTools } from './platform-tools';
+import { makeLearningTool, makePlatformTools } from './platform-tools';
 
 // Before the first await: a SIGTERM during startup is otherwise ignored under PID 1.
 const stopping = stopOnSignal();
@@ -167,17 +168,6 @@ const embedder = makeEmbedder();
 const auditSink = makeDbAuditSink({ db: appDb.db });
 const tools = makePlatformTools({ db: appDb.db, embedder, cache });
 
-// Proactive runbook seeder: seeds top-K past-incident runbooks into the incident-open
-// brief above the configured similarity floor. K is a fixed constant (seed at most 3); the floor is
-// env-tunable. Reads knowledge_chunks via the local embedder on the RLS-scoped app connection.
-const RUNBOOK_SEED_K = 3;
-const runbookSeeder = makeRunbookSeeder({
-  db: appDb.db,
-  embedder,
-  scoreFloor: loadRunbookSeedConfig(process.env).scoreFloor,
-  k: RUNBOOK_SEED_K,
-});
-
 // Slack file fetcher for screenshot interpretation: resolves the tenant's bot token at point
 // of use (never persisted), host-pins to Slack, caps the size; the bytes are transient.
 const slackFileFetcher = makeSlackFileFetcher({
@@ -194,6 +184,7 @@ const worker = new TriageWorker({
   auditSink,
   connectorProvider,
   tools,
+  learningTool: () => makeLearningTool({ db: appDb.db, embedder }),
   lock: makeRedisLock(redis, deadlines.triageMaxProcessingMs + DEFAULT_STUCK_GRACE_MS + 60_000),
   clearResumeGate: (incidentId) => queue.clearResumeGate(incidentId),
   getRecoveryMaxChecks,
@@ -201,7 +192,13 @@ const worker = new TriageWorker({
   getEvidenceBudgetChars,
   getAutomaticInvestigationBudget,
   resolveInvestigationSubject: makeSubjectSyncResolver({ db: appDb.db, cache }),
-  runbookSeeder,
+  // Brief seeds: up to 3 same-monitor and 3 similar past-incident chunks; env-tunable floor.
+  runbookSeeder: makeRunbookSeeder({
+    db: appDb.db,
+    embedder,
+    scoreFloor: loadRunbookSeedConfig(process.env).scoreFloor,
+    k: 3,
+  }),
   fetchAttachment: (tenantId, urlPrivate) => slackFileFetcher.fetch(tenantId, urlPrivate),
 });
 
@@ -354,6 +351,7 @@ const triageReconcileGuard = makeRedisWindowGuard(redis, 'triage:recon');
 const RECOVERY_DUE_DISPATCH_MS = 5_000;
 const recoveryDueGuard = makeRedisWindowGuard(redis, 'recovery:due');
 const recoverSubjectSync = makeSubjectSyncRecovery(redis, adminDb.db, appDb.db, queue);
+const captureLearnings = makeLearningCaptureSweep(redis, adminDb.db, appDb.db, runbookQueue);
 // Classify, runbook and poll reuse the triage cadence. Poll needs one because a lost XADD would drop a
 // one-shot StatusCake wakeup no scheduled poll recreates. Topology shares the poll window because a
 // pass stranded in `processing` after its stream entry was acked is otherwise never redelivered.
@@ -438,6 +436,7 @@ while (!stopping()) {
     Date.now(),
   );
   await recoverSubjectSync();
+  await captureLearnings();
   // One replica sweeps terminal incidents per window; tenant failures do not block other tenants.
   await runOncePerWindow(
     autoArchiveGuard,

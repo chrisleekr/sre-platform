@@ -87,8 +87,8 @@ picks the investigation back up, it re-reads that stored evidence rather than qu
 again. Repeated identical lookups collapse to the most recent one, and each item keeps its original
 timestamp so a stale fact cannot quietly become a current one.
 
-Secrets are stripped before anything is stored or shown to the model, so credentials never reach the
-model or the database.
+Evidence is not redacted. Whatever a connector returns, including any credential in it, is stored,
+shown to the model, and can appear in Slack. Scope every connector credential to read-only access.
 
 ## One provider, no fallback
 
@@ -182,16 +182,17 @@ never silently changes it. An operator can change the policy explicitly.
 
 An edited alert message or a model suggestion that a message resolves an alert is logged and never
 changes a signal. Suppressing a Slack notification never changes a signal either. A recovery notice
-from the same bot in the same channel is linked to the one open incident whose alert it names, found
+from the same bot in the same channel is linked to the open incident whose alert it names, found
 by the edited message's thread root or by the alert's monitor identity, and the incident conversation
-records it. When the incident's reports then cover every active alert, and every one of those
+records it. When several open incidents track that monitor, the notice links to the incident with
+the most recently seen alert. When the incident's reports then cover every active alert, and every one of those
 alerts came from Slack rather than a connector or native provider delivery, the platform marks them
 recovered and starts recovery verification. A provider-established alert is cleared only by
 provider or connector evidence. The incident resolves only if verification
 confirms the service recovered; Slack text alone never resolves it. Until every active alert is
 covered, the notice stays a report. If the alert fires again in Slack while the incident is open, the
-alert is active again and verification stops. A notice that matches no open incident, or more than
-one, is only logged. Only connector-verified or native provider recovery counts as provider recovery evidence;
+alert is active again and verification stops. A notice that matches no open incident is only
+logged. A notice alone does not restart a verification that already ended. Only connector-verified or native provider recovery counts as provider recovery evidence;
 legacy clears and operator corrections do not. Under provider-clear policy, missing authority keeps
 the case open with an explicit blocker.
 Pending approvals prevent automatic resolution under either policy.
@@ -236,8 +237,10 @@ shown in the queue and the current run, so a reviewer failure does not leave a g
 never as proof that a service is healthy. Follow-up work remains visible after resolution.
 Historical string questions remain **Unclassified recovery questions**, without invented categories.
 
-A responder can request a fresh recovery check in the incident conversation, including after
-an earlier verification exhausted its automatic checks. A failed evidence review records its
+A responder can request a fresh recovery check in the incident conversation, from the dashboard or
+the Slack thread. When an earlier verification ended not verified or used all its checks, the request
+starts a fresh verification with a new check budget. A provider's Slack recovery notice alone does
+not. Verification still has to confirm recovery before the incident resolves. A failed evidence review records its
 current blocker without resolving the incident or replacing the trusted cause assessment.
 An unavailable review is not evidence that the service remains unhealthy.
 
@@ -253,12 +256,15 @@ an old response workspace merely because the monitor name matches. Stable monito
 immutable recurrence history.
 
 One exception covers repeat Slack notifications. When a bot posts a new firing message in the same
-channel, every alert in it carries a monitor identity, every one of those monitors is already tracked
-by an open alert, and all of them belong to exactly one open incident seen in the last 24 hours, the
-message is attached to that incident as another occurrence. It opens no incident and starts no new
-investigation run, and is recorded as a log entry. A message that also carries an alert no open
-incident tracks, or that matches no open incident or more than one, is classified as usual, as is a
-repeat whose incident closes before it is attached.
+channel, every alert in it carries a monitor identity, and every one of those monitors is tracked by
+an open incident, the message is attached to that incident as another occurrence. It opens no
+incident and starts no new investigation run, and is recorded as a log entry. When several open
+incidents track the monitor, the incident whose alert was seen most recently is chosen, whether or not
+that alert has since recovered. A matching alert that never recovered takes the repeat however
+long ago it fired. An alert that recovered more than 24 hours ago, counted from its recovery, does
+not: the message is a new episode and is classified. A grouped message with any alert the chosen
+incident does not track is classified as usual, as is a repeat whose incident closes before it is
+attached.
 
 Alerts that arrive close together enter a fixed comparison cohort, scoped to one connection, or to
 one Slack channel for alerts posted there. A Slack cohort groups alerts by when classification opens
@@ -281,20 +287,63 @@ unrelated, merge, split, and rejection decisions remain attributed in the audit 
 
 ## Turning incidents into runbooks
 
-You can turn a resolved or investigated incident into reusable knowledge on demand. The platform
-classifies it into one of three outcomes:
+The platform turns incidents into reusable knowledge in three ways. Each one decides whether
+anything is worth keeping, and most incidents leave nothing behind.
+
+- **During an investigation.** When the investigator learns something a future incident would
+  otherwise look up or ask again, such as which device backs `/var/lib/etcd` on a node, a confirmed
+  cause, a ruled-out cause, or a fact a responder stated, it saves it as a learning. It saves at
+  most three per run and never saves transient readings or the incident's status. An observed fact
+  must cite evidence recorded for this incident, and the evidence IDs are kept as its source. A fact
+  a responder stated must cite one to five messages in this incident, each written by a linked,
+  active workspace member, and those message IDs are kept as its source. The investigator sees the
+  ID of every member's message for this purpose. A hypothesis is saved only when it is worded as
+  one, and never replaces an observed or responder fact. A topic that names a workspace member, or
+  a name mentioned in the incident's conversation, is refused. Saving a learning is not evidence:
+  it does not oblige the investigator to reply, and it cannot close an open question.
+- **After an incident resolves or closes.** About ten minutes later the platform reviews the
+  incident, its assessment and the responders' messages once. Only messages from linked workspace
+  members count as responder messages. If no runbook or note is worth keeping it saves none and
+  posts nothing, though it may still save learnings. If you ask for a runbook while this review is
+  waiting or running, the review takes over your request and posts its result, including when it
+  finds nothing. If the review has already chosen to stay silent, a request from the conversation
+  waits for it to finish and then runs on its own, and the dashboard asks you to retry shortly.
+- **On request.** You can ask for a runbook in the conversation at any time.
+
+A review classifies the incident into one of three outcomes:
 
 - **A fix was confirmed**: writes a runbook.
 - **No fix, but diagnostically useful**: writes an investigation note.
-- **Nothing worth keeping**: writes nothing and says so.
+- **Nothing worth keeping**: writes no runbook or note. On request it says so; after a resolve it
+  stays silent.
 
-When a runbook already covers the same cause, the model decides whether to refine that one or write
-a new one. Generated runbooks are published unverified until a human marks them otherwise, and they
-are visible only within your own tenant.
+Any outcome can carry environment facts, which are saved as learnings. The review sees
+each responder message and each piece of evidence with its ID, and every fact must cite them under
+the same rule as during an investigation. A fact whose citations do not hold is dropped, not saved
+with a weaker basis. Learnings are kept one per topic, and a newer statement for a topic replaces
+the older one. When a runbook or note already covers the same cause, the model decides whether to
+refine that one or write a new one, so a later review refines what an earlier one saved. Saved
+knowledge never names a person, is published unverified until a human marks it otherwise, and is
+visible only within your own tenant.
+
+When a new incident opens, its brief lists learnings, runbooks and notes from past incidents that
+fired the same monitor first, then similar ones above the similarity floor. Each reply the
+investigator picks up gets the same list again, so a learning saved by another incident since the
+incident opened still reaches it. The list is labelled as data, not instructions. The investigator
+uses a known fact instead of asking for it again, and confirms it before relying on it for a
+conclusion.
+
+Review and remove learnings through the API. Every workspace member can list them; an owner, an
+administrator or an active responder can delete one. A support session can only read.
+
+| Method and path | Result |
+| --- | --- |
+| `GET /knowledge/facts?limit=100` | `{ facts: [{ id, topic, content, occurrenceCount, sourceIncidentIds, updatedAt }] }`, newest first. `limit` is 1 to 200. |
+| `DELETE /knowledge/facts/:id` | `204` when deleted, `404` for an unknown id or another tenant's fact, `403` for a caller who may not delete. |
 
 Runbook generation is auxiliary. It runs on its own queue so a backlog cannot delay triage, and a
-failure to generate one never affects the incident itself. Asking twice does not produce two
-runbooks or two charges.
+failure to generate one never affects the incident itself. Asking twice while a request is still
+running does not produce two runbooks or two charges.
 
 ## Spending limits
 

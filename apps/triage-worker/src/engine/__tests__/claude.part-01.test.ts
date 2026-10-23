@@ -178,7 +178,7 @@ describe('makeClaudeEngine multi-turn tool loop', () => {
     expect(auditedTools).not.toContain('report_findings');
   });
 
-  test('redacts sensitive tool inputs in the tool_step content', async () => {
+  test('reports tool inputs verbatim in the tool_step content', async () => {
     const create = vi
       .fn()
       .mockResolvedValueOnce(
@@ -200,8 +200,7 @@ describe('makeClaudeEngine multi-turn tool loop', () => {
     await engine.investigate(__fixture.input, runtime);
 
     const toolStep = steps.find((s) => s.kind === 'tool_step')!;
-    expect(toolStep.content).toContain('[REDACTED]');
-    expect(toolStep.content).not.toContain('sk-secret');
+    expect(toolStep.content).toContain('sk-secret');
   });
 
   test('an empty tool result still yields a non-error tool_result and the loop continues', async () => {

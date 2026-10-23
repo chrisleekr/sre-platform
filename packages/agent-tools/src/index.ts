@@ -13,7 +13,7 @@ export * from './dispatch';
 export * from './entity-context';
 export * from './mcp';
 export * from './recent-deploys';
-export * from './redact';
+export * from './record-learning';
 export * from './search-incident-evidence';
 export * from './search-runbooks';
 export * from './slo-status';

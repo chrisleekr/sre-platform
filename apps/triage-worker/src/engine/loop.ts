@@ -1,4 +1,9 @@
-import { runTool, redactInput, type ToolContext, type ToolDefinition } from '@sre/agent-tools';
+import {
+  RECORD_LEARNING_NAME,
+  runTool,
+  type ToolContext,
+  type ToolDefinition,
+} from '@sre/agent-tools';
 import { REPORT_FINDINGS_NAME, parseReportFindings, reportFindingsTool } from './report-findings';
 import { RESPOND_NAME, parseRespond, respondTool } from './respond';
 import { STAY_SILENT_NAME, parseStaySilent, staySilentTool } from './stay-silent';
@@ -28,6 +33,13 @@ export type TerminalName =
   | typeof STAY_SILENT_NAME
   | typeof SUGGEST_ACTION_NAME
   | typeof REPORT_RECOVERY_NAME;
+
+/**
+ * Tools that change state but read nothing about the incident. They run when called, yet are not
+ * evidence: they neither block stay_silent, bounce a conclusion emitted beside them, nor satisfy
+ * evidence closure.
+ */
+export const SIDE_EFFECT_TOOLS: ReadonlySet<string> = new Set([RECORD_LEARNING_NAME]);
 
 const TERMINAL_BY_NAME: Record<TerminalName, ToolDefinition<any, any>> = {
   [REPORT_FINDINGS_NAME]: reportFindingsTool,
@@ -189,7 +201,7 @@ function interpretTerminal(args: RunLoopArgs, call: ToolCall): TriageResult {
   if (call.name === SUGGEST_ACTION_NAME) {
     const { prompt, options } = buildRecommendedAction(suggestActionSchema.parse(call.input));
     // The engine returns only the PROPOSAL; the approvals idempotency key is a persistence concern the
-    // worker derives from the SCRUBBED prompt/options (worker.ts). Never key on call.id: Anthropic mints a
+    // worker derives from the prompt/options (worker.ts). Never key on call.id: Anthropic mints a
     // fresh `toolu_*` id on every response, so a redelivered turn keyed on it would open a second approvals
     // row and post a second, undecidable button block for the same action.
     return {
@@ -288,7 +300,7 @@ export async function runLoop(args: RunLoopArgs): Promise<TriageResult> {
     ],
   });
   const executeNonTerminal = async (call: ToolCall): Promise<ToolRunResult> => {
-    await onStep('tool_step', `${call.name} ${JSON.stringify(redactInput(call.input))}`);
+    await onStep('tool_step', `${call.name} ${JSON.stringify(call.input)}`);
     if (call.invalidInput)
       return { id: call.id, content: 'error: invalid tool input', isError: true };
     const tool = byName.get(call.name);
@@ -302,10 +314,12 @@ export async function runLoop(args: RunLoopArgs): Promise<TriageResult> {
         isError: true,
       };
     const result = await runTool(tool, ctx, call.input);
-    evidenceUsed = true;
     const rendered = renderModelToolResult(tool.name, result, toolResultMaxChars());
-    receipts.push(rendered.receipt);
-    args.onEvidenceReceipt?.(rendered.receipt);
+    if (!SIDE_EFFECT_TOOLS.has(tool.name)) {
+      evidenceUsed = true;
+      receipts.push(rendered.receipt);
+      args.onEvidenceReceipt?.(rendered.receipt);
+    }
     return { id: call.id, content: rendered.content, isError: rendered.isError };
   };
 
@@ -342,7 +356,7 @@ export async function runLoop(args: RunLoopArgs): Promise<TriageResult> {
           terminalFeedback = closure.message;
         }
       }
-      if (!terminalFeedback && siblingCalls.length > 0) {
+      if (!terminalFeedback && siblingCalls.some((call) => !SIDE_EFFECT_TOOLS.has(call.name))) {
         terminalFeedback =
           'Evidence calls were emitted beside this conclusion. Their results follow. Submit a revised conclusion that cites the durable evidence.';
       }
@@ -359,6 +373,8 @@ export async function runLoop(args: RunLoopArgs): Promise<TriageResult> {
         messages.push(...provider.toolResultMsgs(results));
         continue;
       }
+      // Only side effects remain beside the conclusion, so they run once here and it stands.
+      for (const call of siblingCalls) await executeNonTerminal(call);
       return finish(interpretTerminal(args, terminal));
     }
 

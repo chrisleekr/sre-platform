@@ -1,9 +1,10 @@
 import { jobs, type Db, type Executor } from '@sre/db';
-import { and, eq, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { JobInput } from './contracts';
 
 const TOPOLOGY_TYPE = 'topology.discover';
 const TOPOLOGY_COALESCE_INDEX = 'jobs_topology_discover_coalesce_idx';
+const RUNBOOK_TYPE = 'runbook.generate';
 
 /**
  * Predicate matching rows that share this job's coalescing key, or null when the payload has none.
@@ -45,6 +46,85 @@ export async function widenCoalescedTopologyPass(exec: Executor, input: JobInput
         sameKey,
       ),
     );
+}
+
+/**
+ * Hands a responder's coalesced `runbook.generate` request to the pending automatic pass.
+ *
+ * @param exec - The enqueue transaction, so the update sees the row the conflict saw.
+ * @param input - The incoming job; anything but a non-automatic `runbook.generate` is ignored.
+ * @returns False when no pending job will answer the request: the automatic pass already chose
+ *   silence or finished. The caller retries the request.
+ */
+export async function adoptCoalescedRunbookRequest(
+  exec: Executor,
+  input: JobInput,
+): Promise<boolean> {
+  if (input.type !== RUNBOOK_TYPE) return true;
+  const payload = input.payload as Record<string, unknown> | null | undefined;
+  if (!payload || payload.automatic === true) return true;
+  // An automatic pass posts nothing when it finds nothing or fails, so the request would go
+  // unanswered. The request payload, capture fence included, replaces the automatic marker. A queued
+  // row then runs as the request; a processing row already read its payload, so the consumer re-reads
+  // it before choosing a prompt. A row that already chose silence is skipped, and the request retries.
+  const sameKey = coalesceKeyFilter(input.type, input.payload);
+  if (!sameKey) return true;
+  const pending = (...filters: SQL[]) =>
+    and(
+      eq(jobs.tenantId, input.tenantId),
+      eq(jobs.type, RUNBOOK_TYPE),
+      inArray(jobs.status, ['queued', 'processing']),
+      sameKey,
+      ...filters,
+    );
+  const adopted = await exec
+    .update(jobs)
+    .set({
+      payload: sql`(${jobs.payload} - 'automatic') || ${JSON.stringify(payload)}::jsonb`,
+      updatedAt: sql`now()`,
+    })
+    .where(
+      pending(
+        sql`${jobs.payload}->>'automatic' = 'true'`,
+        sql`coalesce(${jobs.payload}->>'silenced', 'false') <> 'true'`,
+      ),
+    )
+    .returning({ id: jobs.id });
+  if (adopted.length > 0) return true;
+  // Another responder's pending request answers this one too.
+  const [answering] = await exec
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(pending(sql`coalesce(${jobs.payload}->>'automatic', 'false') <> 'true'`))
+    .limit(1);
+  return answering !== undefined;
+}
+
+/**
+ * Find the pending job a coalescing index just rejected an insert for. Coalescing indexes on `jobs`
+ * key on tenant + type + one payload field ({@link coalesceKeyFilter}). A payload without that field
+ * can never conflict. Returns the newest non-terminal match, or null when none survives.
+ */
+export async function findPendingByCoalesceKey(
+  exec: Executor,
+  input: JobInput,
+): Promise<string | null> {
+  const sameKey = coalesceKeyFilter(input.type, input.payload);
+  if (!sameKey) return null;
+  const rows = await exec
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.tenantId, input.tenantId),
+        eq(jobs.type, input.type),
+        sameKey,
+        inArray(jobs.status, ['queued', 'processing']),
+      ),
+    )
+    .orderBy(desc(jobs.createdAt))
+    .limit(1);
+  return rows[0]?.id ?? null;
 }
 
 /**

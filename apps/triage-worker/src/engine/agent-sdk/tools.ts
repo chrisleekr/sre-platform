@@ -3,7 +3,7 @@ import {
   type SDKMessage,
   type SdkMcpToolDefinition,
 } from '@anthropic-ai/claude-agent-sdk';
-import { redactInput, runTool, type ToolDefinition } from '@sre/agent-tools';
+import { runTool, type ToolDefinition } from '@sre/agent-tools';
 import * as z from 'zod';
 import { evidenceClosureDecision, type EvidenceReceipt } from '../evidence-closure';
 import { REPORT_FINDINGS_NAME, parseReportFindings, reportFindingsTool } from '../report-findings';
@@ -17,6 +17,7 @@ import {
   suggestActionTool,
 } from '../suggest-action';
 import { renderModelToolResult, toolResultMaxChars } from '../tool-result';
+import { SIDE_EFFECT_TOOLS } from '../loop';
 import type { TriageResult, TriageRuntime } from '../types';
 
 function zodShape(definition: ToolDefinition<any, any>): z.ZodRawShape {
@@ -171,6 +172,8 @@ export function terminalFromAssistantMessages(
       if (block.type !== 'tool_use') continue;
       const name = block.name.replace(/^mcp__sre__/, '');
       observedToolCalls = true;
+      // A side effect beside a conclusion neither splits the turn nor withdraws an earlier one.
+      if (SIDE_EFFECT_TOOLS.has(name)) continue;
       calls.push({ name: name as TerminalName, input: block.input });
     }
     if (calls.length > 0) turns.set(turnId, calls);
@@ -204,10 +207,7 @@ export function makeMcpTools(
         definition.description,
         zodShape(definition),
         async (input) => {
-          await runtime.onStep(
-            'tool_step',
-            `${definition.name} ${JSON.stringify(redactInput(input))}`,
-          );
+          await runtime.onStep('tool_step', `${definition.name} ${JSON.stringify(input)}`);
           const parsed = definition.inputSchema.safeParse(input);
           if (!parsed.success)
             return {
@@ -221,15 +221,18 @@ export function makeMcpTools(
               ],
             };
           }
-          onEvidence();
+          const sideEffect = SIDE_EFFECT_TOOLS.has(definition.name);
+          if (!sideEffect) onEvidence();
           const rendered = renderModelToolResult(
             definition.name,
             await runTool(definition, runtime.ctx, parsed.data),
             toolResultMaxChars(),
           );
-          receipts.push(rendered.receipt);
-          runtime.onEvidenceReceipt?.(rendered.receipt);
-          evidenceContent.push(rendered.content);
+          if (!sideEffect) {
+            receipts.push(rendered.receipt);
+            runtime.onEvidenceReceipt?.(rendered.receipt);
+            evidenceContent.push(rendered.content);
+          }
           return {
             content: [{ type: 'text', text: rendered.content }],
             ...(rendered.isError ? { isError: true } : {}),

@@ -8,7 +8,11 @@ import {
   withTenant,
   type HumanMessage,
 } from '@sre/db';
-import { RetryableError } from '@sre/queue';
+import {
+  adoptCoalescedRunbookRequest,
+  AutomaticPassFinishingError,
+  RetryableError,
+} from '@sre/queue';
 import type { WorkerRuntime } from './runtime';
 
 /** Queue knowledge capture with the authenticated request and receipt in one transaction.
@@ -43,31 +47,31 @@ export async function requestKnowledgeCapture(
         (await consumeCaptureProposalTx(tx, incidentId, request.authorUserId!, request.id)));
     let jobId: string | null = null;
     if (authorized && queue && confirmed) {
+      const served = sql<boolean>`${jobs.payload}->>'requestedMessageId' = ${request.id}`;
       const [existing] = await tx
-        .select({ id: jobs.id })
+        .select({ id: jobs.id, served })
         .from(jobs)
         .where(
           and(
             eq(jobs.tenantId, tenantId),
             eq(jobs.type, 'runbook.generate'),
             sql`${jobs.payload}->>'incidentId' = ${incidentId}`,
-            or(
-              sql`${jobs.payload}->>'requestedMessageId' = ${request.id}`,
-              inArray(jobs.status, ['queued', 'processing']),
-            ),
+            or(served, inArray(jobs.status, ['queued', 'processing'])),
           ),
         )
+        // A job that already serves this request wins, so a redelivery is not adopted twice.
+        .orderBy(sql`${served} desc nulls last`)
         .limit(1);
-      if (!existing)
-        jobId = await queue.insertJobTx(tx, {
-          tenantId,
-          type: 'runbook.generate',
-          payload: {
-            incidentId,
-            requestedBy: request.authorUserId,
-            requestedMessageId: request.id,
-          },
-        });
+      const job = {
+        tenantId,
+        type: 'runbook.generate',
+        payload: { incidentId, requestedBy: request.authorUserId, requestedMessageId: request.id },
+      };
+      if (!existing) jobId = await queue.insertJobTx(tx, job);
+      // A pending automatic pass would otherwise absorb the request and stay silent. One that already
+      // chose silence or finished cannot answer, so retry once it frees the slot.
+      else if (!existing.served && !(await adoptCoalescedRunbookRequest(tx, job)))
+        throw new AutomaticPassFinishingError();
     }
     const { message } = await deps.hub.appendTxOnce(tx, tenantId, incidentId, {
       author: 'system',

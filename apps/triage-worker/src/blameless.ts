@@ -2,6 +2,19 @@
 // cause. The prompt forbids it; this guard enforces it over the identifiers the platform can actually
 // know, plus any email-shaped token at all. Honest limit: a bare first name typed in chat that is not
 // a member email local-part is not catchable here, and the prompt is the only defence for it.
+import { listTenantMembers, type Db } from '@sre/db';
+
+/**
+ * Emails of the tenant's members, the identifiers the platform can know.
+ *
+ * @param db - RLS-scoped connection.
+ * @param tenantId - Workspace whose members are listed.
+ */
+export async function tenantMemberEmails(db: Db, tenantId: string): Promise<string[]> {
+  return (await listTenantMembers(db, tenantId))
+    .map((member) => member.email)
+    .filter((email): email is string => typeof email === 'string');
+}
 
 /** Trusted instruction for postmortem generation; the transcript is untrusted data in the prompt. */
 export const BLAMELESS_SYSTEM_PROMPT = [
@@ -63,8 +76,14 @@ export function collectHumanIdentifiers(memberEmails: string[], material: string
  *
  * @param text - Generated prose.
  * @param identifiers - Output of collectHumanIdentifiers.
+ * @param anyEmail - Also replace email-shaped tokens that are not member emails. Off for text where
+ *   that shape is usually a name such as a systemd unit, for example `etcd@node1.service`.
  */
-export function stripHumanIdentifiers(text: string, identifiers: readonly string[]): string {
+export function stripHumanIdentifiers(
+  text: string,
+  identifiers: readonly string[],
+  anyEmail = true,
+): string {
   // Mentions go first: the identifier loop would otherwise strip the `@U123` inside a labelled
   // mention the material never showed, leaving `<a responder|alice>` with the label intact.
   let result = text.replace(SLACK_MENTION, REPLACEMENT);
@@ -72,5 +91,25 @@ export function stripHumanIdentifiers(text: string, identifiers: readonly string
     const pattern = new RegExp(`(?<![\\w.-])${escapeRegExp(identifier)}(?![\\w-])`, 'giu');
     result = result.replace(pattern, REPLACEMENT);
   }
-  return result.replace(EMAIL, REPLACEMENT).replace(HANDLE, REPLACEMENT);
+  return (anyEmail ? result.replace(EMAIL, REPLACEMENT) : result).replace(HANDLE, REPLACEMENT);
+}
+
+// A systemd template instance, `name@instance.type`, for example etcd@node1.service. The instance holds
+// no dot, so an email whose domain merely ends in a unit type is still an email.
+const UNIT_NAME =
+  /^[\w:-]+@[\w:-]+\.(?:service|socket|timer|mount|automount|swap|target|path|slice|scope|device)$/i;
+
+/**
+ * True when a learning topic names a person. A topic is its merge key, so it is refused rather than
+ * rewritten. Any email shape counts except a systemd unit name, and so does any member identifier or
+ * mention label seen in the material, so a name from the conversation is caught as well.
+ *
+ * @param emails - Emails of the tenant's members.
+ * @param topic - Proposed learning topic.
+ * @param material - Text the generator saw, whose mention labels are identifiers too.
+ */
+export function topicNamesPerson(emails: string[], topic: string, material = ''): boolean {
+  if ([...topic.matchAll(EMAIL)].some(([shape]) => !UNIT_NAME.test(shape))) return true;
+  const identifiers = collectHumanIdentifiers(emails, `${material}\n${topic}`);
+  return stripHumanIdentifiers(topic, identifiers, false) !== topic;
 }

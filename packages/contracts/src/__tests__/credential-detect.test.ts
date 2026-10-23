@@ -1,27 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { hasKnownCredential, isSensitiveKey, scrubSecrets } from '../redact';
-
-it.each([
-  'password:\n  hunter2\nsafe source',
-  '-----BEGIN PRIVATE KEY-----\nhunter2\n-----END PRIVATE KEY-----\nsafe source',
-  'Authorization:\r\n  hunter2\r\nsafe source',
-])('preserves source line numbers while redacting multiline credentials', (value) => {
-  const redacted = scrubSecrets(value);
-  expect(redacted).not.toContain('hunter2');
-  expect(redacted.split('\n')).toHaveLength(value.split('\n').length);
-  expect(redacted.split('\n').at(-1)).toBe('safe source');
-});
-
-it('redacts a private key whose END line was cut off', () => {
-  const value = 'Found key:\n-----BEGIN RSA PRIVATE KEY-----\nMIIEhunter2\nmorekeydata';
-  const redacted = scrubSecrets(value);
-  expect(redacted).not.toContain('hunter2');
-  expect(redacted).not.toContain('morekeydata');
-  expect(redacted.startsWith('Found key:\n')).toBe(true);
-  expect(redacted.split('\n')).toHaveLength(value.split('\n').length);
-});
+import { hasHighEntropyToken, hasKnownCredential, isSensitiveKey } from '../credential-detect';
 
 describe('hasKnownCredential', () => {
+  it.each([
+    'Authorization:\r\n  hunter2',
+    '-----BEGIN RSA PRIVATE KEY-----\nMIIE',
+    'AKIAABCDEFGHIJKLMNOP',
+    'Bearer abc.def',
+    'sk-abcdefghijklmnopqrstuvwx',
+    'ghp_abcdefghijklmnopqrstuvwx',
+    'github_pat_11ABCDEFG0abcdefghijkl_mnopqrstuvwxyz0123456789',
+    'xoxb-1234567890-abc',
+    'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln',
+  ])('detects %j', (value) => {
+    expect(hasKnownCredential(value)).toBe(true);
+  });
+
   it('detects a sensitive key=value pair', () => {
     expect(hasKnownCredential('token=abc123')).toBe(true);
   });
@@ -49,6 +43,16 @@ describe('hasKnownCredential', () => {
 
   it('accepts a benign key=value pair', () => {
     expect(hasKnownCredential('selectedIssue=OPS-1')).toBe(false);
+  });
+});
+
+describe('hasHighEntropyToken', () => {
+  it('flags a long mixed-case alphanumeric run and ignores uniform ones', () => {
+    expect(hasHighEntropyToken('cause:aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV')).toBe(true);
+    expect(hasHighEntropyToken('0123456789abcdef0123456789abcdef')).toBe(false);
+    expect(hasHighEntropyToken('cause:deployment')).toBe(false);
+    // `_` is a word character, so a run after it has no \b boundary.
+    expect(hasHighEntropyToken('cause:prod_aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV')).toBe(true);
   });
 });
 

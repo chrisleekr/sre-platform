@@ -1,4 +1,4 @@
-import { redactInput, scrubSecrets } from '@sre/contracts';
+import { hasHighEntropyToken, hasKnownCredential, isSensitiveKey } from '@sre/contracts';
 import { and, count, desc, eq, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import { filterIncidentDataEvidenceIdsTx } from './tool-call-repo';
@@ -19,6 +19,9 @@ export interface AddIncidentTagInput {
   source: 'dashboard' | 'slack';
 }
 
+// Tags are rendered to the whole tenant, so a token-shaped run is refused even without a vendor prefix.
+const hasCredential = (value: string) => hasKnownCredential(value) || hasHighEntropyToken(value);
+
 /**
  * Trims and validates only the storage bounds promised for free-form tags.
  * @param value - Candidate free-form tag.
@@ -28,7 +31,7 @@ export function validateIncidentTag(value: string): string {
   if (!tag) throw new Error('tag is required');
   if (tag.length > 128) throw new Error('tag length exceeds 128 characters');
   if (/\s/.test(tag)) throw new Error('tag cannot contain whitespace');
-  if (scrubSecrets(tag) !== tag) throw new Error('tag must not contain credential material');
+  if (hasCredential(tag)) throw new Error('tag must not contain credential material');
   return tag;
 }
 
@@ -263,7 +266,6 @@ export async function recordAcceptedCauseTagSuggestionsTx(
     } catch {
       continue;
     }
-    if (scrubSecrets(tag) !== tag) continue;
     if (!tag.startsWith('cause:')) continue;
     const valid = await filterIncidentDataEvidenceIdsTx(tx, input.incidentId, proposal.evidenceIds);
     const evidenceIds = valid.filter((id) => runEvidence.has(id));
@@ -381,16 +383,16 @@ export async function setTenantTagLinkRule(
   if (prefix.includes(':')) throw new Error('tag link prefix cannot contain a colon');
   const template = input.urlTemplate.trim();
   if (!template.includes('{value}')) throw new Error('tag link URL must contain {value}');
-  if (scrubSecrets(template) !== template)
-    throw new Error('tag link URL must not contain credentials');
+  if (hasCredential(template)) throw new Error('tag link URL must not contain credentials');
   const preview = new URL(template.replaceAll('{value}', 'preview'));
   if (preview.protocol !== 'https:' || preview.username || preview.password)
     throw new Error('tag link URL must be HTTPS without credentials');
   const query = Object.fromEntries(preview.searchParams.entries());
   const fragment = Object.fromEntries(new URLSearchParams(preview.hash.slice(1)).entries());
   if (
-    JSON.stringify(redactInput(query)) !== JSON.stringify(query) ||
-    JSON.stringify(redactInput(fragment)) !== JSON.stringify(fragment)
+    [...Object.entries(query), ...Object.entries(fragment)].some(
+      ([key, item]) => isSensitiveKey(key) || hasCredential(item),
+    )
   )
     throw new Error('tag link URL must not contain credential parameters');
   return withTenant(db, tenantId, async (tx) => {
