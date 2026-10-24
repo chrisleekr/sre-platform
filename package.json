@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "packageManager": "bun@1.4.3",
+  "packageManager": "bun@1.4.4",
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -79,7 +79,7 @@
     "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
-    "@types/bun": "1.4.3",
+    "@types/bun": "1.4.4",
     "@types/node": "^26.6.5",
     "@typescript/typescript6": "6.0.2",
     "@vitejs/plugin-react": "^6.1.2",
