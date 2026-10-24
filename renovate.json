@@ -58,12 +58,12 @@
       "allowedVersions": "<1.36"
     },
     {
-      "description": "Socket Mode 3 sends heartbeats through undici.ping, which Bun does not expose, so the API would lose its Slack connection. test:slack-socket-compat fails on it. Lift this cap only once that check passes on the pinned Bun.",
+      "description": "Socket Mode 3 runs on Bun's own undici module. Heartbeats work from Bun 1.4.4, which added undici.ping, but that module stubs buildConnector and ignores a custom Agent, so Socket Mode never captures the TCP socket it force-destroys on cleanup. Without that, a peer that never answers the close frame can leave a half-open socket per reconnect, counting toward Slack's per-app connection limit. test:slack-socket-compat fails on any version 3 install. Lift this cap and that check in the change that shows Socket Mode 3 destroys its socket on cleanup under the pinned Bun.",
       "matchPackageNames": ["@slack/socket-mode"],
       "allowedVersions": "<3"
     },
     {
-      "description": "The Claude Agent SDK validates MCP tool input with its own inlined zod core, 4.6 in 0.3.306. A newer zod minor can change schema internals that core reads, as 4.5 did when it marked .default() fields defaulted. The agent-sdk runtime tests fail on such a mismatch. Raise this cap with the Agent SDK release that bundles the matching core.",
+      "description": "The Claude Agent SDK validates MCP tool input with its own inlined zod core, 4.6 in 0.3.309. A newer zod minor can change schema internals that core reads, as 4.5 did when it marked .default() fields defaulted. The agent-sdk runtime tests fail on such a mismatch. Raise this cap with the Agent SDK release that bundles the matching core.",
       "matchPackageNames": ["zod"],
       "allowedVersions": "<4.7"
     },

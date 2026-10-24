@@ -82,9 +82,16 @@ on the other land in different branches; review them together. A named group doe
 its own: while `separateMajorMinor` is on, Renovate moves a group's majors to a separate
 `major-` branch. Splitting either catch-all needs a named group for each coupled set.
 
-`@slack/socket-mode` is capped below 3. Version 3 sends heartbeats through `undici.ping`, which Bun
-does not expose, so the API would lose its Slack connection; `bun run test:slack-socket-compat`
-fails on it. Lift the cap in the change that makes that check pass on the pinned Bun.
+`@slack/socket-mode` is capped below 3. Version 3 replaced `ws` with undici's `WebSocket`, and Bun
+loads its own `undici` module even when the npm package is installed. Before Bun 1.4.4 that module
+had no `ping`, so heartbeats failed outright. From 1.4.4 heartbeats work, but the module stubs
+`buildConnector` and ignores a custom `Agent`, so Socket Mode never captures the TCP socket it
+force-destroys on cleanup. That force-destroy is how Socket Mode 3.0.1 stopped leaking sockets
+toward Slack's per-app connection limit. Without it, a peer that never answers the close frame can
+leave a half-open socket per reconnect. Version 3 adds nothing the API uses, so the cap stays.
+`bun run test:slack-socket-compat` fails on any version 3 install, including a manual one that
+Renovate's cap does not stop. Lift the cap and that check in the change that shows Socket Mode 3
+destroys its socket on cleanup under the pinned Bun.
 
 `zod` is capped below 4.7 and declared with a tilde range. The Claude Agent SDK validates MCP tool
 input with its own inlined zod core, 4.6 in the pinned release. A newer zod minor can change schema
