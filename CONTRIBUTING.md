@@ -89,8 +89,8 @@ had no `ping`, so heartbeats failed outright. From 1.4.4 heartbeats work, but th
 force-destroys on cleanup. That force-destroy is how Socket Mode 3.0.1 stopped leaking sockets
 toward Slack's per-app connection limit. Without it, a peer that never answers the close frame can
 leave a half-open socket per reconnect. Version 3 adds nothing the API uses, so the cap stays.
-`bun run test:slack-socket-compat` only checks that `undici.ping` exists, so it passes on 1.4.4 and
-does not cover the missing socket capture. Lift the cap in the change that shows Socket Mode 3
+`bun run test:slack-socket-compat` fails on any version 3 install, including a manual one that
+Renovate's cap does not stop. Lift the cap and that check in the change that shows Socket Mode 3
 destroys its socket on cleanup under the pinned Bun.
 
 `zod` is capped below 4.7 and declared with a tilde range. The Claude Agent SDK validates MCP tool

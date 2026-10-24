@@ -58,7 +58,7 @@
       "allowedVersions": "<1.36"
     },
     {
-      "description": "Socket Mode 3 runs on Bun's own undici module. Heartbeats work from Bun 1.4.4, which added undici.ping, but that module stubs buildConnector and ignores a custom Agent, so Socket Mode never captures the TCP socket it force-destroys on cleanup. Without that, a peer that never answers the close frame can leave a half-open socket per reconnect, counting toward Slack's per-app connection limit. test:slack-socket-compat only checks that undici.ping exists and does not cover this. Lift this cap in the change that shows Socket Mode 3 destroys its socket on cleanup under the pinned Bun.",
+      "description": "Socket Mode 3 runs on Bun's own undici module. Heartbeats work from Bun 1.4.4, which added undici.ping, but that module stubs buildConnector and ignores a custom Agent, so Socket Mode never captures the TCP socket it force-destroys on cleanup. Without that, a peer that never answers the close frame can leave a half-open socket per reconnect, counting toward Slack's per-app connection limit. test:slack-socket-compat fails on any version 3 install. Lift this cap and that check in the change that shows Socket Mode 3 destroys its socket on cleanup under the pinned Bun.",
       "matchPackageNames": ["@slack/socket-mode"],
       "allowedVersions": "<3"
     },
