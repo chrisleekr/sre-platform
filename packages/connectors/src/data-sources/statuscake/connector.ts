@@ -380,7 +380,7 @@ function makeStatusCakeTools(config: ConnectorConfig, fetchImpl: FetchLike): Con
           } catch {
             return false;
           }
-        }),
+        }, 'path must be a StatusCake API path under v1/'),
         query: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
       }),
       run: async ({ path, query }, call) => {
