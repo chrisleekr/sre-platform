@@ -7,7 +7,7 @@ import {
   applySignalObservation,
   claimAlertCohortAnalysis,
   connectorConfigs,
-  countMonitorEpisodesTx,
+  countMonitorIncidentsTx,
   createIncident,
   getPreviousMonitorEpisodeTx,
   getPreviousProviderEpisode,
@@ -355,7 +355,7 @@ test('a resolved-inclusive monitor lookup skips episodes of incidents that are n
   expect(rows.map((row) => row.id)).toEqual([open.signalId]);
 });
 
-test('monitor episode count spans the 30 days up to and including the current start', async () => {
+test('monitor incident count spans the 30 days up to and including the current start', async () => {
   const source = await dataSource(`episode-count-${randomUUID().slice(0, 8)}`);
   const otherSource = await dataSource(`episode-count-other-${randomUUID().slice(0, 8)}`);
   const monitorKey = 'monitor:checkout-latency';
@@ -407,6 +407,6 @@ test('monitor episode count spans the 30 days up to and including the current st
   );
 
   await withTenant(app.db, tenantId, async (tx) => {
-    expect(await countMonitorEpisodesTx(tx, source, monitorKey, startsAt)).toBe(2);
+    expect(await countMonitorIncidentsTx(tx, source, monitorKey, startsAt)).toBe(2);
   });
 });

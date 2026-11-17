@@ -130,7 +130,7 @@ export async function getPreviousMonitorEpisodeTx(
   return rows[0];
 }
 
-const MONITOR_EPISODE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const MONITOR_INCIDENT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 /**
  * Counts visible incidents with an episode from one monitor scope that started in the 30 days up to and including `startsAt`, so the count includes the current episode.
@@ -140,13 +140,13 @@ const MONITOR_EPISODE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
  * @param monitorKey - Stable provider-neutral rule scope.
  * @param startsAt - Provider start of the episode the window ends at.
  */
-export async function countMonitorEpisodesTx(
+export async function countMonitorIncidentsTx(
   tx: Tx,
   dataSourceId: string,
   monitorKey: string,
   startsAt: Date,
 ): Promise<number> {
-  const since = new Date(startsAt.getTime() - MONITOR_EPISODE_WINDOW_MS);
+  const since = new Date(startsAt.getTime() - MONITOR_INCIDENT_WINDOW_MS);
   const [row] = await tx
     .select({ count: countDistinct(incidentSignals.incidentId) })
     .from(incidentSignals)

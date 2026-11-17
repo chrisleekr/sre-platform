@@ -88,7 +88,7 @@ test('splits grouped alerts into independent episodes, suppresses transport repe
   expect(evidence.relations.map((r) => [r.type, r.sourceIncidentId, r.targetIncidentId])).toEqual([
     ['recurrence_of', recurrence.incidentId, priorId],
   ]);
-  expect(evidence.relations[0]!.evidence.at(-1)).toBe('episodes_30d_including_this:2');
+  expect(evidence.relations[0]!.evidence.at(-1)).toBe('incidents_30d_including_this:2');
   // The fixture sets no dashboard origin, so each link is the bare incident id.
   const relationshipMessages = evidence.messages.filter((m) => m.kind === 'relationship');
   expect(

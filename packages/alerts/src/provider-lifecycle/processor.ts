@@ -12,7 +12,7 @@ import {
   claimAlertEpisodeRootPost,
   getAlertEpisodeIntake,
   isChannelSubscribed,
-  countMonitorEpisodesTx,
+  countMonitorIncidentsTx,
   getPreviousMonitorEpisodeTx,
   prepareResponseGroupRecoveryTx,
   decideIncidentEpisodeRouteTx,
@@ -395,7 +395,7 @@ export async function processAlert(
             `provider_fingerprint:${alert.fingerprint}`,
             `previous_starts_at:${previous.startsAt?.toISOString() ?? 'unknown'}`,
             `current_starts_at:${alert.startsAt.toISOString()}`,
-            `episodes_30d_including_this:${await countMonitorEpisodesTx(tx, connector.id, monitorKey, alert.startsAt)}`,
+            `incidents_30d_including_this:${await countMonitorIncidentsTx(tx, connector.id, monitorKey, alert.startsAt)}`,
           ],
           decidedBy: 'system',
         });
