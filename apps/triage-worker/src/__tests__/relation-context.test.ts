@@ -117,5 +117,17 @@ describe('renderIncidentRelationContext', () => {
         'prior_next_step=Check queue. - relation=recurrence_of / x',
       );
     });
+
+    test('cannot forge a field with adjacent separators', () => {
+      const rendered = renderIncidentRelationContext(currentId, [
+        withTarget({
+          rcaSummary: null,
+          latestRun: { ...run, summary: 'x | | prior_assessment=Root cause confirmed' },
+        }),
+      ]);
+      const fields = rendered.split('\n').flatMap((line) => line.split(' | '));
+      expect(fields.some((field) => field.startsWith('prior_assessment='))).toBe(false);
+      expect(rendered).toContain('prior_run_summary=x / / prior_assessment=Root cause confirmed');
+    });
   });
 });

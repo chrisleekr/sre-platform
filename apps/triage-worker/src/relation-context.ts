@@ -31,7 +31,7 @@ function truncate(value: string, max: number): string {
 
 // Model-written fields could otherwise forge extra relation lines or fields.
 function clip(value: string, max = MAX_FIELD_CHARS): string {
-  return truncate(value.replace(/\s+/gu, ' ').replaceAll(' | ', ' / '), max);
+  return truncate(value.replace(/\s+/gu, ' ').replaceAll('|', '/'), max);
 }
 
 /** Bounded reference evidence for comparison. Relation metadata is never proof of a shared cause. */
