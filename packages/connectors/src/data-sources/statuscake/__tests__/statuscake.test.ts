@@ -352,9 +352,10 @@ describe('sub-resource test-type guard', () => {
     ).toBe(false);
     expect(toolNamed(c, 'get_uptime_periods').inputSchema.safeParse(bad).success).toBe(false);
     expect(toolNamed(c, 'get_uptime_alerts').inputSchema.safeParse(bad).success).toBe(false);
-    expect(toolNamed(c, 'api_get').inputSchema.safeParse({ path: 'v1/../secret' }).success).toBe(
-      false,
-    );
+    const badPath = toolNamed(c, 'api_get').inputSchema.safeParse({ path: 'v1/../secret' });
+    expect(badPath.success).toBe(false);
+    // The model only sees the schema error, so it must say what a valid path is.
+    expect(badPath.error?.issues[0]?.message).toBe('path must be a StatusCake API path under v1/');
   });
 
   test('periods and alerts say they read uptime tests only', () => {
