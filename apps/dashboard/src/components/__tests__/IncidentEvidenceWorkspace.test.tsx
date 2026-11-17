@@ -138,7 +138,7 @@ describe('IncidentEvidenceWorkspace', () => {
     expect(screen.getByText(/Check failed: not found/)).toBeDefined();
     expect(screen.queryByRole('table')).toBeNull();
     expect(
-      screen.getByText('The source has nothing matching this request as named.'),
+      screen.getByText('The source has nothing matching this request as named or as this type.'),
     ).toBeDefined();
   });
 });

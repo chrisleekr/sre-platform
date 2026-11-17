@@ -56,7 +56,7 @@ describe('evidenceOutcomeLabel', () => {
       'The connection is not allowed to read this, so nothing was read.',
     );
     expect(evidenceFailureDetail('not_found')).toBe(
-      'The source has nothing matching this request as named.',
+      'The source has nothing matching this request as named or as this type.',
     );
     expect(evidenceFailureDetail('rate_limited')).toBe(
       'The source limited requests, so nothing was read.',
