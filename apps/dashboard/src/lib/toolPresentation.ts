@@ -44,7 +44,10 @@ const FAILURES: Record<string, [label: string, detail: string]> = {
     'access denied',
     'The connection is not allowed to read this, so nothing was read.',
   ],
-  not_found: ['not found', 'The source has nothing matching this request as named.'],
+  not_found: [
+    'not found',
+    'The source has nothing matching this request as named or as this type.',
+  ],
   rate_limited: ['rate limited', 'The source limited requests, so nothing was read.'],
   unreachable: ['source unreachable', 'The source could not be reached, so nothing was read.'],
   target_not_allowed: [

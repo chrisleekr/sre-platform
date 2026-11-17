@@ -131,7 +131,8 @@ async function sgetTestPage(
   const page = await sget(fetchImpl, token, path, query, signal);
   const data = obj(page).data;
   if (!Array.isArray(data) || data.length > 0) return page;
-  const match = TEST_PAGE_RE.exec(new URL(buildGetUrl(path)).pathname);
+  // StatusCake decodes the path, so match the decoded form or an encoded id skips the type check.
+  const match = TEST_PAGE_RE.exec(decodeURIComponent(new URL(buildGetUrl(path)).pathname));
   if (!match) return page;
   const [, type, id] = match;
   const test = obj(obj(await sget(fetchImpl, token, `/v1/${type}/${id}`, undefined, signal)).data);

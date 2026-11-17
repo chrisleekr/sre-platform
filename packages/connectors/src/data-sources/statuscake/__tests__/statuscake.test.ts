@@ -325,6 +325,14 @@ describe('sub-resource test-type guard', () => {
     ).rejects.toMatchObject({ status: 404 });
   });
 
+  test('api_get guards a percent-encoded sub-resource path', async () => {
+    const { impl, calls } = served(emptyPage, { json: { data: { id: 77, test_type: 'PUSH' } } });
+    await expect(
+      toolNamed(conn(impl), 'api_get').run({ path: 'v1/uptime/%37%37/periods' }),
+    ).rejects.toMatchObject({ status: 404, message: 'statuscake test is not of this type' });
+    expect(new URL(calls[1]!.url).pathname).toBe('/v1/uptime/77');
+  });
+
   test('api_get leaves other empty pages alone', async () => {
     const { impl, calls } = fakeFetch(() => ({ json: { data: [] } }));
     await expect(toolNamed(conn(impl), 'api_get').run({ path: 'v1/uptime' })).resolves.toEqual({
