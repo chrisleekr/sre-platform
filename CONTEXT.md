@@ -6,7 +6,7 @@ Glossary for the SRE Intelligence Platform — a multi-tenant SaaS that unifies 
 
 ## Language
 
-Terms marked _(planned)_ are Edition-2 vocabulary with **no implementation at HEAD**; see "What is not built yet" on the SRE doctrine page.
+Terms marked _(planned)_ are Edition-2 vocabulary with **no implementation at HEAD**; see the status line on each principle of the SRE doctrine page.
 
 **Tenant**:
 An organisation that signs up to the platform and connects its own infrastructure and observability sources. Each tenant supplies its own connector credentials and its data is isolated by `tenant_id` under Postgres Row-Level Security.
@@ -152,16 +152,16 @@ _Avoid_: Document, vector row, embedding record
 One durable fact or lesson from an incident or its conversation, such as which device backs a mount, a confirmed cause, or a ruled-out cause. Stored as a `fact` Knowledge Chunk, one per topic; a newer statement for the same topic replaces the older one. The Triage Engine saves one with the run-scoped `record_learning` tool only when it judges a future incident would otherwise re-investigate it, and the automatic pass after an incident resolves may save more. A new incident's brief lists learnings from past incidents that fired the same monitor before similar ones, as data rather than instructions. An observed learning cites evidence recorded for its incident; a responder learning cites one to five messages in its incident, each from a linked, active workspace member; a hypothesis never replaces either. The cited ids become its source. The same check gates `record_learning` and the automatic pass, which drops a fact that fails it. `record_learning` is a side effect, not evidence: it does not oblige a reply and cannot close an evidence gap. Members review learnings at `GET /knowledge/facts` and remove one at `DELETE /knowledge/facts/:id`. Never names a person.
 _Avoid_: Memory entry, note, insight
 
-**Postmortem** _(planned)_:
-The blameless record of a resolved Incident: summary, impact, contributing causes, trigger, resolution, detection, lessons learned, timeline, and Action Items. Distinct from a **Runbook** — a runbook says how to fix the problem next time, a postmortem says what will be changed so it does not recur. Generated from the incident's hub transcript and evidence store, then human-edited. Never names an individual as a cause (Google SRE Ch 15). Written when a tenant's configured trigger fires, not on every incident.
+**Postmortem**:
+The blameless record of a resolved Incident: summary, impact, contributing causes, trigger, resolution, detection, lessons learned, timeline, and Action Items. Distinct from a **Runbook** — a runbook says how to fix the problem next time, a postmortem says what will be changed so it does not recur. Generated from the incident's hub transcript and evidence store, then human-edited. Never names an individual as a cause (Google SRE Ch 15). Written when a responder declares that a Ch 15 trigger was met, not on every incident.
 _Avoid_: RCA document, incident report, retro
 
-**Action Item** _(planned)_:
+**Action Item**:
 One committed follow-up on a Postmortem, typed `prevent` | `mitigate` | `process`, carrying an owner and an external tracker link, tracked to a terminal state. The link is stored and rendered only: validated to `http:`/`https:` via WHATWG `new URL` before persistence, and **never fetched server-side** — polling a tenant-supplied URL from the control plane is SSRF and would need the resolve-once/`isBlockedIp`/pin guard, plus a recorded decision. The unit that makes a postmortem worth writing; an untracked action item is a defect, not a nicety.
 _Avoid_: Todo, follow-up, remediation task
 
-**Disposition** _(planned)_:
-The single outcome the classifier assigns every ingested signal: `investigate` (urgent, actionable, user-visible now — opens an Incident and spends an engine run), `ticket` (real but not urgent — recorded for human review, no LLM spend), or `log` (not a reliability problem — recorded as a system of record). Google SRE Ch 1's three kinds of valid monitoring output. `investigate` is never the default, and nothing is dropped without a record. Today the classifier instead emits a **Correlation Verdict** — `not_worthy` | `belongs_to` | `new_incident` | `resolves_signal` (`apps/triage-worker/src/engine/correlation.ts`). `resolves_signal` selects a same-producer, same-channel unresolved signal and is applied only when the message independently corroborates recovery and signal identity; `not_worthy` drops the signal with no record.
+**Disposition**:
+The single outcome the classifier assigns every ingested signal: `investigate` (urgent, actionable, user-visible now — opens an Incident and spends an engine run), `ticket` (real but not urgent — recorded for human review, no LLM spend), or `log` (not a reliability problem — recorded as a system of record). Google SRE Ch 1's three kinds of valid monitoring output. `investigate` is never the default, and nothing is dropped without a record. The semantic classifier assigns it in the same call as the **Correlation Verdict** — `not_worthy` | `belongs_to` | `new_incident` | `resolves_signal` (`apps/triage-worker/src/engine/correlation.ts`). A `ticket` or `log` disposition becomes `not_worthy`, and the outcome is recorded either way. In shadow mode a `ticket` or `log` proposal is recorded but does not suppress routing, so the signal still opens an Incident. `resolves_signal` selects a same-producer, same-channel unresolved signal and is applied only when the message independently corroborates recovery and signal identity.
 _Avoid_: Severity, priority. (Not "relevance"/"verdict": `report_relevance` and `CorrelationVerdict` are shipped identifiers.)
 
 **SLO** (Service Level Objective):
@@ -188,13 +188,9 @@ _Avoid_: ETA, forecast, prediction, depletion time
 The remaining allowance of unreliability for a service over a window — the gap between its SLO and its measured SLI ratio. A **read model only**: it enriches an incident's opener brief, stamps deploys advisory-risky, and feeds the Error budgets panel. Ranking services and feeding reports are _(planned)_, not built. It never opens an Incident and is not an ingress to the Incident Opening Service. A fast-burn condition requiring response enters through the tenant's authenticated alert provider or subscribed Slack channel. Computed by pushing the ratio query down to the tenant's own metrics backend; the platform stores definitions and burn events, never SLI samples.
 _Avoid_: SLO budget, reliability budget, burn budget
 
-**Incident Tag** _(planned)_:
+**Incident Tag**:
 Free-form single-word metadata on an Incident, where a colon is a semantic separator promoting hierarchical namespaces (`cause:network:switch`, `action:rollback`, `bogus`). Prefixes are suggested from the tenant's own historical usage, never a fixed enum — a predetermined list yields worse data (Google SRE Ch 16). The substrate for cross-incident analysis.
 _Avoid_: Category, label, classification, taxonomy
-
-**Incident Role** _(planned)_:
-Who holds which responsibility during a live Incident, after the Incident Command System: **commander** (holds high-level state, holds every role not delegated), **ops** (the only party modifying the system), **comms** (periodic stakeholder updates), **planning** (longer-term issues, bug filing, handoffs). Held by a member of the tenant, recorded on the Incident, and transferred only by an explicit acknowledged handoff. An Incident Role is **incident coordination, never authorization**: it gates nothing anyone may see or decide during the incident, because members of a tenant see the same things. It is also independent of the membership role that reserves durable workspace configuration to an owner or administrator (see **Trust Boundary**): holding commander confers no configuration authority, and holding `admin` confers no incident role. "The only party modifying the system" is a human convention among responders — the platform does not mutate tenant infrastructure. Separately confirmed repository issue actions may use scoped issue-write credentials. Gating an Approval on a role would be an authorization check built on an identity the platform does not verify, and needs a deliberate, recorded decision. Google SRE Ch 14.
-_Avoid_: Assignee, owner, responder role, permission
 
 **Golden Signals**:
 The four service-health signals a senior-SRE investigation examines for anomalies — latency, traffic, errors, and saturation (Google SRE). Step 5 of the Triage Engine's Investigation Sequence, named in the engine-agnostic system prompt; the engine examines them with whichever of the tenant's bound tools can serve them.

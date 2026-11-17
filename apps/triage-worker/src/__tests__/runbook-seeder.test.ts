@@ -174,6 +174,7 @@ describe('makeRunbookSeeder', () => {
       RUNBOOK.title,
     ]);
     expect(result[0]!.category).toBe('fact');
+    expect(result.map((seed) => seed.match)).toEqual(['monitor', 'similar']);
     // Without the monitor key only the similar runbook clears the floor.
     const unkeyed = await seeder(tenantA, { title: 'database', service: 'etcd', severity: 'sev2' });
     expect(unkeyed.map((seed) => seed.title)).toEqual([RUNBOOK.title]);

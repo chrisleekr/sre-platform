@@ -125,8 +125,7 @@ calls enabling that analysis one of the most important functions of an outage tr
 
 ### 5. Structure the response before you debug it
 
-**Not built today.** The conversation is a command post with no roles, no state document, and no
-handoff.
+**Partly built, by choice.** The incident conversation is the command post, and the incident workspace **Brief** is its state document: impact, leading hypothesis, missing information, next step and recovery evidence, rendered from stored incident fields so it stays readable when the engine is degraded. Incident Command System roles and an acknowledged commander handoff are deliberately not built.
 
 > "Your first response in a major outage may be to start troubleshooting and try to find a root cause
 > as quickly as possible. **Ignore that instinct!**"
@@ -142,15 +141,14 @@ operations lead who is *the only person modifying the system*, a communications 
 lead. Plus a recognised command post, a **live incident state document**, and an explicit handoff,
 "You're now the incident commander, okay?", that is not complete until it is acknowledged.
 
-The incident conversation is already the command post. The roles, the state document, and the handoff
-are what remain.
+The platform departs from the chapter on the roles. They would gate nothing, because members of a tenant are equal, and they pay off only when several responders work one incident at once. If that becomes common, the slice to add is one incident lead per incident with an announced, acknowledged handoff, plus an editable exit criteria field on the Brief.
 
 ### 6. Postmortems are not runbooks
 
 **Built.** A responder generates a postmortem from the incident workspace under a declared trigger;
 it carries contributing causes and typed action items with an owner, a tracker link and a state
 tracked to done, and the Reliability workspace counts untracked and past-due items rather than
-hiding them. Automatic triggers are not built; every postmortem is commanded by a person.
+hiding them. Automatic triggers are deliberately not built: every postmortem is commanded by a person, who declares which trigger it meets.
 
 The platform generates runbooks, meaning *how to fix this next time*. A postmortem is a different
 artifact with a different purpose: what the contributing causes were, and **what will change so it

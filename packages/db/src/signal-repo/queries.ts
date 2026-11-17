@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, like, lt, lte, ne } from 'drizzle-orm';
+import { and, countDistinct, desc, eq, gte, inArray, isNull, like, lt, lte, ne } from 'drizzle-orm';
 import type { Db } from '../client';
 import { withTenant, type Executor, type Tx } from '../rls';
 import { ACTIVE_STATUSES, incidentSignals, incidents } from '../schema';
@@ -128,6 +128,38 @@ export async function getPreviousMonitorEpisodeTx(
     )
     .limit(1);
   return rows[0];
+}
+
+const MONITOR_INCIDENT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Counts visible incidents with an episode from one monitor scope that started in the 30 days up to and including `startsAt`, so the count includes the current episode.
+ *
+ * @param tx - Existing transaction that already carries tenant scope.
+ * @param dataSourceId - Connector instance that emitted the alert.
+ * @param monitorKey - Stable provider-neutral rule scope.
+ * @param startsAt - Provider start of the episode the window ends at.
+ */
+export async function countMonitorIncidentsTx(
+  tx: Tx,
+  dataSourceId: string,
+  monitorKey: string,
+  startsAt: Date,
+): Promise<number> {
+  const since = new Date(startsAt.getTime() - MONITOR_INCIDENT_WINDOW_MS);
+  const [row] = await tx
+    .select({ count: countDistinct(incidentSignals.incidentId) })
+    .from(incidentSignals)
+    .where(
+      and(
+        eq(incidentSignals.dataSourceId, dataSourceId),
+        eq(incidentSignals.monitorKey, monitorKey),
+        gte(incidentSignals.startsAt, since),
+        lte(incidentSignals.startsAt, startsAt),
+        inArray(incidentSignals.incidentId, visibleIncidentIds(tx)),
+      ),
+    );
+  return row?.count ?? 0;
 }
 
 /**

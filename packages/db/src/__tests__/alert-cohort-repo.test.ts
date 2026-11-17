@@ -7,6 +7,7 @@ import {
   applySignalObservation,
   claimAlertCohortAnalysis,
   connectorConfigs,
+  countMonitorIncidentsTx,
   createIncident,
   getPreviousMonitorEpisodeTx,
   getPreviousProviderEpisode,
@@ -352,4 +353,60 @@ test('a resolved-inclusive monitor lookup skips episodes of incidents that are n
     { includeResolved: true },
   );
   expect(rows.map((row) => row.id)).toEqual([open.signalId]);
+});
+
+test('monitor incident count spans the 30 days up to and including the current start', async () => {
+  const source = await dataSource(`episode-count-${randomUUID().slice(0, 8)}`);
+  const otherSource = await dataSource(`episode-count-other-${randomUUID().slice(0, 8)}`);
+  const monitorKey = 'monitor:checkout-latency';
+  const startsAt = new Date('2026-08-26T06:00:00.000Z');
+  const at = (offsetMs: number) => new Date(startsAt.getTime() + offsetMs);
+  const day = 24 * 60 * 60 * 1000;
+  const observe = async (dataSourceId: string, episodeStart: Date, incidentId?: string) => {
+    const id =
+      incidentId ??
+      (
+        await createIncident(app.db, tenantId, {
+          fingerprint: `episode-count-${randomUUID()}`,
+          alertSource: 'prometheus',
+          service: 'checkout',
+          severity: 'sev2',
+        })
+      ).id;
+    const suffix = randomUUID();
+    await applySignalObservation(app.db, tenantId, {
+      incidentId: id,
+      dataSourceId,
+      provider: 'alertmanager',
+      providerFingerprint: `count-${suffix}`,
+      startsAt: episodeStart,
+      monitorKey,
+      materialHash: `material-${suffix}`,
+      surface: 'alertmanager',
+      channel: dataSourceId,
+      externalMessageId: `count-${suffix}`,
+      state: 'firing',
+      summary: `Episode ${suffix}`,
+      contentHash: `content-${suffix}`,
+      eventKey: `event-${suffix}`,
+      eventAt: episodeStart,
+    });
+    return id;
+  };
+
+  await observe(source, startsAt);
+  const lowerEdge = await observe(source, at(-30 * day));
+  // A second episode on the same incident must not count it twice.
+  await observe(source, at(-day), lowerEdge);
+  await observe(source, at(-30 * day - 1));
+  await observe(source, at(1));
+  await observe(otherSource, startsAt);
+  const archived = await observe(source, at(-day));
+  await withTenant(app.db, tenantId, (tx) =>
+    tx.update(incidents).set({ archivedAt: startsAt }).where(eq(incidents.id, archived)),
+  );
+
+  await withTenant(app.db, tenantId, async (tx) => {
+    expect(await countMonitorIncidentsTx(tx, source, monitorKey, startsAt)).toBe(2);
+  });
 });

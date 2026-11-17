@@ -123,14 +123,14 @@ describe('C5: the opener brief carries the error budget', () => {
     expect(brief!.content).toContain(slo.name);
     expect(brief!.content).toContain('25.0% budget remaining');
     expect(brief!.content).toContain('burn 4.0x over 1h');
-    // The blast radius still leads the brief: the budget is appended, not substituted.
-    expect(brief!.content).toContain('Blast radius for');
-    expect(brief!.content.indexOf('Blast radius for')).toBeLessThan(
-      brief!.content.indexOf('SLO status:'),
-    );
-    // The same brief reaches the engine's first turn.
-    expect(captured()?.context).toContain('SLO status:');
-    expect(captured()?.context).toContain('25.0% budget remaining');
+    // Blast radius is model context only; the engine still sees it ahead of the budget.
+    expect(brief!.content).not.toContain('Blast radius for');
+    const context = captured()?.context ?? '';
+    expect(context).toContain('Blast radius for');
+    expect(context.indexOf('Blast radius for')).toBeLessThan(context.indexOf('SLO status:'));
+    // The budget section also reaches the engine's first turn.
+    expect(context).toContain('SLO status:');
+    expect(context).toContain('25.0% budget remaining');
   });
 
   test('an unevaluated objective is reported as awaiting evaluation, never as a number', async () => {
@@ -171,11 +171,9 @@ describe('C5: the opener brief carries the error budget', () => {
     expect(await worker.tick('budget-absent')).toBe(1);
 
     const history = await __fixture.hub.history(__fixture.tenantId, incidentId);
-    // The brief is byte-identical to the pre-budget brief: the section is dropped, not rendered empty
-    // and not rendered as a "no SLOs" line the engine would have to reason about.
-    const brief = history.find((m) => m.content.includes('Blast radius for'))!;
-    expect(brief.content).not.toContain('SLO status');
-    expect(brief.content.trimEnd()).toBe(brief.content);
+    // The section is dropped, not rendered as a "no SLOs" line the engine would have to reason about.
+    expect(history.some((m) => m.content.includes('SLO status'))).toBe(false);
+    expect(captured()?.context).toContain('Blast radius for');
     expect(captured()?.context).not.toContain('SLO status');
     // And the incident still opens.
     expect(history.some((m) => m.content.includes('Triage started'))).toBe(true);
@@ -234,7 +232,7 @@ describe('C5: the opener brief carries the error budget', () => {
       window: '1h',
     });
     const incidentId = await openIncidentFor(service);
-    const { worker } = briefWorker();
+    const { worker, captured } = briefWorker();
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     // A realistic read failure: the login role loses SELECT on `slos` for the duration of the open.
@@ -260,9 +258,9 @@ describe('C5: the opener brief carries the error budget', () => {
 
     const history = await __fixture.hub.history(__fixture.tenantId, incidentId);
     expect(history.some((m) => m.content.includes('Triage started'))).toBe(true);
-    expect(history.some((m) => m.content.includes('Blast radius for'))).toBe(true);
     // Degraded silently: no budget section, and no raw database error in the conversation.
     expect(history.some((m) => m.content.includes('SLO status'))).toBe(false);
     expect(history.some((m) => /permission denied/i.test(m.content))).toBe(false);
+    expect(captured()?.context).toContain('Blast radius for');
   });
 });

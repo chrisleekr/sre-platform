@@ -33,9 +33,9 @@ const __fixture = createFixture();
 describe('TriageWorker', () => {
   // --- proactive runbook seeding into the incident-open brief -------------------
   // The worker calls an injected `runbookSeeder(tenantId, { title, service, severity })` once, on the
-  // OPEN path only, and prepends a "Related runbooks from past incidents" section (each: title +
-  // "seen N×" confidence + full content) to the brief — into BOTH the hub opener AND the engine's
-  // first-turn context. Best-effort: a seeder throw seeds nothing and never blocks the open. Resume
+  // OPEN path only, and puts a "Related runbooks from past incidents" section (each: title +
+  // "seen N×" confidence + full content) into the engine's first-turn context. The hub gets only a
+  // one-line count summary. Best-effort: a seeder throw seeds nothing and never blocks the open. Resume
   // never re-seeds. The seeder query threads the classifier title from the job payload.
   type RunbookSeed = {
     title: string | null;
@@ -264,7 +264,7 @@ describe('TriageWorker', () => {
     }
   });
 
-  test('seeds matched runbooks into the opener brief AND the first-turn engine context', async () => {
+  test('seeds matched runbooks into the engine context and posts only a count summary to the hub', async () => {
     const { id: incId } = await createIncident(__fixture.app.db, __fixture.tenantId, {
       fingerprint: `fp-${randomUUID()}`,
       alertSource: 'slack',
@@ -277,6 +277,7 @@ describe('TriageWorker', () => {
         content: 'Restart pgbouncer.',
         occurrenceCount: 4,
         verified: true,
+        match: 'monitor',
       },
     ]);
     const { worker: w, captured } = seedWorker(seeder);
@@ -300,12 +301,17 @@ describe('TriageWorker', () => {
     expect(captured()?.context).toContain('DB pool exhaustion runbook');
     expect(captured()?.context).toContain('seen 4×');
 
-    // (2) The same section landed in the hub opener brief.
+    // (2) The hub shows a one-line summary, not the runbook text.
     const history = await __fixture.hub.history(__fixture.tenantId, incId);
-    const brief = history.find((m) => m.content.includes('Related runbooks from past incidents'));
-    expect(brief).toBeDefined();
-    expect(brief!.content).toContain('DB pool exhaustion runbook');
-    expect(brief!.content).toContain('seen 4×');
+    expect(history.some((m) => m.content.includes('Related runbooks from past incidents'))).toBe(
+      false,
+    );
+    expect(history.some((m) => m.content.includes('DB pool exhaustion runbook'))).toBe(false);
+    expect(
+      history.some((m) =>
+        m.content.startsWith('Using 1 runbook or note (most seen 4× on this monitor)'),
+      ),
+    ).toBe(true);
   });
 
   test('preserves seed order (highest-first) and includes full content untruncated', async () => {
@@ -368,6 +374,9 @@ describe('TriageWorker', () => {
     expect(history.some((m) => m.content.includes('Related runbooks from past incidents'))).toBe(
       false,
     );
+    // With no seeds and no objectives the opener posts only its start line, never a blank message.
+    expect(history.some((m) => m.content.trim() === '')).toBe(false);
+    expect(history.some((m) => m.content.startsWith('Using '))).toBe(false);
   });
 
   test('a seeder failure seeds nothing but still opens the incident (best-effort)', async () => {
@@ -389,24 +398,24 @@ describe('TriageWorker', () => {
     });
     expect(await w.tick('seed-c4')).toBe(1);
 
-    // The open proceeds normally: progress gathers, the brief posts, but no runbook section is seeded.
+    // The open proceeds normally and no runbook summary is posted.
     expect(
       (await getIncident(__fixture.app.db, __fixture.tenantId, incId))?.investigationStatus,
     ).toBe('assessed');
     const history = await __fixture.hub.history(__fixture.tenantId, incId);
     expect(history.some((m) => m.content.includes('Triage started'))).toBe(true);
-    expect(history.some((m) => m.content.includes('Blast radius for'))).toBe(true);
+    expect(history.some((m) => m.content.startsWith('Using '))).toBe(false);
     expect(history.some((m) => m.content.includes('Related runbooks from past incidents'))).toBe(
       false,
     );
   });
 
-  // C7 — the opener computes blastRadius and runbookSection independently and best-effort.
-  // When one (the runbook seed) throws, the other (blast radius) still reaches the hub, triage still
-  // opens, and the raw failure text is NEVER leaked into the conversation (CWE-209). This characterises
-  // the independence the Promise.all parallelisation must preserve. (The concurrency itself is not
-  // behaviourally observable, so it is not asserted here.)
-  test('C7: a runbook-seed failure does not abort the blast-radius brief or leak raw error text', async () => {
+  // C7 — the opener computes blastRadius and the runbook seeds independently and best-effort.
+  // When one (the runbook seed) throws, the other (blast radius) still reaches the engine context,
+  // triage still opens, and the raw failure text is NEVER leaked into the conversation (CWE-209). This
+  // characterises the independence the Promise.all parallelisation must preserve. (The concurrency
+  // itself is not behaviourally observable, so it is not asserted here.)
+  test('C7: a runbook-seed failure does not drop the blast radius from the engine context or leak raw error text', async () => {
     const { id: incId } = await createIncident(__fixture.app.db, __fixture.tenantId, {
       fingerprint: `fp-${randomUUID()}`,
       alertSource: 'datadog',
@@ -417,7 +426,7 @@ describe('TriageWorker', () => {
     const seeder = vi.fn<SeederFn>(async () => {
       throw new Error(`seed query failed: ${secret}`);
     });
-    const { worker: w } = seedWorker(seeder);
+    const { worker: w, captured } = seedWorker(seeder);
 
     await __fixture.queue.enqueue({
       tenantId: __fixture.tenantId,
@@ -426,12 +435,13 @@ describe('TriageWorker', () => {
     });
     expect(await w.tick('c7-independence')).toBe(1);
 
-    // Triage opened with the blast-radius section despite the seeder throwing (independence preserved).
+    // Triage opened with the blast radius in the engine context despite the seeder throwing.
+    expect(captured()?.context).toContain('Blast radius for');
     expect(
       (await getIncident(__fixture.app.db, __fixture.tenantId, incId))?.investigationStatus,
     ).toBe('assessed');
     const history = await __fixture.hub.history(__fixture.tenantId, incId);
-    expect(history.some((m) => m.content.includes('Blast radius for'))).toBe(true);
+    expect(history.some((m) => m.content.includes('Triage started'))).toBe(true);
     // No raw error/connection string ever reaches the conversation.
     expect(history.some((m) => m.content.includes(secret))).toBe(false);
     expect(history.some((m) => m.content.includes('seed query failed'))).toBe(false);

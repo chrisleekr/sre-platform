@@ -16,8 +16,7 @@ evidence and shared conversation stay on one page.
 
 ## Human decision required
 
-The decision names the recorded next action. Service team is ownership context, not an assigned
-incident commander. Missing team or impact stays explicit. Check contradictions before acting.
+The decision names the recorded next action. When that action is the brief's **Next diagnostic step**, the decision points to it instead of repeating it. Service team is ownership context, not an assigned incident commander. Missing team or impact stays explicit. Check contradictions before acting.
 
 When a provider bot posts a recovery notice in Slack for this incident, the platform records it as
 a report. A provider that edits its alert message so it opens with a resolved header covers every
@@ -202,7 +201,7 @@ or reliability totals.
 ## Incident graph
 
 Every provider episode keeps its own incident, evidence, and conversation. A recurrence link is
-history, and a possible relationship means only that two alerts were worth comparing.
+history, and its earlier episode's open check is shown to the new investigation. A possible relationship means only that two alerts were worth comparing.
 
 An evidence-backed **caused by** relationship names this incident's direct cause. Following direct
 causes identifies the response root. The root coordinates lifecycle and recovery for the causal

@@ -12,6 +12,7 @@ import {
   claimAlertEpisodeRootPost,
   getAlertEpisodeIntake,
   isChannelSubscribed,
+  countMonitorIncidentsTx,
   getPreviousMonitorEpisodeTx,
   prepareResponseGroupRecoveryTx,
   decideIncidentEpisodeRouteTx,
@@ -383,7 +384,7 @@ export async function processAlert(
         alert.startsAt,
         signalId,
       );
-      if (previous && previous.incidentId !== routed.incidentId)
+      if (previous && previous.incidentId !== routed.incidentId) {
         await recordIncidentRelationTx(tx, connector.tenantId, {
           sourceIncidentId: routed.incidentId,
           targetIncidentId: previous.incidentId,
@@ -394,12 +395,12 @@ export async function processAlert(
             `provider_fingerprint:${alert.fingerprint}`,
             `previous_starts_at:${previous.startsAt?.toISOString() ?? 'unknown'}`,
             `current_starts_at:${alert.startsAt.toISOString()}`,
+            `incidents_30d_including_this:${await countMonitorIncidentsTx(tx, connector.id, monitorKey, alert.startsAt)}`,
           ],
           decidedBy: 'system',
         });
-      if (previous && previous.incidentId !== routed.incidentId) {
-        const previousId = previous.incidentId;
-        const previousUrl = incidentUrl(deps.dashboardBaseUrl, previousId) ?? previousId;
+        const previousUrl =
+          incidentUrl(deps.dashboardBaseUrl, previous.incidentId) ?? previous.incidentId;
         relationshipMessages.push(
           (
             await deps.hub.appendTxOnce(tx, connector.tenantId, routed.incidentId, {
@@ -410,14 +411,13 @@ export async function processAlert(
             })
           ).message,
         );
-
         relationshipMessages.push(
           (
-            await deps.hub.appendTxOnce(tx, connector.tenantId, previousId, {
+            await deps.hub.appendTxOnce(tx, connector.tenantId, previous.incidentId, {
               author: 'system',
               kind: 'relationship',
               content: `A new firing from this monitor rule opened a separate incident: ${incidentUrl(deps.dashboardBaseUrl, routed.incidentId) ?? routed.incidentId}.`,
-              originMessageId: `alertmanager:relationship-backlink:${signalId}:${previousId}`,
+              originMessageId: `alertmanager:relationship-backlink:${signalId}:${previous.incidentId}`,
             })
           ).message,
         );

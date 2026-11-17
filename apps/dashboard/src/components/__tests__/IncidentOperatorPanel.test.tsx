@@ -281,3 +281,39 @@ test.each([
 
   expect((await screen.findByRole('alert')).textContent).toBe(message);
 });
+
+const runStep = 'Query the checkout error logs for the five minutes before the alert opened.';
+type Run = NonNullable<IncidentWorkspaceData['incident']['latestInvestigationRun']>;
+
+test('points to the brief when the decision repeats the run next step it already shows', () => {
+  const data = workspace({ nextStep: null, latestInvestigationRun: { nextStep: runStep } as Run });
+  data.attention = { decision: runStep, owner: null, nextAutomation: null };
+  render(<IncidentOperatorPanel workspace={data} />);
+  expect(screen.getByText('Run the next diagnostic step above.')).toBeTruthy();
+  expect(screen.queryByText(runStep)).toBeNull();
+});
+
+test('shows the decision in full when the brief shows a different trusted next step', () => {
+  const data = workspace({
+    nextStep: 'Roll back the checkout deploy.',
+    latestInvestigationRun: { nextStep: runStep } as Run,
+  });
+  data.attention = { decision: runStep, owner: null, nextAutomation: null };
+  render(<IncidentOperatorPanel workspace={data} />);
+  expect(screen.getByText(runStep)).toBeTruthy();
+  expect(screen.queryByText('Run the next diagnostic step above.')).toBeNull();
+});
+
+test('shows the decision in full when a current recovery replaces the brief next step', () => {
+  const data = workspace({
+    nextStep: null,
+    latestInvestigationRun: { nextStep: runStep } as Run,
+    recoveryState: 'not_verified',
+    assessmentUpdatedAt: '2026-09-20T00:05:00.000Z',
+    recoveryUpdatedAt: '2026-09-20T00:10:00.000Z',
+  });
+  data.attention = { decision: runStep, owner: null, nextAutomation: null };
+  render(<IncidentOperatorPanel workspace={data} />);
+  expect(screen.getByText(runStep)).toBeTruthy();
+  expect(screen.queryByText('Run the next diagnostic step above.')).toBeNull();
+});

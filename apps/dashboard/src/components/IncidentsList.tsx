@@ -240,6 +240,17 @@ export function IncidentsList({ incidents }: { incidents: Incident[] }) {
                       incident.causalParentId.slice(0, 8)}
                   </p>
                 )}
+                {incident.recurrence && (
+                  <p className="text-xs text-ink-muted">
+                    {incident.recurrence.earlierEpisodes === 1
+                      ? '1 earlier episode'
+                      : `${incident.recurrence.earlierEpisodes} earlier episodes`}{' '}
+                    since{' '}
+                    <time dateTime={incident.recurrence.since}>
+                      {formatAbsoluteTime(incident.recurrence.since)}
+                    </time>
+                  </p>
+                )}
                 <p className="mt-1 flex min-w-0 flex-wrap gap-x-2 gap-y-1 text-xs text-ink-muted">
                   {!incident.service.startsWith('slack:') && (
                     <>

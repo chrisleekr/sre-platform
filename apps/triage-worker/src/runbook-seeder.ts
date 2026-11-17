@@ -12,6 +12,8 @@ export interface RunbookSeed {
   category: string;
   occurrenceCount: number;
   verified: boolean;
+  /** 'monitor' for an exact monitor-key match, 'similar' for a similarity match. */
+  match: 'monitor' | 'similar';
 }
 
 export interface RunbookSeederDeps {
@@ -48,12 +50,17 @@ export function makeRunbookSeeder(deps: RunbookSeederDeps): RunbookSeeder {
       }),
     ]);
     const seen = new Set(exact.map((hit) => hit.id));
-    return [...exact, ...similar.filter((hit) => !seen.has(hit.id))].map((h) => ({
+    const toSeed = (h: Omit<RunbookSeed, 'match'>, match: RunbookSeed['match']): RunbookSeed => ({
       title: h.title,
       content: h.content,
       category: h.category,
       occurrenceCount: h.occurrenceCount,
       verified: h.verified,
-    }));
+      match,
+    });
+    return [
+      ...exact.map((h) => toSeed(h, 'monitor')),
+      ...similar.filter((hit) => !seen.has(hit.id)).map((h) => toSeed(h, 'similar')),
+    ];
   };
 }

@@ -132,6 +132,8 @@ export interface Incident extends Partial<IncidentTitlePresentation> {
   originChannelName?: string | null;
   /** Direct response parent for a causal symptom in the incident queue. */
   causalParentId?: string | null;
+  /** Earlier episodes of the same recurring alert; null for the first. */
+  recurrence?: { earlierEpisodes: number; since: string } | null;
   /** Surface and root thread for the detail view's cross-surface context. */
   originSurface?: string | null;
   originThreadId?: string | null;

@@ -5,6 +5,7 @@ import type { CredentialGetter } from '../lib/request-credentials';
 import { checkResponse, RequestError, requestErrorMessage } from '../lib/request-error';
 import { formatAbsoluteTime } from '../lib/time';
 import type { IncidentWorkspaceData } from '../lib/types';
+import { isRecoveryCurrent } from './incident-conversation/state';
 
 type Budget = NonNullable<NonNullable<IncidentWorkspaceData['automation']>['currentBudget']>;
 
@@ -201,9 +202,15 @@ export function IncidentOperatorPanel({
   getCredentials?: CredentialGetter;
   onChanged?: () => void;
 }) {
-  const { attention, automation } = workspace;
+  const { attention, automation, incident } = workspace;
   const budget = automation?.currentBudget;
   if (!attention && !automation) return null;
+  // The brief directly above already shows this step, so point to it instead of repeating it.
+  const decision =
+    !isRecoveryCurrent(incident) &&
+    attention?.decision === (incident.nextStep ?? incident.latestInvestigationRun?.nextStep)
+      ? 'Run the next diagnostic step above.'
+      : attention?.decision;
   return (
     <section className="grid min-w-0 gap-3 lg:grid-cols-2" aria-label="Response handoff and policy">
       <div
@@ -221,7 +228,7 @@ export function IncidentOperatorPanel({
           <dl className="mt-3 space-y-3 text-sm">
             <div>
               <dt className="font-semibold text-warning">Decision</dt>
-              <dd className="mt-0.5 text-ink">{attention.decision}</dd>
+              <dd className="mt-0.5 text-ink">{decision}</dd>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               {showTeam && (

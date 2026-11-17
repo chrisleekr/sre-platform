@@ -47,6 +47,11 @@ import {
   type IncidentSort,
 } from './list-order';
 import { responsibleOwnerSql } from './owner';
+import {
+  hiddenEarlierEpisodeCondition,
+  recurrenceSummarySql,
+  type RecurrenceSummary,
+} from './recurrence-list';
 
 /**
  * An incident as the dashboard lists it: the summary, operational priority facts, signal counts, and
@@ -79,6 +84,8 @@ export interface IncidentListItem extends IncidentSummary {
   responsibleOwner: string | null;
   /** Direct response parent when this incident is a causal symptom. */
   causalParentId: string | null;
+  /** Earlier episodes of the same recurring alert; null for the first episode. */
+  recurrence: RecurrenceSummary | null;
 }
 
 const listColumns = {
@@ -106,6 +113,7 @@ const listColumns = {
         and ${incidentRelations.supersededAt} is null
       limit 1
     )`,
+  recurrence: recurrenceSummarySql(),
   ...attentionColumns,
 } as const;
 
@@ -223,6 +231,9 @@ export async function listIncidentsPage(
   }
   if (opts.query) where.push(incidentSearchCondition(opts.query));
   if (opts.severity) where.push(eq(incidents.severity, opts.severity));
+  // Searching or filtering lists every episode so any incident stays findable.
+  const hidden = !opts.query && !opts.severity && hiddenEarlierEpisodeCondition(opts.scope);
+  if (hidden) where.push(hidden);
   if (opts.before) {
     // Priority keys on mutable attention state, so a createdAt keyset would skip eligible rows.
     if (sort === 'priority') throw new Error('priority ordering does not support cursors');

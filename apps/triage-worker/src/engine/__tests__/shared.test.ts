@@ -235,6 +235,12 @@ describe('TRIAGE_SYSTEM_PROMPT investigation sequence', () => {
 
   // the prompt-injection guard enumerates runbook/knowledge-base content (seed + tool)
   // as untrusted, not just alert/topology/tool-result text.
+  // A recurring episode sees the previous run's open check as untrusted reference data.
+  test('covers recurrence references and the prior next step', () => {
+    expect(TRIAGE_SYSTEM_PROMPT).toContain('recurrence_of');
+    expect(TRIAGE_SYSTEM_PROMPT).toContain('prior_next_step');
+  });
+
   test('lists runbook and knowledge-base content as untrusted data', () => {
     expect(TRIAGE_SYSTEM_PROMPT).toContain('runbook and knowledge-base');
   });
