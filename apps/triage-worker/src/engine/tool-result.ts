@@ -24,16 +24,16 @@ export function toolResultMaxChars(): number {
 }
 
 const NOT_RETRYABLE =
-  'Do not repeat this call unchanged; record a missing_capability unknown if the proof requires it.';
+  'Do not repeat this call unchanged; record a missing_capability unknown if the proof requires it';
 const RETRYABLE =
-  'The data was not read, which proves nothing about it; retry later or use another check.';
+  'The data was not read, which proves nothing about it; retry later or use another check';
 
 /** Steers the model by failure class: a denied or absent read will fail the same way again. */
 const FAILURE_GUIDANCE: Record<ToolFailure, string> = {
   permission_denied: NOT_RETRYABLE,
-  // An absent target is a finding about the named target, not a missing tool.
+  // An absent or wrong-type target is a finding about that name and type, not a missing tool.
   not_found:
-    'The target does not exist as named; check the name or record its absence as evidence. Do not repeat this call unchanged.',
+    'The target does not exist as named or as this type; check the name and type, or record its absence under that name and type as evidence. Do not repeat this call unchanged',
   target_not_allowed: NOT_RETRYABLE,
   timeout: RETRYABLE,
   rate_limited: RETRYABLE,

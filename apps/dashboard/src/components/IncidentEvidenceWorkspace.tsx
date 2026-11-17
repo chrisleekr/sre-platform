@@ -1,7 +1,11 @@
 import { useContext, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { formatAbsoluteTime } from '../lib/time';
 import type { EvidenceDetail, EvidenceListItem } from '../lib/types';
-import { evidenceOutcomeLabel, toolDisplayLabel } from '../lib/toolPresentation';
+import {
+  evidenceFailureDetail,
+  evidenceOutcomeLabel,
+  toolDisplayLabel,
+} from '../lib/toolPresentation';
 import { IncidentCodeEvidence } from './IncidentCodeEvidence';
 import { IncidentTimeSeriesFigure } from './IncidentTimeSeriesFigure';
 import { IncidentEvidenceText } from './IncidentEvidenceText';
@@ -45,8 +49,11 @@ function EvidenceDetailView({ detail }: { detail: EvidenceDetail }) {
       {detail.summary && <p className="break-all text-sm">{detail.summary}</p>}
       <p className="text-xs text-ink-muted">
         Recorded {formatAbsoluteTime(detail.recordedAt)} · Execution {detail.latencyMs} ms ·{' '}
-        {evidenceOutcomeLabel(detail.outcome)}
+        {evidenceOutcomeLabel(detail.outcome, detail.failure)}
       </p>
+      {detail.outcome === 'error' && (
+        <p className="text-sm">{evidenceFailureDetail(detail.failure)}</p>
+      )}
       {detail.referenceUrl && (
         <a
           href={detail.referenceUrl}
@@ -57,7 +64,7 @@ function EvidenceDetailView({ detail }: { detail: EvidenceDetail }) {
           Open provider reference ↗
         </a>
       )}
-      {log !== null ? (
+      {detail.outcome === 'error' ? null : log !== null ? (
         <IncidentEvidenceText key={detail.id} text={log} label="Logs" />
       ) : (
         <>
@@ -301,7 +308,8 @@ export function IncidentEvidenceWorkspace({
                   {item.summary || `Check ${item.id.slice(0, 8)}`}
                 </span>
                 <span className="text-xs text-ink-muted">
-                  {evidenceOutcomeLabel(item.outcome)} · {formatAbsoluteTime(item.recordedAt)}
+                  {evidenceOutcomeLabel(item.outcome, item.failure)} ·{' '}
+                  {formatAbsoluteTime(item.recordedAt)}
                 </span>
               </button>
             ))}

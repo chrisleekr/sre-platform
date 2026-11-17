@@ -22,3 +22,12 @@ test('keeps retained scalar values verbatim and bounds Unicode without splitting
   expect([...(result ?? '')]).toHaveLength(200);
   expect(result).not.toMatch(/[\ud800-\udbff]$/);
 });
+
+test('summarizes StatusCake checks by test id and type', () => {
+  const key = 'AAAAAAAAAAAAAAAAAAAAAA';
+  expect(evidenceSummary(`statuscake_${key}_get_test`, { type: 'heartbeat', id: '5' })).toBe(
+    'type: heartbeat · id: 5',
+  );
+  expect(evidenceSummary(`statuscake_${key}_get_uptime_periods`, { id: '77' })).toBe('id: 77');
+  expect(evidenceSummary(`statuscake_${key}_api_get`, { path: 'v1/uptime' })).toBeNull();
+});

@@ -65,7 +65,7 @@ describe('renderModelToolResult', () => {
     ['permission_denied', 'Do not repeat this call unchanged; record a missing_capability unknown'],
     [
       'not_found',
-      'check the name or record its absence as evidence. Do not repeat this call unchanged',
+      'check the name and type, or record its absence under that name and type as evidence. Do not repeat this call unchanged',
     ],
     ['target_not_allowed', 'Do not repeat this call unchanged'],
     ['timeout', 'retry later or use another check'],
@@ -87,6 +87,8 @@ describe('renderModelToolResult', () => {
       new RegExp(`^error: ${failure}\\. .*; evidenceId: 11111111-1111-4111-8111-111111111111$`),
     );
     expect(result.content).toContain(guidance);
+    // The renderer appends "; evidenceId:", so guidance carries no closing period of its own.
+    expect(result.content).not.toContain('.;');
     // An absent target is not a missing tool.
     if (failure === 'not_found') expect(result.content).not.toContain('missing_capability');
     expect(result).toMatchObject({ isError: true, receipt: { outcome: 'unavailable' } });

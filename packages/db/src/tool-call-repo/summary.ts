@@ -14,6 +14,13 @@ const fields: Record<string, Record<string, string[]>> = {
     get_application_events: ['appNamespace', 'name'],
     get_application_logs: ['appNamespace', 'name', 'namespace', 'podName', 'container'],
   },
+  statuscake: {
+    list_tests: ['type'],
+    get_test: ['type', 'id'],
+    get_test_history: ['type', 'id'],
+    get_uptime_periods: ['id'],
+    get_uptime_alerts: ['id'],
+  },
   datadog: { query_metrics: ['query'], search: ['domain', 'query'] },
   github: {
     resolve_repositories: ['service'],
@@ -57,7 +64,7 @@ export const evidenceSummaryFields = [
 export function evidenceSummary(tool: string, input: unknown): string | null {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
   const match =
-    /^(prometheus|kubernetes|argocd|datadog|github|gitlab)_(?:[A-Za-z0-9_-]{22}_)?([a-z][a-z0-9_]*)$/.exec(
+    /^(prometheus|kubernetes|argocd|datadog|github|gitlab|statuscake)_(?:[A-Za-z0-9_-]{22}_)?([a-z][a-z0-9_]*)$/.exec(
       tool,
     );
   if (!match) return null;

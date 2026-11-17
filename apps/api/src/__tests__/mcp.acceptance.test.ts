@@ -414,6 +414,7 @@ describe('incident-scoped MCP facade', () => {
     expect(failed.structuredContent).toMatchObject({
       available: false,
       reason: 'error',
+      failure: 'provider_error',
       evidenceId: expect.stringMatching(/^[0-9a-f-]{36}$/),
     });
     const failedEvidenceId = (failed.structuredContent as { evidenceId: string }).evidenceId;

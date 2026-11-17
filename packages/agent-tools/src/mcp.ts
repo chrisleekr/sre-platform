@@ -37,6 +37,7 @@ export function makeInvestigatorMcpServer(
               available: false as const,
               evidenceId: result.evidenceId,
               reason: result.reason,
+              failure: result.failure,
             };
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(payload) }],

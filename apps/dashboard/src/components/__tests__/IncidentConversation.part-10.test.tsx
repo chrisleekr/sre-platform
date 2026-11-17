@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import type { HubMessage } from '../../lib/types';
+import type { EvidenceDetail, EvidenceListItem, HubMessage } from '../../lib/types';
 
 import type { WsRefusalCode } from '../../lib/useWsStream';
 
@@ -337,5 +337,53 @@ describe('incident response workspace', () => {
     expect(scrollIntoView).not.toHaveBeenCalled();
     unmount();
     delete (Element.prototype as Partial<Element>).scrollIntoView;
+  });
+
+  test('shows a failed cited check with its reason and no projected preview', async () => {
+    const id = '44444444-4444-4444-8444-444444444444';
+    const item: EvidenceListItem = {
+      id,
+      tool: 'prometheus_query_range',
+      outcome: 'error',
+      failure: 'not_found',
+      latencyMs: 9,
+      recordedAt: '2026-08-21T00:00:00Z',
+      hasOutput: false,
+    };
+    const failed: EvidenceDetail = {
+      ...item,
+      input: {},
+      output: null,
+      projection: { kind: 'facts', columns: ['failure'], rows: [{ failure: 'not_found' }] },
+      referenceUrl: null,
+    };
+    useIncidentEvidence.mockReturnValue({
+      evidence: [item],
+      nextCursor: null,
+      details: { [id]: failed },
+      loading: false,
+      error: false,
+      paginationError: false,
+      detailErrors: {},
+      loadDetail: vi.fn(),
+      loadOlder: vi.fn(),
+      refresh: vi.fn(),
+    });
+    globalThis.fetch = vi.fn(async () =>
+      response({
+        incident: detail({ assessmentEvidenceIds: [id] } as never),
+        viewerUserId: null,
+        progress: { total: 1, successful: 0, failed: 1, lastRecordedAt: null },
+        signals: [],
+      }),
+    );
+
+    const { unmount } = renderIncident();
+    const card = (await screen.findByRole('heading', { name: 'Supporting evidence' })).closest(
+      'section',
+    )!;
+    expect(within(card).getByText(/Check failed: not found/)).toBeDefined();
+    expect(within(card).queryByText(/Preview of projected facts/)).toBeNull();
+    unmount();
   });
 });

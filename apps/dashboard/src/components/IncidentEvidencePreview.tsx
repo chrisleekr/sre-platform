@@ -15,6 +15,7 @@ export function IncidentEvidencePreview({
     );
   if (!detail)
     return <span className="mt-2 block text-xs text-ink-muted">Loading recorded preview…</span>;
+  if (detail.outcome === 'error') return null;
   if (detail.projection.kind === 'time_series')
     return (
       <div className="mt-2">

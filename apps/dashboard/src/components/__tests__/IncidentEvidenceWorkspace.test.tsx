@@ -94,4 +94,51 @@ describe('IncidentEvidenceWorkspace', () => {
     expect(screen.getByRole('table', { name: 'Human-readable evidence facts' })).toBeDefined();
     expect(screen.getByRole('heading', { name: 'Prometheus' }).className).toContain('break-words');
   });
+
+  test('names the failure reason instead of the raw category', () => {
+    const failedItem = {
+      ...item,
+      tool: 'statuscake_AAAAAAAAAAAAAAAAAAAAAA_get_test',
+      outcome: 'error',
+      failure: 'not_found',
+      hasOutput: false,
+    } as EvidenceListItem;
+    const failedDetail = {
+      ...failedItem,
+      input: { type: 'heartbeat', id: '5' },
+      output: { failure: 'not_found' },
+      projection: { kind: 'facts', columns: ['failure'], rows: [{ failure: 'not_found' }] },
+      referenceUrl: null,
+    } as EvidenceDetail;
+    const props = {
+      evidence: [failedItem],
+      nextCursor: null,
+      loading: false,
+      error: false,
+      paginationError: false,
+      detailErrors: {},
+      onOpen: vi.fn(),
+      onLoadOlder: vi.fn(),
+      onRetry: vi.fn(),
+    };
+
+    const list = render(<IncidentEvidenceWorkspace {...props} details={{}} selectedId={null} />);
+    expect(screen.getByLabelText('Evidence records').textContent).toMatch(
+      /Check failed: not found/,
+    );
+    list.unmount();
+
+    render(
+      <IncidentEvidenceWorkspace
+        {...props}
+        details={{ [failedItem.id]: failedDetail }}
+        selectedId={failedItem.id}
+      />,
+    );
+    expect(screen.getByText(/Check failed: not found/)).toBeDefined();
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(
+      screen.getByText('The source has nothing matching this request as named.'),
+    ).toBeDefined();
+  });
 });
