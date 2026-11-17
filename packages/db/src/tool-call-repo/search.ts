@@ -111,6 +111,9 @@ export async function listIncidentEvidencePage(
         latencyMs: agentToolCalls.latencyMs,
         recordedAt: agentToolCalls.createdAt,
         hasOutput: sql<boolean>`${agentToolCalls.outcome} = 'data' and ${agentToolCalls.output} is not null`,
+        failure: sql<
+          string | null
+        >`case when ${agentToolCalls.outcome} <> 'data' then ${agentToolCalls.output}->>'failure' end`,
         input: sql<unknown>`jsonb_strip_nulls(jsonb_build_object(${sql.join(
           evidenceSummaryFields.flatMap((key) => [
             sql`${key}::text`,
@@ -172,6 +175,9 @@ export async function getIncidentEvidence(
         latencyMs: agentToolCalls.latencyMs,
         recordedAt: agentToolCalls.createdAt,
         hasOutput: sql<boolean>`${agentToolCalls.outcome} = 'data' and ${agentToolCalls.output} is not null`,
+        failure: sql<
+          string | null
+        >`case when ${agentToolCalls.outcome} <> 'data' then ${agentToolCalls.output}->>'failure' end`,
         input: agentToolCalls.input,
         output: agentToolCalls.output,
       })

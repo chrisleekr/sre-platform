@@ -19,6 +19,14 @@ const PROVIDER_LABELS: Array<[prefix: string, label: string]> = [
 const ACTION_LABELS: Array<[suffix: string, label: string]> = [
   ['query_range', 'metric range'],
   ['query', 'metric query'],
+  ['uptime_alerts', 'uptime alerts'],
+  ['uptime_periods', 'uptime periods'],
+  ['get_test_history', 'check history'],
+  ['get_test', 'check detail'],
+  ['list_tests', 'checks'],
+  ['list_maintenance_windows', 'maintenance windows'],
+  ['list_contact_groups', 'contact groups'],
+  ['api_get', 'API read'],
   ['alerts', 'active alerts'],
   ['rules', 'alert rules'],
   ['get_pod_logs', 'pod logs'],
@@ -28,6 +36,26 @@ const ACTION_LABELS: Array<[suffix: string, label: string]> = [
   ['list_pipelines', 'pipelines'],
   ['search', 'search'],
 ];
+
+// A label must never ship without its explanation, so each failure category holds both.
+const FAILURES: Record<string, [label: string, detail: string]> = {
+  timeout: ['timed out', 'The source did not answer in time, so nothing was read.'],
+  permission_denied: [
+    'access denied',
+    'The connection is not allowed to read this, so nothing was read.',
+  ],
+  not_found: [
+    'not found',
+    'The source has nothing matching this request as named or as this type.',
+  ],
+  rate_limited: ['rate limited', 'The source limited requests, so nothing was read.'],
+  unreachable: ['source unreachable', 'The source could not be reached, so nothing was read.'],
+  target_not_allowed: [
+    'target not allowed',
+    'The platform does not allow reading this target, so nothing was read.',
+  ],
+  provider_error: ['provider error', 'The source returned an error, so nothing was read.'],
+};
 
 export function toolProviderLabel(tool: string): string {
   return PROVIDER_LABELS.find(([prefix]) => tool.startsWith(prefix))?.[1] ?? 'Investigator';
@@ -41,8 +69,11 @@ export function toolDisplayLabel(tool: string): string {
 
 /** Distinguish returned data from a proven finding.
  * @param outcome - Stored evidence outcome.
+ * @param failure - Classified failure category of an errored check, when recorded.
  */
-export function evidenceOutcomeLabel(outcome: string): string {
+export function evidenceOutcomeLabel(outcome: string, failure?: string | null): string {
+  if (outcome === 'error' && failure && Object.hasOwn(FAILURES, failure))
+    return `Check failed: ${FAILURES[failure]![0]}`;
   return (
     (
       {
@@ -62,4 +93,13 @@ export function summarizeToolProviders(tools: string[]): string {
     counts.set(label, (counts.get(label) ?? 0) + 1);
   }
   return [...counts.entries()].map(([label, count]) => `${label} ${count}`).join(' · ');
+}
+
+/** One plain sentence on what a failed check means.
+ * @param failure - Classified failure category, when recorded.
+ */
+export function evidenceFailureDetail(failure?: string | null): string {
+  return failure && Object.hasOwn(FAILURES, failure)
+    ? FAILURES[failure]![1]
+    : 'The check failed before returning data.';
 }

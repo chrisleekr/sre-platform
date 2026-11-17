@@ -68,6 +68,8 @@ pages instead of nested vertical scrollers. Projection limits are disclosed; sto
 the provider's complete history. **Back to evidence** retains filters. Close or Escape returns to
 the incident without discarding the draft.
 
+A failed check names its reason, such as **Check failed: not found** or **Check failed: timed out**, and the inspector states in one sentence what that means. A failed check has no chart or facts, so only the raw stored record remains below.
+
 ![Evidence inspection](../assets/screenshots/incident-detail-evidence-light.png#only-light)
 ![Evidence inspection](../assets/screenshots/incident-detail-evidence-dark.png#only-dark)
 

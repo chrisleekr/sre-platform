@@ -328,7 +328,7 @@ export function IncidentOverview({ view }: { view: IncidentLiveViewModel }) {
                       />
                       {item && (
                         <span className="mt-1 block text-xs text-ink-muted">
-                          {evidenceOutcomeLabel(item.outcome)} ·{' '}
+                          {evidenceOutcomeLabel(item.outcome, item.failure)} ·{' '}
                           {formatAbsoluteTime(item.recordedAt)}
                         </span>
                       )}

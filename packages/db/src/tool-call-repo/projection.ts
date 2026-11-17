@@ -16,6 +16,7 @@ export interface EvidenceListItem {
   latencyMs: number;
   recordedAt: Date;
   hasOutput: boolean;
+  failure: string | null;
 }
 
 export interface EvidenceDetail extends EvidenceListItem {

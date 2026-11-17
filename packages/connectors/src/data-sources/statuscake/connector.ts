@@ -116,6 +116,33 @@ async function sget(
   return redactStatusCakeSecrets(await res.json());
 }
 
+// StatusCake answers 200 with an empty page for an id of another test type, so an empty page must
+// prove the test exists as that type.
+const TEST_PAGE_RE = /^\/v1\/(uptime|pagespeed)\/([A-Za-z0-9_-]+)\/(?:periods|alerts|history)\/?$/;
+
+/** `sget` for a per-test sub-resource page; an empty page is confirmed against the parent test. */
+async function sgetTestPage(
+  fetchImpl: FetchLike,
+  token: string,
+  path: string,
+  query?: Record<string, QueryValue | undefined>,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  const page = await sget(fetchImpl, token, path, query, signal);
+  const data = obj(page).data;
+  if (!Array.isArray(data) || data.length > 0) return page;
+  // StatusCake decodes the path, so match the decoded form or an encoded id skips the type check.
+  const match = TEST_PAGE_RE.exec(decodeURIComponent(new URL(buildGetUrl(path)).pathname));
+  if (!match) return page;
+  const [, type, id] = match;
+  const test = obj(obj(await sget(fetchImpl, token, `/v1/${type}/${id}`, undefined, signal)).data);
+  const wrongType =
+    type === 'uptime' && (typeof test.test_type !== 'string' || test.test_type === 'PUSH');
+  if (String(test.id) !== id || wrongType)
+    throw Object.assign(new Error('statuscake test is not of this type'), { status: 404 });
+  return page;
+}
+
 /** Standard page/per_page params (per_page clamped) shared by every collection tool. */
 function pageParams(page: number | undefined, perPage: number | undefined) {
   return { page, limit: clampPerPage(perPage) };
@@ -211,8 +238,8 @@ function makeStatusCakeTools(config: ConnectorConfig, fetchImpl: FetchLike): Con
       description:
         'Get one check by type and id: full config and current status. type is uptime, ssl, ' +
         'pagespeed, or heartbeat. For ssl this carries the certificate expiry/validity fields (the ' +
-        '"down because the cert expired" signal).',
-      inputSchema: z.object({ type: z.enum(TEST_TYPES), id: z.string() }),
+        '"down because the cert expired" signal). type must be the check\'s own type (list_tests shows it).',
+      inputSchema: z.object({ type: z.enum(TEST_TYPES), id: z.string().regex(ID_RE) }),
       run: async ({ type, id }, call) => {
         const t = await token();
         return sget(
@@ -228,17 +255,19 @@ function makeStatusCakeTools(config: ConnectorConfig, fetchImpl: FetchLike): Con
       name: 'get_test_history',
       description:
         'Get the recent check-run history for a test (the raw pass/fail signal over time). type is ' +
-        'uptime or pagespeed (ssl and heartbeat have no history endpoint). Cursor paginated: optional limit, before and after UNIX seconds.',
+        'uptime or pagespeed (ssl and heartbeat have no history endpoint). Cursor paginated: optional limit, before and after UNIX seconds. ' +
+        "type must be the test's own type: not_found means the id is not a test of that type, not an empty history. " +
+        'For a heartbeat use get_test type heartbeat.',
       inputSchema: z.object({
         type: z.enum(HISTORY_TYPES),
-        id: z.string(),
+        id: z.string().regex(ID_RE),
         limit: z.number().int().positive().max(100).optional(),
         before: z.number().int().nonnegative().optional(),
         after: z.number().int().nonnegative().optional(),
       }),
       run: async ({ type, id, limit, before, after }, call) => {
         const t = await token();
-        return sget(
+        return sgetTestPage(
           fetchImpl,
           t,
           `/v1/${type}/${encodeURIComponent(validateId(id))}/history`,
@@ -254,17 +283,19 @@ function makeStatusCakeTools(config: ConnectorConfig, fetchImpl: FetchLike): Con
     stool({
       name: 'get_uptime_periods',
       description:
-        'Get the up/down periods for an uptime test — the downtime windows ("since when down"), each ' +
-        'with a start, end, and duration. Cursor paginated: optional limit, before and after UNIX seconds.',
+        'Get the up/down periods for an uptime test: the downtime windows ("since when down"), each ' +
+        'with a start, end, and duration. Uptime tests only: not_found means the id is not an uptime test ' +
+        '(for example a heartbeat), not that it has no history; read a heartbeat with get_test type heartbeat. ' +
+        'Cursor paginated: optional limit, before and after UNIX seconds.',
       inputSchema: z.object({
-        id: z.string(),
+        id: z.string().regex(ID_RE),
         limit: z.number().int().positive().max(100).optional(),
         before: z.number().int().nonnegative().optional(),
         after: z.number().int().nonnegative().optional(),
       }),
       run: async ({ id, limit, before, after }, call) => {
         const t = await token();
-        return sget(
+        return sgetTestPage(
           fetchImpl,
           t,
           `/v1/uptime/${encodeURIComponent(validateId(id))}/periods`,
@@ -280,16 +311,18 @@ function makeStatusCakeTools(config: ConnectorConfig, fetchImpl: FetchLike): Con
     stool({
       name: 'get_uptime_alerts',
       description:
-        'Get the alerts StatusCake sent for an uptime test. Cursor paginated: optional limit, before and after UNIX seconds.',
+        'Get the alerts StatusCake sent for an uptime test. Uptime tests only: not_found means the id is not an ' +
+        'uptime test (for example a heartbeat), not that it has no alerts; read a heartbeat with get_test type ' +
+        'heartbeat. Cursor paginated: optional limit, before and after UNIX seconds.',
       inputSchema: z.object({
-        id: z.string(),
+        id: z.string().regex(ID_RE),
         limit: z.number().int().positive().max(100).optional(),
         before: z.number().int().nonnegative().optional(),
         after: z.number().int().nonnegative().optional(),
       }),
       run: async ({ id, limit, before, after }, call) => {
         const t = await token();
-        return sget(
+        return sgetTestPage(
           fetchImpl,
           t,
           `/v1/uptime/${encodeURIComponent(validateId(id))}/alerts`,
@@ -340,12 +373,19 @@ function makeStatusCakeTools(config: ConnectorConfig, fetchImpl: FetchLike): Con
         'GET any StatusCake API endpoint by path (e.g. "v1/maintenance-windows/{id}", ' +
         '"v1/contact-groups/{id}", "v1/ssl/{id}"). Read-only. Use for anything the named tools do not cover.',
       inputSchema: z.object({
-        path: z.string(),
+        path: z.string().refine((p) => {
+          try {
+            buildGetUrl(p);
+            return true;
+          } catch {
+            return false;
+          }
+        }, 'path must be a StatusCake API path under v1/'),
         query: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
       }),
       run: async ({ path, query }, call) => {
         const t = await token();
-        return sget(fetchImpl, t, path, query, call?.signal);
+        return sgetTestPage(fetchImpl, t, path, query, call?.signal);
       },
     }),
   ];

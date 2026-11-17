@@ -52,7 +52,11 @@ export async function acquireBlocking(lock: SurfaceLock, key: string): Promise<s
 export function activityLine(msg: HubMessage): string {
   if (msg.kind === 'tool_step') {
     // tool_step content is "<tool_name> <json args>"; surface the tool, drop the args.
-    const tool = msg.content.trim().split(/\s+/)[0] ?? '';
+    // Connector tool names carry a 22-character instance key after the type; Slack shows the type and action only.
+    const tool = (msg.content.trim().split(/\s+/)[0] ?? '').replace(
+      /^([a-z0-9-]+)_[A-Za-z0-9_-]{22}_/,
+      '$1_',
+    );
     return tool ? `🔍 Running ${tool.replace(/_/g, ' ')}…` : '🔍 Investigating…';
   }
   return `🔍 ${msg.content}`; // a text narration line is already concise

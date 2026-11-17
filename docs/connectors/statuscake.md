@@ -87,6 +87,8 @@ each with a check type chosen from a fixed list, rather than a dozen near-identi
 
 Collection reads use bounded page sizes. Uptime history, periods, and alerts use `limit`, `before`, and `after`; the time cursors are UNIX seconds. Lifecycle verification reads at most five pages and reports incomplete history rather than inferring recovery.
 
+Investigation reads of history, periods, and alerts, including the same paths through `api_get`, read one test type. When a page comes back empty, the platform makes one more request to confirm the id is a test of that type, so a heartbeat id fails as not found instead of reading as no history. Lifecycle verification does not make this check.
+
 ### What it looks at first
 
 Before any model call, the platform pulls your uptime checks and keeps the failing ones, matching

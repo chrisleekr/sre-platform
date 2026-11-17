@@ -210,6 +210,164 @@ describe('uptime sub-resources', () => {
   });
 });
 
+describe('sub-resource test-type guard', () => {
+  const emptyPage = { data: [], links: {} };
+  const SUB_TOOLS = ['get_uptime_periods', 'get_uptime_alerts'];
+
+  /** Serves `page` for the sub-resource path and `guard` for the parent test lookup. */
+  function served(page: unknown, guard: Resp) {
+    return fakeFetch((url) => (new URL(url).pathname === '/v1/uptime/77' ? guard : { json: page }));
+  }
+
+  test.each(SUB_TOOLS)('%s fails as not found when the uptime test is absent', async (name) => {
+    const { impl, calls } = served(emptyPage, { ok: false, status: 404 });
+    await expect(toolNamed(conn(impl), name).run({ id: '77' })).rejects.toMatchObject({
+      status: 404,
+    });
+    expect(calls).toHaveLength(2);
+    expect(new URL(calls[1]!.url).pathname).toBe('/v1/uptime/77');
+  });
+
+  test.each(
+    SUB_TOOLS.flatMap((name) =>
+      [
+        { data: { id: 78, test_type: 'HTTP' } },
+        { data: { id: 77 } },
+        { data: { id: 77, test_type: 'PUSH' } },
+      ].map((body) => [name, body] as const),
+    ),
+  )('%s fails as not found when the test is not an uptime test', async (name, body) => {
+    const { impl } = served(emptyPage, { json: body });
+    await expect(toolNamed(conn(impl), name).run({ id: '77' })).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+
+  test.each(SUB_TOOLS)('%s returns a non-empty page with one request', async (name) => {
+    const page = { data: [{ status: 'up' }], links: {} };
+    const { impl, calls } = served(page, { ok: false, status: 404 });
+    await expect(toolNamed(conn(impl), name).run({ id: '77' })).resolves.toEqual(page);
+    expect(calls).toHaveLength(1);
+  });
+
+  test.each(SUB_TOOLS)('%s returns a confirmed empty page unchanged', async (name) => {
+    const { impl, calls } = served(emptyPage, { json: { data: { id: 77, test_type: 'HTTP' } } });
+    await expect(toolNamed(conn(impl), name).run({ id: '77' })).resolves.toEqual(emptyPage);
+    expect(calls).toHaveLength(2);
+  });
+
+  test('the guard request carries the caller signal', async () => {
+    // abortableFetch only records requests it does not answer, so the empty page is served and the
+    // single recorded signal can only belong to the guard request.
+    const { impl, signals } = abortableFetch((url) =>
+      new URL(url).pathname === '/v1/uptime/77/periods'
+        ? new Response(JSON.stringify(emptyPage))
+        : undefined,
+    );
+    const tool = toolNamed(conn(impl), 'get_uptime_periods');
+    await expectCancelledInFlight((signal) => tool.run({ id: '77' }, { signal }), signals);
+  });
+
+  test('get_test_history guards uptime and pagespeed', async () => {
+    const history = (guard: Resp) =>
+      fakeFetch((url) =>
+        new URL(url).pathname.endsWith('/history') ? { json: emptyPage } : guard,
+      );
+    const uptime = history({ ok: false, status: 404 });
+    await expect(
+      toolNamed(conn(uptime.impl), 'get_test_history').run({ type: 'uptime', id: '77' }),
+    ).rejects.toMatchObject({ status: 404 });
+
+    const found = history({ json: { data: { id: 99 } } });
+    await expect(
+      toolNamed(conn(found.impl), 'get_test_history').run({ type: 'pagespeed', id: '99' }),
+    ).resolves.toEqual(emptyPage);
+
+    const mismatch = history({ json: { data: { id: 97 } } });
+    await expect(
+      toolNamed(conn(mismatch.impl), 'get_test_history').run({ type: 'pagespeed', id: '98' }),
+    ).rejects.toMatchObject({ status: 404 });
+
+    const push = history({ json: { data: { id: 77, test_type: 'PUSH' } } });
+    await expect(
+      toolNamed(conn(push.impl), 'get_test_history').run({ type: 'uptime', id: '77' }),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  test('a failed guard request keeps its own status', async () => {
+    const { impl } = served(emptyPage, { ok: false, status: 429 });
+    await expect(
+      toolNamed(conn(impl), 'get_uptime_periods').run({ id: '77' }),
+    ).rejects.toMatchObject({ status: 429 });
+  });
+
+  test('api_get guards a sub-resource path with a trailing slash', async () => {
+    const { impl } = served(emptyPage, { ok: false, status: 404 });
+    await expect(
+      toolNamed(conn(impl), 'api_get').run({ path: 'v1/uptime/77/periods/' }),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  test.each([
+    ['get_test_history', { type: 'uptime', id: '77' }],
+    ['api_get', { path: 'v1/uptime/77/history' }],
+  ])('%s returns a non-empty page with one request', async (name, input) => {
+    const page = { data: [{ status: 'up' }], links: {} };
+    const { impl, calls } = served(page, { ok: false, status: 404 });
+    await expect(toolNamed(conn(impl), name).run(input)).resolves.toEqual(page);
+    expect(calls).toHaveLength(1);
+  });
+
+  test('api_get guards a sub-resource path', async () => {
+    const { impl } = served(emptyPage, { ok: false, status: 404 });
+    await expect(
+      toolNamed(conn(impl), 'api_get').run({ path: 'v1/uptime/77/periods' }),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  test('api_get guards a percent-encoded sub-resource path', async () => {
+    const { impl, calls } = served(emptyPage, { json: { data: { id: 77, test_type: 'PUSH' } } });
+    await expect(
+      toolNamed(conn(impl), 'api_get').run({ path: 'v1/uptime/%37%37/periods' }),
+    ).rejects.toMatchObject({ status: 404, message: 'statuscake test is not of this type' });
+    expect(new URL(calls[1]!.url).pathname).toBe('/v1/uptime/77');
+  });
+
+  test('api_get leaves other empty pages alone', async () => {
+    const { impl, calls } = fakeFetch(() => ({ json: { data: [] } }));
+    await expect(toolNamed(conn(impl), 'api_get').run({ path: 'v1/uptime' })).resolves.toEqual({
+      data: [],
+    });
+    expect(calls).toHaveLength(1);
+  });
+
+  test('rejects an invalid id or path at the schema', () => {
+    const c = conn(fakeFetch().impl);
+    const bad = { id: '../secret' };
+    expect(toolNamed(c, 'get_test').inputSchema.safeParse({ type: 'uptime', ...bad }).success).toBe(
+      false,
+    );
+    expect(
+      toolNamed(c, 'get_test_history').inputSchema.safeParse({ type: 'uptime', ...bad }).success,
+    ).toBe(false);
+    expect(toolNamed(c, 'get_uptime_periods').inputSchema.safeParse(bad).success).toBe(false);
+    expect(toolNamed(c, 'get_uptime_alerts').inputSchema.safeParse(bad).success).toBe(false);
+    const badPath = toolNamed(c, 'api_get').inputSchema.safeParse({ path: 'v1/../secret' });
+    expect(badPath.success).toBe(false);
+    // The model only sees the schema error, so it must say what a valid path is.
+    expect(badPath.error?.issues[0]?.message).toBe('path must be a StatusCake API path under v1/');
+  });
+
+  test('periods and alerts say they read uptime tests only', () => {
+    const c = conn(fakeFetch().impl);
+    for (const name of SUB_TOOLS) {
+      const { description } = toolNamed(c, name);
+      expect(description).toMatch(/Uptime tests only/);
+      expect(description).toMatch(/get_test type heartbeat/);
+    }
+  });
+});
+
 describe('list_maintenance_windows / list_contact_groups', () => {
   test.each([
     ['list_maintenance_windows', '/v1/maintenance-windows'],
