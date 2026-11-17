@@ -10,6 +10,6 @@
   "dependencies": {
     "@sre/db": "workspace:*",
     "@sre/platform-settings": "workspace:*",
-    "nodemailer": "10.2.1"
+    "nodemailer": "10.5.0"
   }
 }
