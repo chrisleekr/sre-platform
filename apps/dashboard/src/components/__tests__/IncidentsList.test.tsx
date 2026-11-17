@@ -434,6 +434,27 @@ describe('IncidentsList', () => {
     ]);
     expect(screen.getByText('Downstream symptom of Database saturation')).toBeDefined();
   });
+
+  test('summarises earlier episodes of a recurring alert', () => {
+    const since = '2026-01-05T10:00:00.000Z';
+    render(
+      <MemoryRouter>
+        <IncidentsList
+          incidents={[
+            { ...incident, id: 'many', recurrence: { earlierEpisodes: 12, since } },
+            { ...incident, id: 'one', recurrence: { earlierEpisodes: 1, since } },
+            { ...incident, id: 'first', recurrence: null },
+          ]}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText(/^12 earlier episodes since/)).toBeDefined();
+    expect(screen.getByText(/^1 earlier episode since/)).toBeDefined();
+    // A first episode has no earlier ones, so it renders no summary.
+    expect(screen.getAllByText(/earlier episodes? since/)).toHaveLength(2);
+    expect(document.querySelectorAll(`time[datetime="${since}"]`)).toHaveLength(2);
+  });
 });
 
 describe('reviewed result provenance', () => {

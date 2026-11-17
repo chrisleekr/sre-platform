@@ -104,10 +104,6 @@ vocabulary for behaviour that is not built yet.
   evidence-backed direct cause, different causes, a merge, or a split. A merge is a human decision
   and is reversible. It never happens because two names looked similar.
 
-**Incident role** *(planned)*
-: Who is holding which responsibility during a live incident: commander, operations, communications,
-  planning. Coordination only. It gates nothing.
-
 **Installation sign-in method**
 : An OpenID Connect sign-in method configured by a platform administrator for the whole
   installation, usable by every workspace. It selects a workspace through a workspace binding. The

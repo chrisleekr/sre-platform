@@ -264,7 +264,11 @@ test('triage reflows and evidence navigation preserves the responder context', a
       reason: 'The monitor is our agreed recovery criterion.',
     });
     expect(saved.policyRequest.requestId).toMatch(/^[0-9a-f-]{36}$/);
+    // A saved reason is cleared so a later lifecycle transition cannot reuse it.
+    const reason = page.getByLabel('Lifecycle change reason', { exact: true });
+    expect(await reason.inputValue()).toBe('');
     await policy.selectOption('verified_recovery');
+    await reason.fill('Independent health checks are now required.');
     await page.request.get(new URL('/__api/policy-conflict', fixture.url).toString());
     await savePolicy.click();
     await page

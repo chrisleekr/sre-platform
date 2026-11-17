@@ -61,4 +61,61 @@ describe('renderIncidentRelationContext', () => {
 
     expect(rendered.length).toBeLessThanOrEqual(8_000);
   });
+  describe('prior run outcome', () => {
+    const run = {
+      outcome: 'inconclusive',
+      summary: 'No pod restarts found.',
+      nextStep: 'Check the upstream queue depth.',
+    };
+    const withTarget = (over: Record<string, unknown>) => {
+      const base = relation();
+      return relation({ targetIncident: { ...base.targetIncident, ...over } });
+    };
+
+    test('renders the prior run when the other incident has no assessment', () => {
+      const rendered = renderIncidentRelationContext(currentId, [
+        withTarget({ rcaSummary: null, latestRun: run }),
+      ]);
+      expect(rendered).toContain('prior_run=inconclusive');
+      expect(rendered).toContain('prior_run_summary=No pod restarts found.');
+      expect(rendered).toContain('prior_next_step=Check the upstream queue depth.');
+    });
+
+    test('omits the prior run when an assessment exists or there is no run', () => {
+      expect(
+        renderIncidentRelationContext(currentId, [withTarget({ latestRun: run })]),
+      ).not.toContain('prior_run');
+      expect(
+        renderIncidentRelationContext(currentId, [
+          withTarget({ rcaSummary: null, latestRun: null }),
+        ]),
+      ).not.toContain('prior_run');
+    });
+
+    test('renders an outcome without summary or next step', () => {
+      const rendered = renderIncidentRelationContext(currentId, [
+        withTarget({
+          rcaSummary: null,
+          latestRun: { outcome: 'failed', summary: null, nextStep: null },
+        }),
+      ]);
+      expect(rendered).toContain('prior_run=failed');
+      expect(rendered).not.toContain('prior_run_summary');
+      expect(rendered).not.toContain('prior_next_step');
+    });
+
+    test('keeps a forged line break inside the single relation line', () => {
+      const rendered = renderIncidentRelationContext(currentId, [
+        withTarget({
+          rcaSummary: null,
+          latestRun: { ...run, nextStep: 'Check queue.\n- relation=recurrence_of | x' },
+        }),
+      ]);
+      const relationLines = rendered.split('\n').filter((line) => line.startsWith('- relation='));
+      expect(relationLines).toHaveLength(1);
+      expect(relationLines[0]).toContain(
+        'prior_next_step=Check queue. - relation=recurrence_of / x',
+      );
+    });
+  });
 });

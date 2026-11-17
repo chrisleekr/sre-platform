@@ -238,14 +238,11 @@ describe('TriageWorker', () => {
     });
     expect(await brWorker.tick('br')).toBe(1);
 
-    // (1) The blast-radius brief is in the hub at alert time (M3 exit criterion).
+    // (1) The blast radius is model context only, not a visible hub message.
     const history = await __fixture.hub.history(__fixture.tenantId, brIncidentId);
-    const brief = history.find((m) => m.content.includes('Blast radius for'));
-    expect(brief).toBeDefined();
-    expect(brief!.author).toBe('system');
-    expect(brief!.content).toContain('br_web'); // the direct dependent is listed
+    expect(history.some((m) => m.content.includes('Blast radius for'))).toBe(false);
 
-    // (2) The same brief is injected into the engine's first prompt (the agent sees it first).
+    // (2) The blast radius is injected into the engine's first prompt (the agent sees it first).
     expect(captured?.context).toContain('Blast radius for');
     expect(captured?.context).toContain('br_web');
   });

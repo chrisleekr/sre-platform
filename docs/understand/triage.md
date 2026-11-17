@@ -255,6 +255,8 @@ exact redelivery or edit of the same source updates its existing signal; a later
 an old response workspace merely because the monitor name matches. Stable monitor identity records
 immutable recurrence history.
 
+Each recurring episode keeps its own incident and thread. When the previous episode has no trusted assessment, the new investigation is shown that episode's last completed investigation outcome, summary and next step, when it has one. If that run was inconclusive, blocked or out of budget, the engine is asked to first check whether this episode matches and, if so, propose the outstanding check again; otherwise it investigates fully and says what changed.
+
 One exception covers repeat Slack notifications. When a bot posts a new firing message in the same
 channel, every alert in it carries a monitor identity, and every one of those monitors is tracked by
 an open incident, the message is attached to that incident as another occurrence. It opens no
@@ -317,21 +319,9 @@ A review classifies the incident into one of three outcomes:
 - **Nothing worth keeping**: writes no runbook or note. On request it says so; after a resolve it
   stays silent.
 
-Any outcome can carry environment facts, which are saved as learnings. The review sees
-each responder message and each piece of evidence with its ID, and every fact must cite them under
-the same rule as during an investigation. A fact whose citations do not hold is dropped, not saved
-with a weaker basis. Learnings are kept one per topic, and a newer statement for a topic replaces
-the older one. When a runbook or note already covers the same cause, the model decides whether to
-refine that one or write a new one, so a later review refines what an earlier one saved. Saved
-knowledge never names a person, is published unverified until a human marks it otherwise, and is
-visible only within your own tenant.
+Any outcome can carry environment facts, which are saved as learnings. The review sees each responder message and each piece of evidence with its ID, and every fact must cite them under the same rule as during an investigation. A fact whose citations do not hold is dropped, not saved with a weaker basis. Learnings are kept one per topic, and a newer statement for a topic replaces the older one. When a runbook or note already covers the same cause, the model decides whether to refine that one or write a new one, so a later review refines what an earlier one saved. A refinement rewrites the saved runbook or note rather than appending to it. The model is asked to keep every runbook and note under 600 words; nothing enforces the limit. Saved knowledge never names a person, is published unverified until a human marks it otherwise, and is visible only within your own tenant.
 
-When a new incident opens, its brief lists learnings, runbooks and notes from past incidents that
-fired the same monitor first, then similar ones above the similarity floor. Each reply the
-investigator picks up gets the same list again, so a learning saved by another incident since the
-incident opened still reaches it. The list is labelled as data, not instructions. The investigator
-uses a known fact instead of asking for it again, and confirms it before relying on it for a
-conclusion.
+When a new incident opens, the investigator receives learnings, runbooks and notes from past incidents that fired the same monitor first, then similar ones above the similarity floor. The conversation shows only how many were used, not their text. Each reply the investigator picks up gets the same list again, so a learning saved by another incident since the incident opened still reaches it. The list is labelled as data, not instructions. The investigator uses a known fact instead of asking for it again, and confirms it before relying on it for a conclusion.
 
 Review and remove learnings through the API. Every workspace member can list them; an owner, an
 administrator or an active responder can delete one. A support session can only read.

@@ -111,8 +111,9 @@ export function IncidentsPanel() {
   // `incidents` slice, which still holds the PREVIOUS scope's rows mid-switch, so keying off `shown` would
   // keep stale rows on screen during an Open↔Closed switch.
   const paginatingHistory = historical && historyPages.length > 0;
-  // Badges reflect the server's true per-scope totals, not the length of the current page; fall
-  // back to the fetched partition lengths on the legacy no-counts path.
+  // Badges reflect the server's per-scope totals, not the length of the current page. The totals count
+  // every incident, including earlier episodes the list hides behind a newer one. Fall back to the
+  // fetched partition lengths on the legacy no-counts path.
   const openCount = counts?.open ?? open.length;
   const closedCount = counts?.closed ?? closed.length;
   const allCount = counts?.all ?? incidents.length;

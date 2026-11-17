@@ -224,9 +224,11 @@ service yourself, and doing so does not rewrite what the provider actually said.
 
 ### A new alert always gets a new incident
 
-A new start time creates a new alert episode, independently investigated incident, and Slack thread.
+A new start time creates a new alert episode, separate incident, and Slack thread.
 The earlier occurrence remains recurrence history. Matching monitor identity and arrival time never
 reuse its workspace.
+
+When the previous episode has no trusted assessment, the new investigation is shown that episode's last completed investigation outcome, summary and next step, when it has one. If that run was inconclusive, blocked or out of budget, the engine is asked to first check whether this episode matches and, if so, propose the outstanding check again; otherwise it investigates fully and says what changed.
 
 ### Alerts that arrive together
 

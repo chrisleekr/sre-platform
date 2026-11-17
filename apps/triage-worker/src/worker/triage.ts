@@ -14,7 +14,7 @@ import { computeIncidentBlastRadius, renderBlastRadius } from '@sre/topology';
 import { renderIncidentRelationContext } from '../relation-context';
 import type { WorkerDisposition } from './disposition';
 import type { WorkerEvidence } from './evidence';
-import { renderRunbookSeeds } from './presentation';
+import { renderRunbookSeeds, summarizeRunbookSeeds } from './presentation';
 import type { EngineToolRuntime, WorkerRuntime } from './runtime';
 import { captureResponderContext } from './responder-context';
 
@@ -65,7 +65,7 @@ export class TriageHandler {
       let toolRuntime: EngineToolRuntime | undefined;
       let executeRun: (() => Promise<boolean>) | null = null;
       try {
-        const [blastRadius, runbookSection, budgetSection, relationSection] = await Promise.all([
+        const [blastRadius, seeds, budgetSection, relationSection] = await Promise.all([
           (async () => {
             try {
               return renderBlastRadius(
@@ -82,7 +82,7 @@ export class TriageHandler {
           })(),
           (async () => {
             try {
-              const seeds = deps.runbookSeeder
+              return deps.runbookSeeder
                 ? await deps.runbookSeeder(job.tenantId, {
                     title: payload.title,
                     service: incident.service,
@@ -92,16 +92,15 @@ export class TriageHandler {
                     ).flatMap((signal) => (signal.monitorKey ? [signal.monitorKey] : [])),
                   })
                 : [];
-              return renderRunbookSeeds(seeds);
             } catch {
-              return '';
+              return [];
             }
           })(),
           (async () => {
             try {
-              // Advisory context for the responder: how much error budget the service has left. The
-              // budget never opens or escalates anything, and a read failure degrades to no section
-              // rather than failing the open, so a tenant with no objectives sees today's brief.
+              // Advisory context: how much error budget the service has left. The budget never opens
+              // or escalates anything, and a read failure degrades to no section rather than failing
+              // the open.
               return renderSloBrief(
                 await sloStatusForService(deps.appDb, job.tenantId, incident.service),
               );
@@ -120,10 +119,17 @@ export class TriageHandler {
             }
           })(),
         ]);
+        const runbookSection = renderRunbookSeeds(seeds);
         const brief = [blastRadius, runbookSection, budgetSection].filter(Boolean).join('\n\n');
+        // The brief is model context; responders see which knowledge was used, not its text.
+        const visibleSummary = [summarizeRunbookSeeds(seeds), budgetSection]
+          .filter(Boolean)
+          .join('\n\n');
         const opener = await startInvestigatingWithMessages(deps.appDb, job.tenantId, incidentId, [
           { author: 'system', kind: 'status', content: 'Triage started.' },
-          { author: 'system', kind: 'status', content: brief },
+          ...(visibleSummary
+            ? [{ author: 'system' as const, kind: 'status' as const, content: visibleSummary }]
+            : []),
         ]);
         if (opener) for (const row of opener) await deps.hub.publishPersisted(row);
         const firstPassEvidence = await this.evidence.seedFirstPass(job.tenantId, incident);

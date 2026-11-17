@@ -43,6 +43,7 @@ Every card is the same shape.
 | State chips | Whether it needs a person or the platform is handling it, why, and whether an alert is still unresolved |
 | Title | The alert's own words, not a generated summary |
 | **Downstream symptom of** | Present only when evidence names another incident as this one's direct cause |
+| **N earlier episodes since** | Present only when this alert has recurred. Counts the earlier episodes and gives the date of the first one |
 | Service, source, channel | Which service, which monitoring tool raised it, which Slack channel it arrived in |
 | **Decision required** | Present only when a person is blocking. Names the decision, the responsible team, and what the platform will do next without you |
 | Assessment | The trusted conclusion, or "No trusted assessment yet" |
@@ -61,6 +62,10 @@ direct cause under its own title.
 The nesting is presentation. Every incident in the group keeps its own card, its own investigation,
 and its own Slack thread, and opening any of them shows the whole graph and the way back to the
 root.
+
+## Alerts that recur
+
+On the **Closed** and **All** tabs, a closed episode of a recurring alert is hidden when the next episode of the same alert is listed in the same tab. The newest listed episode shows how many earlier episodes there are and since when. Open episodes are never hidden. Searching or filtering by severity lists every episode. Tab counts still include hidden earlier episodes. Each incident page links to its previous episode in its relationships.
 
 ## Creating an incident yourself
 

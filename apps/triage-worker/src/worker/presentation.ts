@@ -44,7 +44,7 @@ export function recoveryFinding(
 
 export function renderRunbookSeeds(seeds: RunbookSeed[]): string {
   const confidence = (seed: RunbookSeed) =>
-    `seen ${seed.occurrenceCount}×, ${seed.verified ? 'verified' : 'unverified'}`;
+    `seen ${seed.occurrenceCount}×, ${seed.match === 'monitor' ? 'same monitor' : 'similar incident'}, ${seed.verified ? 'verified' : 'unverified'}`;
   const facts = seeds.filter((seed) => seed.category === 'fact');
   const runbooks = seeds.filter((seed) => seed.category !== 'fact');
   const sections: string[] = [];
@@ -64,4 +64,24 @@ export function renderRunbookSeeds(seeds: RunbookSeed[]): string {
         .join('\n\n')}`,
     );
   return sections.join('\n\n');
+}
+
+/** Human line for the hub: which past knowledge the engine was given, not the knowledge itself. */
+export function summarizeRunbookSeeds(seeds: RunbookSeed[]): string {
+  const runbooks = seeds.filter((seed) => seed.category !== 'fact');
+  const facts = seeds.length - runbooks.length;
+  const parts: string[] = [];
+  if (runbooks.length > 0) {
+    // Only an exact monitor match says how often this monitor recurred; a similar match counts other incidents.
+    const monitorCounts = runbooks
+      .filter((s) => s.match === 'monitor')
+      .map((s) => s.occurrenceCount);
+    const seen =
+      monitorCounts.length > 0 ? ` (most seen ${Math.max(...monitorCounts)}× on this monitor)` : '';
+    parts.push(
+      `${runbooks.length} ${runbooks.length === 1 ? 'runbook or note' : 'runbooks or notes'}${seen}`,
+    );
+  }
+  if (facts > 0) parts.push(`${facts} recorded fact${facts === 1 ? '' : 's'}`);
+  return parts.length > 0 ? `Using ${parts.join(' and ')} from past incidents.` : '';
 }

@@ -7,6 +7,7 @@ export interface RelationIncidentContext {
   investigationStatus: string;
   rcaSummary: string | null;
   confidence: number | null;
+  latestRun?: { outcome: string | null; summary: string | null; nextStep: string | null } | null;
 }
 
 export interface IncidentRelationContext {
@@ -24,8 +25,13 @@ const MAX_RELATIONS = 20;
 const MAX_CAUSAL_CANDIDATES = 5;
 const MAX_FIELD_CHARS = 1_000;
 
-function clip(value: string, max = MAX_FIELD_CHARS): string {
+function truncate(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+// Model-written fields could otherwise forge extra relation lines or fields.
+function clip(value: string, max = MAX_FIELD_CHARS): string {
+  return truncate(value.replace(/\s+/gu, ' ').replaceAll(' | ', ' / '), max);
 }
 
 /** Bounded reference evidence for comparison. Relation metadata is never proof of a shared cause. */
@@ -67,10 +73,22 @@ export function renderIncidentRelationContext(
             .join('; ')}`
         : null,
       other.rcaSummary ? `prior_assessment=${clip(other.rcaSummary, 2_000)}` : null,
+      // Inconclusive runs never promote, so without this the next episode cannot see what the last one asked for.
+      ...(!other.rcaSummary && other.latestRun?.outcome
+        ? [
+            `prior_run=${other.latestRun.outcome}`,
+            other.latestRun.summary
+              ? `prior_run_summary=${clip(other.latestRun.summary, 1_000)}`
+              : null,
+            other.latestRun.nextStep
+              ? `prior_next_step=${clip(other.latestRun.nextStep, 500)}`
+              : null,
+          ]
+        : []),
       other.confidence === null ? null : `prior_confidence=${other.confidence}`,
     ].filter(Boolean);
     lines.push(`- ${facts.join(' | ')}`);
     if (lines.join('\n').length >= MAX_CONTEXT_CHARS) break;
   }
-  return clip(lines.join('\n'), MAX_CONTEXT_CHARS);
+  return truncate(lines.join('\n'), MAX_CONTEXT_CHARS);
 }

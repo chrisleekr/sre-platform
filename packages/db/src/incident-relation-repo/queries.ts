@@ -1,9 +1,9 @@
-import { and, eq, inArray, isNull, or } from 'drizzle-orm';
-import { alias } from 'drizzle-orm/pg-core';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { alias, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { Db } from '../client';
 import { withTenant, type Executor, type Tx } from '../rls';
 import { buildIncidentCorrelationFeedbackTx } from '../incident-correlation-repo';
-import { incidentRelations, incidents } from '../schema';
+import { incidentRelations, incidents, investigationRuns } from '../schema';
 
 import {
   assertVisibleIncidentPair,
@@ -82,6 +82,36 @@ export async function recordUnrelatedIncidents(
   });
 }
 
+type RelationLatestRun = {
+  outcome: string | null;
+  summary: string | null;
+  nextStep: string | null;
+} | null;
+
+// Recovery checks report whether the alert cleared, not why it fired, so the next episode reads the latest investigation-type run. Otherwise same filter and order as the incident detail latest run.
+const latestRunSql = (incident: {
+  id: AnyPgColumn;
+  tenantId: AnyPgColumn;
+}) => sql<RelationLatestRun>`(
+  select jsonb_build_object(
+    'outcome', ${investigationRuns.outcome},
+    'summary', ${investigationRuns.result} ->> 'summary',
+    'nextStep', ${investigationRuns.result} ->> 'nextStep'
+  )
+  from ${investigationRuns}
+  where ${investigationRuns.tenantId} = ${incident.tenantId}
+    and ${investigationRuns.incidentId} = ${incident.id}
+    and ${investigationRuns.completedAt} is not null
+    and ${investigationRuns.operation} <> 'verify-recovery'
+    and not (
+      ${investigationRuns.outcome} = 'failed'
+      -- A run without a reason key must count; plain '=' yields NULL and silently hides it.
+      and (${investigationRuns.result} ->> 'reason') is not distinct from 'superseded_pending_run'
+    )
+  order by ${investigationRuns.startedAt} desc, ${investigationRuns.id} desc
+  limit 1
+)`;
+
 /**
  * Lists incident relations.
  *
@@ -107,6 +137,7 @@ export async function listIncidentRelations(db: Db, tenantId: string, incidentId
           confidence: sourceIncident.confidence,
           assessmentUpdatedAt: sourceIncident.assessmentUpdatedAt,
           createdAt: sourceIncident.createdAt,
+          latestRun: latestRunSql(sourceIncident),
         },
         targetIncident: {
           id: targetIncident.id,
@@ -119,6 +150,7 @@ export async function listIncidentRelations(db: Db, tenantId: string, incidentId
           confidence: targetIncident.confidence,
           assessmentUpdatedAt: targetIncident.assessmentUpdatedAt,
           createdAt: targetIncident.createdAt,
+          latestRun: latestRunSql(targetIncident),
         },
       })
       .from(incidentRelations)
