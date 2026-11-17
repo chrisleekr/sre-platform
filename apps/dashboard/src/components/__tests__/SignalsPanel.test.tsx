@@ -172,7 +172,7 @@ describe('SignalsPanel', () => {
     expect(within(promotion!).getByText('N/A')).toBeDefined();
     expect(within(promotion!).getByText(/0 of 0 promoted/i)).toBeDefined();
     expect(screen.getByRole('tablist', { name: 'Signal disposition' }).getAttribute('style')).toBe(
-      'grid-template-columns: repeat(3, minmax(0, 1fr));',
+      'grid-template-columns: repeat(3, minmax(0px, 1fr));',
     );
     expect(screen.queryByRole('button', { name: 'Start review' })).toBeNull();
   });

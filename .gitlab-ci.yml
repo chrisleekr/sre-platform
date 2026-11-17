@@ -8,7 +8,7 @@ workflow:
 variables:
   BUN_INSTALL_CACHE_DIR: ${CI_PROJECT_DIR}/.bun-install-cache
   # The shared build wrapper uses compatible attestation storage for subject-strict registries.
-  BUILDKIT_IMAGE: moby/buildkit:v0.34.1@sha256:99368f3e46177c6405b9740e4461d91cee004128daeecca78d4ceac50ec1da5c
+  BUILDKIT_IMAGE: moby/buildkit:v0.35.0@sha256:aa632b921ef07411d2cb77292cd34213d4f7b384001d6fceef1e1f25bf9752bb
 
 default:
   image: oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a
@@ -71,7 +71,7 @@ guards:
 test:
   stage: test
   services:
-    - name: docker:29-dind@sha256:9e79b879b177fbd72c34376a3dd3d91747da5db49e1f560f76aea59561471977
+    - name: docker:29-dind@sha256:4bbc7223f81db790097c6dea42fb93e05b8fead4f0431fbe6ccaba6e8473201c
       alias: docker
   variables:
     FF_NETWORK_PER_BUILD: 'true'
@@ -81,8 +81,9 @@ test:
     TESTCONTAINERS_RYUK_DISABLED: 'true'
   # The oven/bun image symlinks node to bun; the test gate pins Vitest to real Node. Only the major is pinned:
   # the test gate enforces the >= 22.12 floor; .tool-versions records the version for local tooling.
+  # Alpine 3.24 ships Node 26 LTS as nodejs-current; its nodejs package is the 24 line.
   before_script:
-    - apk add --no-cache bash 'nodejs~24'
+    - apk add --no-cache bash 'nodejs-current~26'
     - bash scripts/ci/bootstrap.sh
   script:
     - bash scripts/ci/test.sh
@@ -91,7 +92,7 @@ test-ui:
   stage: test
   # Real Node as above, but no dind service and no Docker variable: this lane starts no container.
   before_script:
-    - apk add --no-cache bash 'nodejs~24'
+    - apk add --no-cache bash 'nodejs-current~26'
     - bash scripts/ci/bootstrap.sh
   script:
     - bash scripts/ci/test-ui.sh
@@ -115,7 +116,7 @@ build:
 
 docs:
   stage: test
-  image: ghcr.io/astral-sh/uv:0.13.5-python3.12-alpine@sha256:2501529eb49d9f3ad85ed6ea53fb775f84034587f2ea807dd42b01413a383c1e
+  image: ghcr.io/astral-sh/uv:0.13.9-python3.12-alpine@sha256:027aeaa2c0ed9e50cd8218251074998aeeebfd07c7a5f15c0185a43688809d2c
   before_script:
     - apk add --no-cache bash
   variables:
@@ -133,9 +134,9 @@ docs:
 
 container:
   stage: test
-  image: docker:29-cli@sha256:5e6baf67325a79f64ed3bed6863954d5e05d0f3d4e57cbdb14809346814bbfdb
+  image: docker:29-cli@sha256:34507eb5069d8be82c95dd3b6987d4250fd5fee49b82e2509b7d7a7030740d6d
   services:
-    - name: docker:29-dind@sha256:9e79b879b177fbd72c34376a3dd3d91747da5db49e1f560f76aea59561471977
+    - name: docker:29-dind@sha256:4bbc7223f81db790097c6dea42fb93e05b8fead4f0431fbe6ccaba6e8473201c
       alias: docker
   variables:
     DOCKER_HOST: tcp://docker:2375
@@ -170,9 +171,9 @@ container:
 
 publish-image:
   stage: release
-  image: docker:29-cli@sha256:5e6baf67325a79f64ed3bed6863954d5e05d0f3d4e57cbdb14809346814bbfdb
+  image: docker:29-cli@sha256:34507eb5069d8be82c95dd3b6987d4250fd5fee49b82e2509b7d7a7030740d6d
   services:
-    - name: docker:29-dind@sha256:9e79b879b177fbd72c34376a3dd3d91747da5db49e1f560f76aea59561471977
+    - name: docker:29-dind@sha256:4bbc7223f81db790097c6dea42fb93e05b8fead4f0431fbe6ccaba6e8473201c
       alias: docker
   variables:
     DOCKER_HOST: tcp://docker:2375
